@@ -1,0 +1,80 @@
+# ==========================================
+# YatraAI — Monorepo .gitignore
+# ==========================================
+
+# ── Environment files (NEVER commit these) ──
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env.local
+
+# ── Python / Backend ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+env/
+ENV/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.pyo
+
+# ── Node / Frontend ──
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# ── Next.js ──
+.next/
+out/
+/build
+
+# ── TypeScript ──
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Vercel ──
+.vercel
+
+# ── Testing ──
+coverage/
+
+# ── OS / Editor ──
+.DS_Store
+*.pem
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Logs ──
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.log
+
+# ── Misc ──
+*.local
+.cache/
+
+# ── AI agent config files ──
+AGENTS.md
+CLAUDE.md
