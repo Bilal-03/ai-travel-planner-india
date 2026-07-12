@@ -67,7 +67,7 @@
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/ai-travel-planner-india.git
+git clone https://github.com/Bilal-03/ai-travel-planner-india.git
 cd ai-travel-planner-india
 ```
 
@@ -228,6 +228,6 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 Built with 💜 in India · 100% Free-tier powered · No credit card needed
 
-**[⭐ Star this repo](https://github.com/YOUR_USERNAME/ai-travel-planner-india) if you find it useful!**
+**[⭐ Star this repo](https://github.com/Bilal-03/ai-travel-planner-india) if you find it useful!**
 
 </div>
