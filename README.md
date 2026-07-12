@@ -6,7 +6,7 @@
 
 **Plan your perfect domestic India trip in seconds — powered by Gemini AI, real flight/train data, weather forecasts, and interactive maps.**
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20App-6366f1?style=for-the-badge&logo=vercel)](https://ai-travel-planner-india.vercel.app)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20App-6366f1?style=for-the-badge&logo=vercel)](https://ai-travel-planner-india-seven.vercel.app)
 [![Backend API](https://img.shields.io/badge/API%20Docs-FastAPI-009688?style=for-the-badge&logo=fastapi)](https://yatraai-backend.onrender.com/docs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
