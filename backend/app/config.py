@@ -17,12 +17,14 @@ class Settings(BaseSettings):
     skyscanner_rapidapi_key: Optional[str] = None
     railradar_api_key: Optional[str] = None
 
+    # --- Media ---
+    unsplash_access_key: Optional[str] = None
+
     # --- Weather ---
     openweathermap_api_key: Optional[str] = None
 
     # --- Database ---
-    supabase_url: Optional[str] = None
-    supabase_key: Optional[str] = None
+    database_url: Optional[str] = None
 
     # --- Cache ---
     upstash_redis_url: Optional[str] = Field(default=None, validation_alias="UPSTASH_REDIS_REST_URL")

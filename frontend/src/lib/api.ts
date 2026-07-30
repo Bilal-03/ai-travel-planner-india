@@ -128,6 +128,27 @@ export interface CityInfo {
   station_code: string | null;
 }
 
+export interface DestinationPhoto {
+  url: string;
+  alt: string;
+  photographer_name: string | null;
+  photographer_url: string | null;
+}
+
+export interface FestivalEvent {
+  name: string;
+  start_date: string;
+  end_date: string;
+  description: string;
+  travel_tip: string;
+}
+
+export interface PackingItem {
+  item: string;
+  reason: string;
+  category: string;
+}
+
 export interface Itinerary {
   id: string;
   origin: CityInfo;
@@ -142,6 +163,9 @@ export interface Itinerary {
   budget: BudgetBreakdown;
   route_segments: RouteSegment[];
   weather_forecast: DayWeather[];
+  destination_photos: DestinationPhoto[];
+  festivals: FestivalEvent[];
+  packing_list: PackingItem[];
   share_url: string | null;
   generation_notes: string[];
 }
@@ -201,6 +225,15 @@ export const api = {
       `/api/trips/${tripId}/share`,
       { method: "POST" }
     ),
+
+  refineTrip: (tripId: string, instruction: string) =>
+    request<Itinerary>(`/api/trips/${tripId}/refine`, {
+      method: "POST",
+      body: JSON.stringify({ instruction }),
+    }),
+
+  generatePackingList: (tripId: string) =>
+    request<PackingItem[]>(`/api/trips/${tripId}/packing-list`, { method: "POST" }),
 
   /** Search flights */
   searchFlights: (from: string, to: string, date: string) =>

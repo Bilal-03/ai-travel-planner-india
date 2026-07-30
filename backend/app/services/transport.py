@@ -95,7 +95,30 @@ FALLBACK_TRAINS: list[dict] = [
 ]
 
 
-def _get_fallback_trains(origin: str, destination: str) -> list[TransportOption]:
+def _estimated_route_distance(origin: str, destination: str) -> float:
+    """Stable coarse distance for direct transport searches without coordinates."""
+    route_seed = sum(ord(char) for char in f"{origin.casefold()}:{destination.casefold()}")
+    return float(250 + (route_seed % 18) * 100)
+
+
+def _estimated_train_option(origin: str, destination: str, distance_km: float | None) -> TransportOption:
+    distance = distance_km or _estimated_route_distance(origin, destination)
+    return TransportOption(
+        mode=TransportMode.TRAIN,
+        provider="Indian Railways fare estimate",
+        code=None,
+        # Approximate 3A/CC fare band, intentionally not represented as live.
+        price=max(350, int(distance * 1.45 + 250)),
+        duration_minutes=max(180, int(distance * 1.05 + 90)),
+        departure_city=origin.title(),
+        arrival_city=destination.title(),
+        is_fallback=True,
+    )
+
+
+def _get_fallback_trains(
+    origin: str, destination: str, distance_km: float | None = None
+) -> list[TransportOption]:
     """Get static fallback train options for a route."""
     origin_lower = origin.lower().strip().replace("new delhi", "delhi")
     dest_lower = destination.lower().strip().replace("new delhi", "delhi")
@@ -117,7 +140,7 @@ def _get_fallback_trains(origin: str, destination: str) -> list[TransportOption]
                 is_fallback=True,
             ))
 
-    return results
+    return results or [_estimated_train_option(origin, destination, distance_km)]
 
 
 # ── Static fallback flights ───────────────────────────────────────────
@@ -125,17 +148,19 @@ def _get_fallback_trains(origin: str, destination: str) -> list[TransportOption]
 FALLBACK_FLIGHTS: list[dict] = [
     {"from": "delhi", "to": "mumbai", "provider": "IndiGo", "code": None, "duration": 130, "price": 4500},
     {"from": "mumbai", "to": "delhi", "provider": "Air India", "code": None, "duration": 135, "price": 4800},
-    {"from": "bangalore", "to": "delhi", "provider": "Vistara", "code": None, "duration": 165, "price": 6000},
+    {"from": "bangalore", "to": "delhi", "provider": "Air India", "code": None, "duration": 165, "price": 6000},
     {"from": "delhi", "to": "bangalore", "provider": "IndiGo", "code": None, "duration": 160, "price": 5500},
     {"from": "mumbai", "to": "bangalore", "provider": "Akasa Air", "code": None, "duration": 110, "price": 3500},
     {"from": "bangalore", "to": "mumbai", "provider": "IndiGo", "code": None, "duration": 115, "price": 3800},
     {"from": "delhi", "to": "goa", "provider": "Air India Express", "code": None, "duration": 150, "price": 5200},
     {"from": "mumbai", "to": "goa", "provider": "IndiGo", "code": None, "duration": 75, "price": 2800},
     {"from": "delhi", "to": "chennai", "provider": "IndiGo", "code": None, "duration": 170, "price": 5800},
-    {"from": "chennai", "to": "delhi", "provider": "Vistara", "code": None, "duration": 175, "price": 6200},
+    {"from": "chennai", "to": "delhi", "provider": "Air India", "code": None, "duration": 175, "price": 6200},
 ]
 
-def _get_fallback_flights(origin: str, destination: str) -> list[dict]:
+def _get_fallback_flights(
+    origin: str, destination: str, distance_km: float | None = None
+) -> list[dict]:
     origin_lower = origin.lower().strip().replace("new delhi", "delhi")
     dest_lower = destination.lower().strip().replace("new delhi", "delhi")
     
@@ -148,13 +173,29 @@ def _get_fallback_flights(origin: str, destination: str) -> list[dict]:
                 "code": f["code"],
                 "price": f["price"],
                 "duration_minutes": f["duration"],
-                "departure_time": "10:00",
-                "arrival_time": "12:00",
+                # Static options are fare guidance, not a fabricated schedule.
+                "departure_time": None,
+                "arrival_time": None,
                 "departure_city": origin.title(),
                 "arrival_city": destination.title(),
                 "is_fallback": True,
             })
-    return results
+    if results:
+        return results
+
+    distance = distance_km or _estimated_route_distance(origin, destination)
+    return [{
+        "mode": "flight",
+        "provider": "Domestic flight fare estimate",
+        "code": None,
+        "price": max(2800, int(distance * 4.2 + 1800)),
+        "duration_minutes": max(70, int(distance / 8.5 + 45)),
+        "departure_time": None,
+        "arrival_time": None,
+        "departure_city": origin.title(),
+        "arrival_city": destination.title(),
+        "is_fallback": True,
+    }]
 
 # ── Skyscanner Flight Search ──────────────────────────────────────────
 
@@ -164,6 +205,7 @@ async def search_flights(
     destination: str,
     departure_date: str,
     max_price: Optional[int] = None,
+    distance_km: float | None = None,
 ) -> list[dict]:
     """Search flights via Skyscanner RapidAPI."""
     origin_iata = get_iata_code(origin)
@@ -171,11 +213,11 @@ async def search_flights(
 
     if not origin_iata or not dest_iata:
         logger.warning(f"No IATA code for {origin} or {destination}, using fallback")
-        return _get_fallback_flights(origin, destination)
+        return _get_fallback_flights(origin, destination, distance_km)
 
     if not settings.skyscanner_rapidapi_key:
         logger.warning("No Skyscanner API key — using fallback flights")
-        return _get_fallback_flights(origin, destination)
+        return _get_fallback_flights(origin, destination, distance_km)
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -242,13 +284,13 @@ async def search_flights(
                     continue
             
             if not flights:
-                return _get_fallback_flights(origin, destination)
+                return _get_fallback_flights(origin, destination, distance_km)
                 
             return flights
 
     except Exception as e:
         logger.error(f"Skyscanner flight search failed: {e}")
-        return _get_fallback_flights(origin, destination)
+        return _get_fallback_flights(origin, destination, distance_km)
 
 
 
@@ -260,6 +302,7 @@ async def search_trains(
     origin: str,
     destination: str,
     date: Optional[str] = None,
+    distance_km: float | None = None,
 ) -> list[dict]:
     """
     Search trains via RailRadar native API.
@@ -276,12 +319,12 @@ async def search_trains(
 
     if not origin_code or not dest_code:
         logger.info(f"No station code for {origin} or {destination}, using fallback")
-        fallbacks = _get_fallback_trains(origin, destination)
+        fallbacks = _get_fallback_trains(origin, destination, distance_km)
         return [f.model_dump() for f in fallbacks]
 
     if not settings.railradar_api_key:
         logger.info("No RailRadar API key — using fallback train data")
-        fallbacks = _get_fallback_trains(origin, destination)
+        fallbacks = _get_fallback_trains(origin, destination, distance_km)
         return [f.model_dump() for f in fallbacks]
 
     try:
@@ -297,7 +340,7 @@ async def search_trains(
             data = resp.json()
     except Exception as e:
         logger.warning(f"RailRadar API failed, using fallback: {e}")
-        fallbacks = _get_fallback_trains(origin, destination)
+        fallbacks = _get_fallback_trains(origin, destination, distance_km)
         return [f.model_dump() for f in fallbacks]
 
     trains = []
@@ -328,7 +371,7 @@ async def search_trains(
             continue
 
     if not trains:
-        fallbacks = _get_fallback_trains(origin, destination)
+        fallbacks = _get_fallback_trains(origin, destination, distance_km)
         return [f.model_dump() for f in fallbacks]
 
     return trains
@@ -349,8 +392,10 @@ async def search_transport(
     """
     import asyncio
 
-    flight_task = search_flights(origin, destination, date, max_price=budget)
-    train_task = search_trains(origin, destination, date)
+    flight_task = search_flights(
+        origin, destination, date, max_price=budget, distance_km=distance_km
+    )
+    train_task = search_trains(origin, destination, date, distance_km=distance_km)
 
     flight_results, train_results = await asyncio.gather(
         flight_task, train_task, return_exceptions=True,

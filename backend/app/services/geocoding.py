@@ -13,6 +13,7 @@ import httpx
 
 from app.cache.redis_cache import cached
 from app.models.trip import CityInfo, CitySearchResult, GeoPoint
+from app.services.india_cities import search_local_cities
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,17 @@ async def geocode_city(city_name: str) -> Optional[dict]:
     Geocode a city name to coordinates using Nominatim.
     Returns dict (not CityInfo) for JSON-serializable caching.
     """
+    # Reuse the local destination index at generation time too. This makes
+    # selected cities work even when the public geocoder is temporarily slow.
+    normalized = " ".join(city_name.casefold().split())
+    for city in search_local_cities(city_name, limit=8):
+        if city["name"].casefold() == normalized:
+            return {
+                "name": city["name"],
+                "state": city["state"],
+                "coordinates": city["coordinates"],
+            }
+
     await _rate_limit()
 
     async with httpx.AsyncClient(timeout=10) as client:
@@ -133,6 +145,12 @@ async def search_cities(query: str) -> list[dict]:
     if len(query) < 2:
         return []
 
+    # Avoid using public Nominatim as a typeahead service. The bundled index
+    # returns the destinations users search for most often immediately.
+    local_results = search_local_cities(query)
+    if local_results:
+        return local_results
+
     await _rate_limit()
 
     async with httpx.AsyncClient(timeout=10) as client:
@@ -144,7 +162,9 @@ async def search_cities(query: str) -> list[dict]:
                 "addressdetails": 1,
                 "limit": 8,
                 "countrycodes": "in",
-                "featuretype": "city",
+                # Indian destinations are commonly tagged as town or village.
+                # ``settlement`` covers all inhabited places, unlike ``city``.
+                "featuretype": "settlement",
             },
             headers={"User-Agent": USER_AGENT},
         )

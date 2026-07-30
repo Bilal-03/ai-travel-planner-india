@@ -8,6 +8,7 @@ interface CityAutocompleteProps {
   placeholder: string;
   value: string;
   onChange: (city: string) => void;
+  onSelectionChange?: (selected: boolean) => void;
   icon: React.ReactNode;
   id: string;
 }
@@ -17,6 +18,7 @@ export default function CityAutocomplete({
   placeholder,
   value,
   onChange,
+  onSelectionChange,
   icon,
   id,
 }: CityAutocompleteProps) {
@@ -24,6 +26,7 @@ export default function CityAutocomplete({
   const [results, setResults] = useState<CitySearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
@@ -49,6 +52,7 @@ export default function CityAutocomplete({
       const cities = await api.searchCities(q);
       setResults(cities);
       setIsOpen(cities.length > 0);
+      setActiveIndex(-1);
     } catch {
       // Fallback: show nothing on error
       setResults([]);
@@ -61,6 +65,7 @@ export default function CityAutocomplete({
     const val = e.target.value;
     setQuery(val);
     onChange(val);
+    onSelectionChange?.(false);
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => searchCities(val), 300);
@@ -69,8 +74,27 @@ export default function CityAutocomplete({
   const handleSelect = (city: CitySearchResult) => {
     setQuery(city.display_name);
     onChange(city.name);
+    onSelectionChange?.(true);
     setIsOpen(false);
     setResults([]);
+    setActiveIndex(-1);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "ArrowDown" && results.length > 0) {
+      event.preventDefault();
+      setIsOpen(true);
+      setActiveIndex((current) => Math.min(current + 1, results.length - 1));
+    } else if (event.key === "ArrowUp" && results.length > 0) {
+      event.preventDefault();
+      setActiveIndex((current) => Math.max(current - 1, 0));
+    } else if (event.key === "Enter" && isOpen && activeIndex >= 0) {
+      event.preventDefault();
+      handleSelect(results[activeIndex]);
+    } else if (event.key === "Escape") {
+      setIsOpen(false);
+      setActiveIndex(-1);
+    }
   };
 
   return (
@@ -91,8 +115,14 @@ export default function CityAutocomplete({
           value={query}
           onChange={handleInputChange}
           onFocus={() => results.length > 0 && setIsOpen(true)}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           autoComplete="off"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={isOpen}
+          aria-controls={`${id}-results`}
+          aria-activedescendant={activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
           className="w-full pl-10 pr-4 py-3 bg-glass-bg border border-glass-border rounded-xl
                      text-foreground placeholder:text-foreground-muted
                      focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30
@@ -110,14 +140,19 @@ export default function CityAutocomplete({
 
       {/* Dropdown */}
       {isOpen && results.length > 0 && (
-        <div className="absolute z-50 w-full mt-2 bg-surface border border-glass-border rounded-xl overflow-hidden shadow-lg animate-slide-up">
+        <div id={`${id}-results`} role="listbox" className="absolute z-50 w-full mt-2 bg-surface border border-glass-border rounded-xl overflow-hidden shadow-lg animate-slide-up">
           {results.map((city, idx) => (
             <button
               key={`${city.name}-${idx}`}
+              id={`${id}-option-${idx}`}
+              type="button"
+              role="option"
+              aria-selected={idx === activeIndex}
               onClick={() => handleSelect(city)}
-              className="w-full px-4 py-3 text-left hover:bg-glass-highlight
+              onMouseEnter={() => setActiveIndex(idx)}
+              className={`w-full px-4 py-3 text-left hover:bg-glass-highlight
                          transition-colors duration-150 flex items-center gap-3
-                         border-b border-glass-border last:border-0"
+                         border-b border-glass-border last:border-0 ${idx === activeIndex ? "bg-glass-highlight" : ""}`}
             >
               <span className="text-primary">📍</span>
               <div>

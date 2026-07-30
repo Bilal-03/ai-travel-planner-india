@@ -8,6 +8,7 @@ import ItineraryTimeline from "@/components/ItineraryTimeline";
 import TransportCard from "@/components/TransportCard";
 import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
+import TripEnhancements from "@/components/TripEnhancements";
 import {
   api,
   Itinerary,
@@ -97,7 +98,7 @@ export default function TripDetailPage() {
                 <span className="text-foreground-muted">/</span>
                 <span className="text-foreground-secondary text-sm">Shared Trip</span>
               </div>
-              <h1 className="text-3xl md:text-4xl font-bold font-[family-name:var(--font-outfit)]">
+              <h1 className="font-display text-3xl md:text-4xl font-bold">
                 <span className="gradient-text">
                   {itinerary.origin.name} → {itinerary.destination.name}
                 </span>
@@ -142,6 +143,10 @@ export default function TripDetailPage() {
           </div>
         )}
 
+        <div className="mb-6">
+          <TripEnhancements itinerary={itinerary} onUpdate={setItinerary} />
+        </div>
+
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
@@ -157,7 +162,7 @@ export default function TripDetailPage() {
           <div className="space-y-6">
             {itinerary.transport_options.length > 0 && (
               <div>
-                <h3 className="text-lg font-bold font-[family-name:var(--font-outfit)] text-foreground mb-3 flex items-center gap-2">
+                <h3 className="font-display text-lg font-bold text-foreground mb-3 flex items-center gap-2">
                   🚀 Transport Options
                 </h3>
                 <div className="space-y-3">
@@ -165,6 +170,7 @@ export default function TripDetailPage() {
                     <TransportCard
                       key={idx}
                       option={opt}
+                      travelDate={itinerary.start_date}
                       isSelected={
                         itinerary.selected_transport?.code === opt.code &&
                         itinerary.selected_transport?.provider === opt.provider
@@ -186,9 +192,7 @@ export default function TripDetailPage() {
         <div className="text-center mt-12 mb-8">
           <a
             href="/"
-            className="inline-block px-8 py-3 bg-gradient-to-r from-primary to-primary-light
-                       text-white rounded-xl font-semibold
-                       hover:shadow-[0_0_30px_rgba(99,102,241,0.3)] transition-all duration-300"
+            className="warm-button inline-block px-8 py-3 text-white rounded-xl font-semibold hover:brightness-110 transition-all duration-300"
           >
             ✨ Plan Your Own Trip
           </a>

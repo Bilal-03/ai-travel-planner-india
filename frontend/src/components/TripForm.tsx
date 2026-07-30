@@ -28,6 +28,8 @@ function formatBudgetLabel(value: number): string {
 export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
+  const [isOriginSelected, setIsOriginSelected] = useState(false);
+  const [isDestinationSelected, setIsDestinationSelected] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [budget, setBudget] = useState(15000);
@@ -42,8 +44,8 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
-    if (!origin) newErrors.origin = "Select an origin city";
-    if (!destination) newErrors.destination = "Select a destination city";
+    if (!origin || !isOriginSelected) newErrors.origin = "Choose an origin from the suggestions";
+    if (!destination || !isDestinationSelected) newErrors.destination = "Choose a destination from the suggestions";
     if (!startDate) newErrors.startDate = "Pick a start date";
     if (!endDate) newErrors.endDate = "Pick an end date";
     if (startDate && endDate && new Date(endDate) <= new Date(startDate)) {
@@ -76,12 +78,12 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className="glass gradient-border p-6 md:p-8 rounded-2xl max-w-2xl mx-auto space-y-6"
+      className="glass heritage-card gradient-border p-6 md:p-8 rounded-2xl max-w-2xl mx-auto space-y-6"
       id="trip-form"
     >
       <div className="text-center mb-2">
         <h2
-          className="text-2xl md:text-3xl font-bold font-[family-name:var(--font-outfit)] gradient-text"
+          className="font-display text-2xl md:text-3xl font-bold gradient-text"
         >
           Plan Your Journey
         </h2>
@@ -98,6 +100,7 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
             placeholder="e.g. Delhi"
             value={origin}
             onChange={setOrigin}
+            onSelectionChange={setIsOriginSelected}
             icon="🛫"
             id="origin-city"
           />
@@ -111,6 +114,7 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
             placeholder="e.g. Goa"
             value={destination}
             onChange={setDestination}
+            onSelectionChange={setIsDestinationSelected}
             icon="🛬"
             id="destination-city"
           />
@@ -238,7 +242,7 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
           ${
             isLoading
               ? "bg-primary/50 cursor-not-allowed"
-              : "bg-gradient-to-r from-primary to-primary-light hover:shadow-[0_0_30px_rgba(99,102,241,0.3)]"
+              : "warm-button hover:brightness-110"
           }
           text-white
         `}

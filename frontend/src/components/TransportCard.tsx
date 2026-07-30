@@ -5,21 +5,33 @@ import { TransportOption, formatINR, formatDuration } from "@/lib/api";
 
 interface TransportCardProps {
   option: TransportOption;
+  travelDate?: string;
   isSelected?: boolean;
   onClick?: () => void;
 }
 
 export default function TransportCard({
   option,
+  travelDate,
   isSelected = false,
   onClick,
 }: TransportCardProps) {
   const isFlight = option.mode === "flight";
+  const bookingUrl = isFlight
+    ? `https://www.google.com/travel/flights?q=${encodeURIComponent(`Flights from ${option.departure_city} to ${option.arrival_city}${travelDate ? ` on ${travelDate}` : ""}`)}`
+    : "https://www.irctc.co.in/nget/train-search";
 
   return (
-    <motion.button
-      type="button"
+    <motion.div
       onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (onClick && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onClick();
+        }
+      }}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       className={`
@@ -101,6 +113,18 @@ export default function TransportCard({
           </span>
         </div>
       </div>
-    </motion.button>
+
+      {option.is_fallback && (
+        <a
+          href={bookingUrl}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => event.stopPropagation()}
+          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary-light transition-colors"
+        >
+          Check live fares {isFlight ? "on Google Flights" : "on IRCTC"} ↗
+        </a>
+      )}
+    </motion.div>
   );
 }

@@ -1,95 +1,120 @@
-"""
-Trip storage service — Supabase (Postgres).
-Saves and retrieves generated itineraries for sharing.
-Falls back to in-memory storage when Supabase is not configured.
-"""
+"""Trip storage service — Neon-compatible PostgreSQL with in-memory fallback."""
 
-import json
+import asyncio
 import logging
+import threading
 import uuid
 from datetime import datetime
 from typing import Optional
 
 from app.config import settings
-from app.models.trip import Itinerary, TripShare
+from app.models.trip import Itinerary
 
 logger = logging.getLogger(__name__)
-
-# In-memory fallback when Supabase is not configured
 _memory_store: dict[str, dict] = {}
+_schema_ready = False
+_schema_lock = threading.Lock()
 
-_supabase_client = None
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS trips (
+    id VARCHAR(12) PRIMARY KEY,
+    itinerary_json JSONB NOT NULL,
+    origin TEXT NOT NULL,
+    destination TEXT NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    budget INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)
+"""
 
 
-def _get_supabase():
-    """Lazy-init Supabase client."""
-    global _supabase_client
-    if _supabase_client is not None:
-        return _supabase_client
-
-    if not settings.supabase_url or not settings.supabase_key:
-        logger.info("ℹ️  No Supabase config — using in-memory trip storage")
+def _connect():
+    """Open a short-lived connection; Neon pooling handles reuse upstream."""
+    if not settings.database_url:
         return None
+    import psycopg
+    return psycopg.connect(settings.database_url, connect_timeout=10, autocommit=True)
 
-    try:
-        from supabase import create_client
-        _supabase_client = create_client(settings.supabase_url, settings.supabase_key)
-        logger.info("✅ Connected to Supabase")
-        return _supabase_client
-    except Exception as e:
-        logger.warning(f"⚠️  Supabase connection failed: {e}")
-        return None
+
+def _ensure_schema_sync() -> bool:
+    global _schema_ready
+    if _schema_ready:
+        return True
+    with _schema_lock:
+        if _schema_ready:
+            return True
+        try:
+            with _connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(_SCHEMA)
+            _schema_ready = True
+            logger.info("Connected to Neon PostgreSQL; trips table is ready")
+            return True
+        except Exception as error:
+            logger.warning("Neon setup failed; using in-memory trips: %s", error)
+            return False
+
+
+async def _ensure_schema() -> bool:
+    return bool(settings.database_url) and await asyncio.to_thread(_ensure_schema_sync)
 
 
 async def save_trip(itinerary: Itinerary) -> str:
-    """
-    Save an itinerary and return a shareable ID.
-    """
+    """Save an itinerary and return its stable, shareable ID."""
     trip_id = str(uuid.uuid4())[:12]
-    data = {
-        "id": trip_id,
-        "itinerary": itinerary.model_dump_json(),
-        "created_at": datetime.utcnow().isoformat(),
-    }
-
-    client = _get_supabase()
-    if client:
+    itinerary.id = trip_id
+    data = itinerary.model_dump_json()
+    created_at = datetime.utcnow().isoformat()
+    if await _ensure_schema():
         try:
-            client.table("trips").insert({
-                "id": trip_id,
-                "itinerary_json": data["itinerary"],
-                "origin": itinerary.origin.name,
-                "destination": itinerary.destination.name,
-                "start_date": itinerary.start_date.isoformat(),
-                "end_date": itinerary.end_date.isoformat(),
-                "budget": itinerary.budget.total_estimated,
-                "created_at": data["created_at"],
-            }).execute()
-            logger.info(f"✅ Trip saved to Supabase: {trip_id}")
-        except Exception as e:
-            logger.error(f"Supabase save failed, using memory: {e}")
-            _memory_store[trip_id] = data
-    else:
-        _memory_store[trip_id] = data
-
+            def insert() -> None:
+                with _connect() as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            """INSERT INTO trips (id, itinerary_json, origin, destination, start_date, end_date, budget, created_at)
+                            VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s)""",
+                            (trip_id, data, itinerary.origin.name, itinerary.destination.name,
+                             itinerary.start_date, itinerary.end_date, itinerary.budget.total_estimated, created_at),
+                        )
+            await asyncio.to_thread(insert)
+            return trip_id
+        except Exception as error:
+            logger.error("Neon save failed; using memory: %s", error)
+    _memory_store[trip_id] = {"itinerary": data, "created_at": created_at}
     return trip_id
 
 
 async def get_trip(trip_id: str) -> Optional[Itinerary]:
-    """Retrieve a saved trip by ID."""
-    client = _get_supabase()
-
-    if client:
+    """Retrieve a saved itinerary from Neon or the local fallback."""
+    if await _ensure_schema():
         try:
-            result = client.table("trips").select("itinerary_json").eq("id", trip_id).single().execute()
-            if result.data:
-                return Itinerary.model_validate_json(result.data["itinerary_json"])
-        except Exception as e:
-            logger.error(f"Supabase get failed: {e}")
+            def fetch() -> Optional[str]:
+                with _connect() as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT itinerary_json::text FROM trips WHERE id = %s", (trip_id,))
+                        row = cursor.fetchone()
+                        return row[0] if row else None
+            data = await asyncio.to_thread(fetch)
+            if data:
+                return Itinerary.model_validate_json(data)
+        except Exception as error:
+            logger.error("Neon read failed: %s", error)
+    cached = _memory_store.get(trip_id)
+    return Itinerary.model_validate_json(cached["itinerary"]) if cached else None
 
-    # Fallback to memory
-    if trip_id in _memory_store:
-        data = _memory_store[trip_id]
-        return Itinerary.model_validate_json(data["itinerary"])
 
-    return None
+async def update_trip(itinerary: Itinerary) -> None:
+    """Persist refinements and packing-list changes without changing the share URL."""
+    data = itinerary.model_dump_json()
+    if await _ensure_schema():
+        try:
+            def update() -> None:
+                with _connect() as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute("UPDATE trips SET itinerary_json = %s::jsonb, budget = %s WHERE id = %s", (data, itinerary.budget.total_estimated, itinerary.id))
+            await asyncio.to_thread(update)
+            return
+        except Exception as error:
+            logger.error("Neon update failed; using memory: %s", error)
+    _memory_store[itinerary.id] = {"itinerary": data, "created_at": datetime.utcnow().isoformat()}

@@ -4,20 +4,23 @@
 
 :root {
   /* Dark mode default */
-  --background: #0a0a1a;
-  --background-secondary: #0f1129;
-  --surface: #151733;
-  --surface-hover: #1c1f45;
-  --foreground: #f0f0ff;
-  --foreground-secondary: #94a3b8;
-  --foreground-muted: #64748b;
+  --background: #10162f;
+  --background-secondary: #182142;
+  --surface: #202a4d;
+  --surface-hover: #28355e;
+  --foreground: #fff8ed;
+  --foreground-secondary: #d4c7b1;
+  --foreground-muted: #a69b8a;
 
   /* Brand */
-  --primary: #6366f1;
-  --primary-light: #818cf8;
-  --primary-dark: #4f46e5;
-  --accent: #f59e0b;
-  --accent-light: #fbbf24;
+  --primary: #c85035;
+  --primary-light: #e2724d;
+  --primary-dark: #9e3928;
+  --accent: #f3a31a;
+  --accent-light: #ffc24a;
+  --marigold: #f3a31a;
+  --terracotta: #c85035;
+  --indigo: #4f5ba7;
 
   /* Semantic */
   --success: #22c55e;
@@ -35,15 +38,15 @@
   --weather-indoor: #ef4444;
 
   /* Glass */
-  --glass-bg: rgba(255, 255, 255, 0.04);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-highlight: rgba(255, 255, 255, 0.12);
+  --glass-bg: rgba(255, 248, 237, 0.055);
+  --glass-border: rgba(255, 201, 110, 0.16);
+  --glass-highlight: rgba(255, 224, 170, 0.13);
 
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.15);
+  --shadow-glow: 0 16px 42px rgba(7, 9, 25, 0.35);
 
   /* Radii */
   --radius-sm: 8px;
@@ -99,7 +102,8 @@
   --color-glass-border: var(--glass-border);
   --color-glass-highlight: var(--glass-highlight);
   --font-sans: var(--font-inter);
-  --font-display: var(--font-outfit);
+  --font-display: var(--font-playfair);
+  --font-outfit: var(--font-playfair);
 }
 
 /* ── Base Styles ───────────────────────────────────────────────── */
@@ -128,6 +132,7 @@ body {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
+  box-shadow: 0 12px 36px rgba(5, 8, 25, 0.14);
 }
 
 .glass-hover:hover {
@@ -140,14 +145,14 @@ body {
 
 .gradient-hero {
   background:
-    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(99, 102, 241, 0.25), transparent),
-    radial-gradient(ellipse 60% 50% at 80% 50%, rgba(139, 92, 246, 0.12), transparent),
-    radial-gradient(ellipse 50% 40% at 20% 80%, rgba(245, 158, 11, 0.08), transparent),
+    radial-gradient(ellipse 70% 55% at 50% -15%, rgba(243, 163, 26, 0.22), transparent),
+    radial-gradient(ellipse 52% 48% at 88% 58%, rgba(200, 80, 53, 0.22), transparent),
+    radial-gradient(ellipse 45% 40% at 8% 78%, rgba(79, 91, 167, 0.3), transparent),
     var(--background);
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, var(--primary-light), var(--accent));
+  background: linear-gradient(115deg, #fff1c8 5%, var(--accent-light) 44%, var(--primary-light) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -163,7 +168,7 @@ body {
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, var(--primary), var(--accent));
+  background: linear-gradient(115deg, var(--accent), var(--primary), var(--indigo));
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
   -webkit-mask-composite: destination-out;
@@ -223,6 +228,34 @@ body {
 
 .animate-fade-in {
   animation: fade-in 0.5s ease-out forwards;
+}
+
+.font-display {
+  font-family: var(--font-playfair), Georgia, serif;
+  letter-spacing: -0.035em;
+}
+
+.section-eyebrow {
+  color: var(--accent-light);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.heritage-card {
+  background: linear-gradient(145deg, rgba(255, 248, 237, 0.09), rgba(255, 248, 237, 0.025));
+  border: 1px solid rgba(243, 163, 26, 0.22);
+}
+
+.warm-button {
+  background: linear-gradient(115deg, var(--primary), #df7049 56%, var(--accent));
+  box-shadow: 0 10px 26px rgba(157, 57, 39, 0.34);
+}
+
+.destination-frame {
+  border: 1px solid rgba(243, 163, 26, 0.36);
+  box-shadow: 0 20px 45px rgba(4, 7, 22, 0.35);
 }
 
 /* Staggered animation delays */
@@ -310,4 +343,16 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
   border: none;
   box-shadow: var(--shadow-md);
+}
+
+/* ── Printable itinerary ─────────────────────────────────────── */
+@media print {
+  :root { color-scheme: light; }
+  body { background: #fff !important; color: #111827 !important; }
+  .print\:hidden, button, .leaflet-control-container { display: none !important; }
+  .glass, .gradient-hero { background: #fff !important; border-color: #d1d5db !important; box-shadow: none !important; }
+  .text-foreground, .text-foreground-secondary, .text-foreground-muted { color: #111827 !important; }
+  .gradient-text { -webkit-text-fill-color: #111827 !important; color: #111827 !important; background: none !important; }
+  .leaflet-container { min-height: 260px !important; }
+  @page { margin: 14mm; }
 }

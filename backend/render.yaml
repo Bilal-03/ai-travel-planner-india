@@ -14,13 +14,11 @@ services:
         sync: false
       - key: RAILRADAR_API_KEY
         sync: false
-      - key: AMADEUS_API_KEY
+      - key: SKYSCANNER_RAPIDAPI_KEY
         sync: false
-      - key: AMADEUS_API_SECRET
+      - key: UNSPLASH_ACCESS_KEY
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_KEY
+      - key: DATABASE_URL
         sync: false
       - key: UPSTASH_REDIS_REST_URL
         sync: false

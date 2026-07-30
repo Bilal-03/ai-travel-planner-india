@@ -21,12 +21,16 @@
 | Feature | Description |
 |---|---|
 | 🤖 **AI Itinerary Generation** | Google Gemini 2.5 Flash creates personalized day-by-day plans |
-| ✈️🚂 **Flights & Trains** | Real-time comparison via Amadeus & RailRadar APIs |
+| ✈️🚂 **Flights & Trains** | Live provider results when configured, with transparent fare estimates and booking links otherwise |
 | 🗺️ **Interactive Maps** | Leaflet + OpenStreetMap with routes and POI markers |
 | 🌤️ **Weather-Aware Planning** | OpenWeatherMap forecasts with indoor backup activities |
 | 💰 **Budget Tracking** | Visual breakdown — transport, food, activities, accommodation |
 | 🔗 **Instant Sharing** | Share via link, WhatsApp, Twitter, or QR code — no signup |
-| 🏙️ **City Autocomplete** | Smart search across all Indian cities using Nominatim |
+| ✨ **Plan Refinement** | Update a saved itinerary with natural-language follow-up requests |
+| 🎉 **Festival-Aware** | Surfaces relevant festival dates and crowd-aware travel guidance |
+| 🧳 **Packing List** | Generates a weather- and vibe-aware checklist on demand |
+| 🖨️ **Print / PDF** | Print any itinerary or save it as a PDF from the browser |
+| 🏙️ **City Autocomplete** | Instant search across popular Indian cities and destinations, with an OSM fallback |
 | 📱 **Fully Responsive** | Works beautifully on mobile, tablet, and desktop |
 
 ---
@@ -48,12 +52,12 @@
 |---|---|
 | [FastAPI](https://fastapi.tiangolo.com/) | High-performance Python API |
 | [Google Gemini AI](https://ai.google.dev/) | LLM itinerary generation |
-| [Supabase](https://supabase.com/) | PostgreSQL database |
+| [Neon](https://neon.com/) | Serverless PostgreSQL database |
 | [Upstash Redis](https://upstash.com/) | API response caching |
-| [Amadeus API](https://developers.amadeus.com/) | Flight search |
+| [Skyscanner RapidAPI](https://rapidapi.com/) | Optional live flight search |
 | [RailRadar](https://rapidapi.com/railradar/) | Train search |
 | [OpenWeatherMap](https://openweathermap.org/) | Weather forecasts |
-| [Nominatim / OSM](https://nominatim.org/) | City geocoding (free) |
+| [Nominatim / OSM](https://nominatim.org/) | One-off city geocoding fallback (free) |
 | [OSRM](http://project-osrm.org/) | Route calculation (free) |
 
 ---
@@ -108,10 +112,9 @@ Create a `.env` file at the root from `.env.example`:
 | `GEMINI_API_KEY` | ✅ Yes | Google Gemini AI key | [Google AI Studio](https://aistudio.google.com/app/apikey) |
 | `OPENWEATHERMAP_API_KEY` | ⚪ Optional | Weather forecasts | [OpenWeatherMap](https://openweathermap.org/api) |
 | `RAILRADAR_API_KEY` | ⚪ Optional | Train search | [RapidAPI - RailRadar](https://rapidapi.com/railradar/) |
-| `AMADEUS_API_KEY` | ⚪ Optional | Flight search | [Amadeus Developers](https://developers.amadeus.com/) |
-| `AMADEUS_API_SECRET` | ⚪ Optional | Flight search | Same as above |
-| `SUPABASE_URL` | ⚪ Optional | Database (falls back to in-memory) | [Supabase](https://supabase.com/) |
-| `SUPABASE_KEY` | ⚪ Optional | Database | Same as above |
+| `SKYSCANNER_RAPIDAPI_KEY` | ⚪ Optional | Live flight search | [RapidAPI](https://rapidapi.com/) |
+| `UNSPLASH_ACCESS_KEY` | ⚪ Optional | Destination photos | [Unsplash Developers](https://unsplash.com/developers) |
+| `DATABASE_URL` | ⚪ Optional | Neon PostgreSQL pooled connection string | [Neon](https://neon.com/) |
 | `UPSTASH_REDIS_REST_URL` | ⚪ Optional | Cache (falls back to in-memory) | [Upstash](https://upstash.com/) |
 | `UPSTASH_REDIS_REST_TOKEN` | ⚪ Optional | Cache | Same as above |
 | `FRONTEND_URL` | ✅ Yes | Frontend URL for CORS | Your Vercel URL in production |

@@ -9,6 +9,7 @@ import ItineraryTimeline from "@/components/ItineraryTimeline";
 import TransportCard from "@/components/TransportCard";
 import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
+import TripEnhancements from "@/components/TripEnhancements";
 import {
   api,
   Itinerary,
@@ -105,10 +106,11 @@ export default function Home() {
               >
                 ✈️
               </motion.span>
-              <h1 className="text-5xl md:text-7xl font-bold font-[family-name:var(--font-outfit)]">
+              <h1 className="font-display text-5xl md:text-7xl font-bold">
                 <span className="gradient-text">YatraAI</span>
               </h1>
             </div>
+            <p className="section-eyebrow mb-4">India, thoughtfully explored</p>
             <p className="text-xl md:text-2xl text-foreground-secondary max-w-xl mx-auto text-balance">
               Plan your perfect India trip with AI — personalized itineraries in seconds
             </p>
@@ -203,7 +205,7 @@ export default function Home() {
                 </button>
               </div>
               <h1 className="text-3xl md:text-4xl font-bold font-[family-name:var(--font-outfit)]">
-                <span className="gradient-text">
+                <span className="gradient-text font-display">
                   {itinerary.origin.name} → {itinerary.destination.name}
                 </span>
               </h1>
@@ -244,6 +246,10 @@ export default function Home() {
             </motion.div>
           )}
 
+          <div className="mb-6">
+            <TripEnhancements itinerary={itinerary} onUpdate={setItinerary} />
+          </div>
+
           {/* Main Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left: Timeline (2 cols) */}
@@ -281,7 +287,7 @@ export default function Home() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.3 }}
                 >
-                  <h3 className="text-lg font-bold font-[family-name:var(--font-outfit)] text-foreground mb-3 flex items-center gap-2">
+                  <h3 className="text-lg font-bold font-display text-foreground mb-3 flex items-center gap-2">
                     🚀 Transport Options
                   </h3>
                   <div className="space-y-3">
@@ -289,6 +295,7 @@ export default function Home() {
                       <TransportCard
                         key={idx}
                         option={opt}
+                        travelDate={itinerary.start_date}
                         isSelected={
                           itinerary.selected_transport?.code === opt.code &&
                           itinerary.selected_transport?.provider === opt.provider
@@ -324,7 +331,7 @@ export default function Home() {
           >
             <button
               onClick={handleNewTrip}
-              className="px-8 py-3 bg-gradient-to-r from-primary to-primary-light text-white
+              className="warm-button px-8 py-3 text-white
                          rounded-xl font-semibold hover:shadow-[0_0_30px_rgba(99,102,241,0.3)]
                          transition-all duration-300"
             >

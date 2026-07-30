@@ -64,6 +64,27 @@ class CityInfo(BaseModel):
     station_code: Optional[str] = None
 
 
+class DestinationPhoto(BaseModel):
+    url: str
+    alt: str
+    photographer_name: Optional[str] = None
+    photographer_url: Optional[str] = None
+
+
+class FestivalEvent(BaseModel):
+    name: str
+    start_date: date
+    end_date: date
+    description: str
+    travel_tip: str
+
+
+class PackingItem(BaseModel):
+    item: str
+    reason: str
+    category: str = "essentials"
+
+
 # ── Transport Models ───────────────────────────────────────────────────
 
 class TransportOption(BaseModel):
@@ -174,6 +195,9 @@ class Itinerary(BaseModel):
     budget: BudgetBreakdown
     route_segments: list[RouteSegment] = []
     weather_forecast: list[DayWeather] = []
+    destination_photos: list[DestinationPhoto] = []
+    festivals: list[FestivalEvent] = []
+    packing_list: list[PackingItem] = []
     share_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     generation_notes: list[str] = Field(

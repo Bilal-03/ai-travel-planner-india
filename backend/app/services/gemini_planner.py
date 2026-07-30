@@ -29,16 +29,20 @@ from app.models.trip import (
     TravelVibe,
     TripRequest,
     WeatherSeverity,
+    FestivalEvent,
+    PackingItem,
 )
 from app.services.geocoding import geocode_to_city_info, haversine_distance
 from app.services.poi_discovery import discover_pois
 from app.services.routing import get_route_segment, validate_day_feasibility
 from app.services.transport import search_transport
 from app.services.weather import get_forecast
+from app.services.festivals import get_festivals_for_trip
+from app.services.photos import get_destination_photos
 
 logger = logging.getLogger(__name__)
 
-MAX_REPAIR_ITERATIONS = 0
+MAX_REPAIR_ITERATIONS = 1
 
 SYSTEM_PROMPT = """You are an expert India domestic travel planner. You create detailed, practical, 
 budget-conscious day-by-day itineraries for travelers within India.
@@ -66,6 +70,7 @@ def _build_planning_prompt(
     transport_options: list[dict],
     weather: list[dict],
     distance_km: float,
+    festivals: list[dict],
 ) -> str:
     """Build the grounded planning prompt with real data."""
 
@@ -97,6 +102,12 @@ TRANSPORT OPTIONS (real data):
 
 WEATHER FORECAST:
 {json.dumps(weather, indent=2, default=str)}
+
+FESTIVALS OR EVENTS DURING THIS TRIP:
+{json.dumps(festivals, indent=2, default=str)}
+
+If events are present, factor in crowds, closures, booking lead times, and an
+optional respectful festival experience. Do not invent event dates.
 
 Respond with ONLY valid JSON in this exact format:
 {{
@@ -254,6 +265,9 @@ def _plan_to_itinerary(
     weather_forecast: list[DayWeather],
     route_segments: list[RouteSegment],
     notes: list[str],
+    destination_photos: list[dict] | None = None,
+    festivals: list[dict] | None = None,
+    packing_list: list[dict] | None = None,
 ) -> Itinerary:
     """Convert raw AI plan dict into structured Itinerary model."""
 
@@ -381,6 +395,9 @@ def _plan_to_itinerary(
         budget=budget_breakdown,
         route_segments=route_segments,
         weather_forecast=weather_forecast,
+        destination_photos=destination_photos or [],
+        festivals=[FestivalEvent(**festival) for festival in festivals or []],
+        packing_list=[PackingItem(**item) for item in packing_list or []],
         generation_notes=generation_notes,
     )
 
@@ -418,8 +435,8 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
     distance_km = haversine_distance(origin.coordinates, destination.coordinates)
     logger.info(f"📏 Distance: {distance_km:.0f} km")
 
-    # ── Step 3: Parallel data fetching (transport + POI + weather) ────
-    logger.info("🚂✈️📍🌤️ Fetching transport, POIs, and weather in parallel...")
+    # ── Step 3: Parallel data fetching (transport + POI + weather + images) ─
+    logger.info("🚂✈️📍🌤️🖼️ Fetching trip context in parallel...")
 
     transport_task = search_transport(
         origin=request.origin,
@@ -439,10 +456,12 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
         start_date=request.start_date.isoformat(),
         end_date=request.end_date.isoformat(),
     )
+    photos_task = get_destination_photos(destination.name)
 
-    transport_result, pois, weather_data = await asyncio.gather(
-        transport_task, poi_task, weather_task, return_exceptions=True,
+    transport_result, pois, weather_data, photos = await asyncio.gather(
+        transport_task, poi_task, weather_task, photos_task, return_exceptions=True,
     )
+    festivals = get_festivals_for_trip(destination.name, request.start_date, request.end_date)
 
     # Handle transport results
     if isinstance(transport_result, Exception):
@@ -474,6 +493,15 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
     if not weather_forecast:
         notes.append("Weather forecast unavailable — plan assumes good weather")
 
+    if isinstance(photos, Exception):
+        logger.warning(f"Destination photo search failed: {photos}")
+        photos = []
+    if not photos:
+        notes.append("Destination photography is unavailable — add an Unsplash key to enable it")
+
+    if festivals:
+        notes.append(f"Festival-aware planning: {', '.join(event['name'] for event in festivals)}")
+
     # ── Step 4: AI Planning ───────────────────────────────────────────
     logger.info("🤖 Generating itinerary with Gemini AI...")
 
@@ -485,6 +513,7 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
         transport_options=[t.model_dump() for t in transport_options],
         weather=weather_data or [],
         distance_km=distance_km,
+        festivals=festivals,
     )
 
     plan = await _call_gemini(prompt)
@@ -552,6 +581,8 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
         weather_forecast=weather_forecast,
         route_segments=route_segments,
         notes=notes,
+        destination_photos=photos,
+        festivals=festivals,
     )
 
     logger.info(f"✨ Itinerary generated: {itinerary.total_days} days, "
@@ -620,3 +651,129 @@ def _build_fallback_plan(
         },
         "tips": ["This is a basic itinerary — add your Gemini API key for AI-powered planning"],
     }
+
+
+def _itinerary_to_plan(itinerary: Itinerary) -> dict:
+    """Convert a persisted itinerary into the Gemini plan shape for refinement."""
+    return {
+        "day_plans": [
+            {
+                "day_number": day.day_number,
+                "date": day.date.isoformat(),
+                "notes": day.notes,
+                "activities": [
+                    {
+                        "name": activity.poi.name,
+                        "category": activity.poi.category,
+                        "lat": activity.poi.coordinates.lat,
+                        "lng": activity.poi.coordinates.lng,
+                        "start_time": activity.start_time,
+                        "end_time": activity.end_time,
+                        "estimated_cost": activity.estimated_cost,
+                        "notes": activity.notes,
+                        "is_backup": activity.is_backup,
+                    }
+                    for activity in day.activities
+                ],
+                "meals": [meal.model_dump() for meal in day.meals],
+                "backup_activities": [
+                    {
+                        "name": activity.poi.name,
+                        "category": activity.poi.category,
+                        "lat": activity.poi.coordinates.lat,
+                        "lng": activity.poi.coordinates.lng,
+                        "start_time": activity.start_time,
+                        "end_time": activity.end_time,
+                        "estimated_cost": activity.estimated_cost,
+                        "notes": activity.notes,
+                        "is_backup": True,
+                    }
+                    for activity in day.backup_activities
+                ],
+            }
+            for day in itinerary.day_plans
+        ],
+        "budget_breakdown": itinerary.budget.model_dump(exclude={"total_estimated", "remaining"}),
+        "tips": itinerary.generation_notes,
+    }
+
+
+async def refine_itinerary(itinerary: Itinerary, instruction: str) -> Itinerary:
+    """Apply one natural-language change while preserving the trip's structure."""
+    request = TripRequest(
+        origin=itinerary.origin.name,
+        destination=itinerary.destination.name,
+        start_date=itinerary.start_date,
+        end_date=itinerary.end_date,
+        budget=itinerary.budget.total_estimated + itinerary.budget.remaining,
+        vibes=itinerary.vibes,
+    )
+    existing_plan = _itinerary_to_plan(itinerary)
+    prompt = f"""Update this India itinerary according to the traveller's request.
+
+TRAVELLER REQUEST: {instruction}
+
+CURRENT ITINERARY JSON:
+{json.dumps(existing_plan, indent=2, default=str)}
+
+Keep dates and the overall JSON schema unchanged. Preserve useful activities unless
+the request asks to replace them. Keep costs realistic in INR, retain three meals
+per day, and return ONLY a valid JSON object matching the current itinerary schema.
+"""
+    refined_plan = await _call_gemini(prompt)
+    if not refined_plan:
+        itinerary.generation_notes.append("Could not apply that AI refinement right now. Please try again.")
+        return itinerary
+
+    issues = _validate_plan(refined_plan, request)
+    if issues:
+        repaired = await _call_gemini(_build_repair_prompt(issues, json.dumps(refined_plan, default=str)))
+        if repaired:
+            refined_plan = repaired
+
+    refined = _plan_to_itinerary(
+        plan=refined_plan,
+        request=request,
+        origin=itinerary.origin,
+        destination=itinerary.destination,
+        transport_options=itinerary.transport_options,
+        weather_forecast=itinerary.weather_forecast,
+        route_segments=itinerary.route_segments,
+        notes=[f"AI refinement applied: {instruction}"],
+        destination_photos=[photo.model_dump() for photo in itinerary.destination_photos],
+        festivals=[festival.model_dump() for festival in itinerary.festivals],
+        packing_list=[item.model_dump() for item in itinerary.packing_list],
+    )
+    refined.id = itinerary.id
+    return refined
+
+
+async def generate_packing_list(itinerary: Itinerary) -> list[PackingItem]:
+    """Generate a concise, context-aware packing checklist with an offline fallback."""
+    prompt = f"""Create a practical packing list for this India trip.
+Destination: {itinerary.destination.name}, {itinerary.destination.state or 'India'}
+Dates: {itinerary.start_date} to {itinerary.end_date}
+Vibes: {', '.join(v.value for v in itinerary.vibes)}
+Weather: {json.dumps([weather.model_dump(mode='json') for weather in itinerary.weather_forecast], default=str)}
+
+Return ONLY JSON: {{"items": [{{"item": "", "reason": "", "category": "essentials|clothing|health|activity"}}]}}.
+Include 8–14 specific, practical items; avoid generic filler."""
+    response = await _call_gemini(prompt)
+    if response and isinstance(response.get("items"), list):
+        items = [PackingItem(**item) for item in response["items"][:14] if item.get("item")]
+        if items:
+            return items
+
+    month = itinerary.start_date.month
+    seasonal_item = (
+        PackingItem(item="Light rain jacket", reason="Monsoon showers are common during this season.", category="clothing")
+        if month in {6, 7, 8, 9}
+        else PackingItem(item="Sunscreen and cap", reason="Useful for long daytime sightseeing.", category="health")
+    )
+    return [
+        PackingItem(item="Government photo ID", reason="Required for transport and many hotels."),
+        PackingItem(item="Reusable water bottle", reason="Stay hydrated while sightseeing."),
+        PackingItem(item="Comfortable walking shoes", reason="Most itineraries involve substantial walking.", category="clothing"),
+        PackingItem(item="Power bank and charging cable", reason="Maps, tickets, and photos use battery.", category="essentials"),
+        seasonal_item,
+    ]
