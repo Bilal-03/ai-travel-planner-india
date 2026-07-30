@@ -178,7 +178,7 @@ export default function TripForm({ onSubmit, isLoading, initialDestination = "" 
           type="range"
           min={1000}
           max={100000}
-          step={1000}
+          step={500}
           value={budget}
           onChange={(e) => setBudget(Number(e.target.value))}
           className="w-full cursor-pointer"

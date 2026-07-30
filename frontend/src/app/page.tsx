@@ -158,7 +158,7 @@ export default function Home() {
           )}
 
           <DestinationPosters onSelect={chooseDestination} />
-          <footer className="reference-footer"><div className="reference-wrap"><div className="reference-brand"><span>Yatra<span>AI</span></span><small>Ghoomte raho</small></div><p>Built for the way India travels.</p><a href="https://github.com/Bilal-03/ai-travel-planner-india" target="_blank" rel="noreferrer">View source ↗</a></div></footer>
+          <footer className="reference-footer"><div className="reference-wrap"><div className="reference-brand"><span>Yatra<span>AI</span></span><small>Ghoomte raho</small></div><nav className="reference-footer-links"><a href="#plan">Plan a trip</a><a href="#destinations">Destinations</a><a href="https://github.com/Bilal-03/ai-travel-planner-india" target="_blank" rel="noreferrer">GitHub</a></nav><p>Built for the next Indian trip · 100% free-tier</p></div></footer>
         </section>
       )}
 
