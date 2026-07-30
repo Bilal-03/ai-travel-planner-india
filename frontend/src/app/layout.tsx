@@ -1,15 +1,21 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display } from "next/font/google";
+import { Manrope, Space_Mono, Teko } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
   display: "swap",
 });
 
-const playfair = Playfair_Display({
-  variable: "--font-playfair",
+const teko = Teko({
+  variable: "--font-teko",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const spaceMono = Space_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
   display: "swap",
 });
@@ -39,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${playfair.variable}`}>
+    <html lang="en" className={`${manrope.variable} ${teko.variable} ${spaceMono.variable}`}>
       <head>
         <meta name="color-scheme" content="dark" />
         <link

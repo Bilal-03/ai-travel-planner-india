@@ -10,6 +10,8 @@ import TransportCard from "@/components/TransportCard";
 import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
 import TripEnhancements from "@/components/TripEnhancements";
+import DepartureBoard from "@/components/DepartureBoard";
+import DestinationPosters from "@/components/DestinationPosters";
 import {
   api,
   Itinerary,
@@ -90,41 +92,23 @@ export default function Home() {
     <main className="min-h-screen">
       {/* ── Hero Section ─────────────────────────────────────────── */}
       {!itinerary && (
-        <section className="gradient-hero min-h-screen flex flex-col items-center justify-center px-4 py-20">
-          {/* Brand */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="text-center mb-10"
-          >
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <motion.span
-                className="text-5xl"
-                animate={{ y: [0, -8, 0] }}
-                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-              >
-                ✈️
-              </motion.span>
-              <h1 className="font-display text-5xl md:text-7xl font-bold">
-                <span className="gradient-text">YatraAI</span>
-              </h1>
-            </div>
-            <p className="section-eyebrow mb-4">India, thoughtfully explored</p>
-            <p className="text-xl md:text-2xl text-foreground-secondary max-w-xl mx-auto text-balance">
-              Plan your perfect India trip with AI — personalized itineraries in seconds
-            </p>
-            <p className="text-sm text-foreground-muted mt-3">
-              🇮🇳 Domestic India Only • 100% Free • No Signup Required
-            </p>
-          </motion.div>
+        <section className="gradient-hero">
+          <nav className="border-b border-glass-border bg-background/70 px-4 backdrop-blur"><div className="mx-auto flex max-w-6xl items-center justify-between py-4"><span className="font-display text-3xl text-foreground">YatraAI</span><span className="font-ticket text-[10px] tracking-[.14em] text-foreground-muted">INDIA TRAVEL PLANNER</span><a href="#plan" className="font-ticket border border-glass-border px-3 py-2 text-[10px] tracking-[.1em] text-accent">PLAN A TRIP</a></div></nav>
+          <div className="mx-auto grid max-w-6xl gap-10 px-4 pb-16 pt-16 lg:grid-cols-[1.05fr_.95fr] lg:items-center">
+            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .55 }}>
+              <p className="section-eyebrow">Your India, your way</p>
+              <h1 className="font-display mt-4 text-6xl text-foreground sm:text-7xl md:text-8xl">WHERE ARE<br />WE <span className="text-accent">HEADING</span><br />TODAY?</h1>
+              <p className="mt-6 max-w-lg text-base font-medium leading-7 text-foreground-secondary">A thoughtful AI trip planner for journeys worth taking slowly—built around your dates, budget, travel vibe, and the way India actually moves.</p>
+              <div className="mt-8 flex flex-wrap gap-3"><a href="#plan" className="font-ticket bg-accent px-5 py-4 text-xs font-bold tracking-[.08em] text-[#24160a]">PLAN MY JOURNEY →</a><a href="#destinations" className="font-ticket border border-glass-border px-5 py-4 text-xs tracking-[.08em] text-foreground">EXPLORE DESTINATIONS</a></div>
+              <p className="font-ticket mt-5 text-[10px] tracking-[.08em] text-foreground-muted">DOMESTIC INDIA ONLY · NO SIGNUP · BUILT FOR REAL JOURNEYS</p>
+            </motion.div>
+            <DepartureBoard />
+          </div>
 
-          {/* Trip Form */}
-          {!isGenerating ? (
-            <TripForm onSubmit={handleSubmit} isLoading={isGenerating} />
-          ) : (
-            <LoadingState />
-          )}
+          <div id="plan" className="mx-auto max-w-6xl px-4 pb-20">
+            <div className="ticket-stub p-6 md:p-8"><div className="mb-5 flex items-center justify-between"><div><p className="section-eyebrow">Issue your ticket</p><h2 className="font-display mt-1 text-4xl text-foreground">Plan the route</h2></div><span className="font-ticket text-xs text-foreground-muted">YATRA / 01</span></div>
+            {!isGenerating ? <TripForm onSubmit={handleSubmit} isLoading={isGenerating} /> : <LoadingState />}</div>
+          </div>
 
           {/* Error */}
           {error && (
@@ -149,25 +133,22 @@ export default function Home() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4 }}
-              className="mt-20 max-w-5xl mx-auto"
+              className="rail-features mx-auto max-w-6xl px-4 pb-20"
             >
-              <h2 className="text-center text-2xl font-bold font-[family-name:var(--font-outfit)] text-foreground mb-8">
-                Why YatraAI?
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <p className="section-eyebrow text-center">Everything you need, on one route</p><h2 className="font-display mb-10 mt-2 text-center text-5xl text-foreground">Travel, connected</h2>
+              <div className="grid grid-cols-2 gap-5 md:grid-cols-3">
                 {FEATURES.map((feature, idx) => (
                   <motion.div
                     key={feature.title}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.5 + idx * 0.1 }}
-                    className="glass glass-hover p-5 rounded-xl"
+                    className="rail-stop px-3 text-center"
                   >
-                    <div className="text-3xl mb-3">{feature.icon}</div>
-                    <h3 className="font-semibold text-foreground mb-1">
+                    <div className="text-2xl mb-2">{feature.icon}</div><h3 className="font-ticket text-xs font-bold tracking-[.08em] text-foreground mb-2">
                       {feature.title}
                     </h3>
-                    <p className="text-sm text-foreground-muted">
+                    <p className="text-xs leading-5 text-foreground-muted">
                       {feature.desc}
                     </p>
                   </motion.div>
@@ -176,13 +157,8 @@ export default function Home() {
             </motion.div>
           )}
 
-          {/* Footer */}
-          <div className="mt-16 text-center text-xs text-foreground-muted">
-            <p>
-              Built with 💜 using Gemini AI • OpenStreetMap • Amadeus • OpenWeatherMap
-            </p>
-            <p className="mt-1">Entirely free-tier powered — no credit card needed</p>
-          </div>
+          <div id="destinations"><DestinationPosters /></div>
+          <div className="pb-10 text-center font-ticket text-[10px] tracking-[.08em] text-foreground-muted"><p>BUILT WITH GEMINI AI · OPENSTREETMAP · OPENWEATHERMAP</p></div>
         </section>
       )}
 
