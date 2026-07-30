@@ -8,6 +8,7 @@ import { TravelVibe, TripRequest, getVibeEmoji } from "@/lib/api";
 interface TripFormProps {
   onSubmit: (data: TripRequest) => void;
   isLoading: boolean;
+  initialDestination?: string;
 }
 
 const VIBES: { value: TravelVibe; label: string; desc: string }[] = [
@@ -25,11 +26,11 @@ function formatBudgetLabel(value: number): string {
   return `₹${value}`;
 }
 
-export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
+export default function TripForm({ onSubmit, isLoading, initialDestination = "" }: TripFormProps) {
   const [origin, setOrigin] = useState("");
-  const [destination, setDestination] = useState("");
+  const [destination, setDestination] = useState(initialDestination);
   const [isOriginSelected, setIsOriginSelected] = useState(false);
-  const [isDestinationSelected, setIsDestinationSelected] = useState(false);
+  const [isDestinationSelected, setIsDestinationSelected] = useState(Boolean(initialDestination));
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [budget, setBudget] = useState(15000);
@@ -78,23 +79,19 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className="glass heritage-card gradient-border p-6 md:p-8 rounded-2xl max-w-2xl mx-auto space-y-6"
+      className="planner-ticket"
       id="trip-form"
     >
-      <div className="text-center mb-2">
-        <h2
-          className="font-display text-2xl md:text-3xl font-bold gradient-text"
-        >
-          Plan Your Journey
-        </h2>
-        <p className="text-foreground-muted text-sm mt-1">
-          Tell us where you want to go and we'll plan the perfect trip
-        </p>
+      <div className="planner-main">
+      <div className="mb-8">
+        <p className="section-eyebrow">Book the plan, not just the ticket</p>
+        <h2 className="font-display mt-3 text-5xl text-foreground">Plan your journey</h2>
+        <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-foreground-secondary">Tell us where you&apos;re starting, where you&apos;re headed, and what the trip is for. YatraAI handles the rest.</p>
       </div>
 
       {/* Origin & Destination */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="relative z-20">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div className="relative z-20 planner-field">
           <CityAutocomplete
             label="From"
             placeholder="e.g. Delhi"
@@ -108,7 +105,7 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
             <p className="text-error text-xs mt-1">{errors.origin}</p>
           )}
         </div>
-        <div className="relative z-10">
+        <div className="relative z-10 planner-field">
           <CityAutocomplete
             label="To"
             placeholder="e.g. Goa"
@@ -125,10 +122,10 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
       </div>
 
       {/* Dates */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
+      <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div className="planner-field">
           <label htmlFor="start-date" className="block text-sm font-medium text-foreground-secondary mb-2">
-            Start Date
+            Depart
           </label>
           <input
             id="start-date"
@@ -144,9 +141,9 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
             <p className="text-error text-xs mt-1">{errors.startDate}</p>
           )}
         </div>
-        <div>
+        <div className="planner-field">
           <label htmlFor="end-date" className="block text-sm font-medium text-foreground-secondary mb-2">
-            End Date
+            Return
           </label>
           <input
             id="end-date"
@@ -165,7 +162,7 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
       </div>
 
       {/* Budget Slider */}
-      <div>
+      <div className="planner-budget mt-6">
         <label htmlFor="budget-slider" className="block text-sm font-medium text-foreground-secondary mb-2">
           Budget
         </label>
@@ -193,11 +190,11 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
       </div>
 
       {/* Vibe Selector */}
-      <div>
+      <div className="planner-vibes mt-7">
         <label className="block text-sm font-medium text-foreground-secondary mb-3">
           Travel Vibe
         </label>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="flex flex-wrap gap-2">
           {VIBES.map((vibe) => {
             const isSelected = selectedVibes.includes(vibe.value);
             return (
@@ -208,20 +205,18 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
                 className={`
-                  p-3 rounded-xl border text-left transition-all duration-200
+                  planner-vibe transition-all duration-200
                   ${
                     isSelected
-                      ? "border-primary bg-primary/15 shadow-[0_0_20px_rgba(99,102,241,0.15)]"
-                      : "border-glass-border bg-glass-bg hover:border-glass-highlight"
+                      ? "active"
+                      : ""
                   }
                 `}
                 id={`vibe-${vibe.value}`}
               >
-                <div className="text-2xl mb-1">{getVibeEmoji(vibe.value)}</div>
-                <div className="font-medium text-sm text-foreground">
+                <span className="mr-1">{getVibeEmoji(vibe.value)}</span><span>
                   {vibe.label}
-                </div>
-                <div className="text-xs text-foreground-muted">{vibe.desc}</div>
+                </span>
               </motion.button>
             );
           })}
@@ -238,13 +233,12 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
         whileHover={isLoading ? {} : { scale: 1.02 }}
         whileTap={isLoading ? {} : { scale: 0.98 }}
         className={`
-          w-full py-4 rounded-xl font-semibold text-lg transition-all duration-300
+          planner-submit transition-all duration-300
           ${
             isLoading
-              ? "bg-primary/50 cursor-not-allowed"
-              : "warm-button hover:brightness-110"
+              ? "opacity-50 cursor-not-allowed"
+              : ""
           }
-          text-white
         `}
         id="generate-trip-btn"
       >
@@ -257,9 +251,11 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
             Planning your trip...
           </span>
         ) : (
-          "✨ Generate My Itinerary"
+          "Generate itinerary"
         )}
       </motion.button>
+      </div>
+      <div className="planner-stub" aria-hidden="true"><span>Boarding · YatraAI · Domestic India</span></div>
     </motion.form>
   );
 }

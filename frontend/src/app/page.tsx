@@ -27,34 +27,34 @@ const TripMap = dynamic(() => import("@/components/TripMap"), { ssr: false });
 
 const FEATURES = [
   {
-    icon: "🤖",
-    title: "AI-Powered",
-    desc: "Gemini AI creates personalized day-by-day plans grounded in real data",
+    icon: "🧭",
+    title: "Plans grounded in real places",
+    desc: "Gemini builds a day-by-day route around actual stays, food, sights, and the way cities connect.",
   },
   {
     icon: "✈️🚂",
-    title: "Flights & Trains",
-    desc: "Compare flights and trains with smart recommendations based on budget",
+    title: "Flights and trains, side by side",
+    desc: "See the practical choice for your route before you commit — time, price, and trade-offs included.",
   },
   {
-    icon: "🗺️",
-    title: "Interactive Maps",
-    desc: "Visualize your trip on beautiful maps with routes and POI markers",
-  },
-  {
-    icon: "🌤️",
-    title: "Weather-Aware",
-    desc: "Plans adapt to weather forecasts with indoor backup activities",
+    icon: "⛅",
+    title: "Built around the weather",
+    desc: "Forecast-aware suggestions with indoor backups, so one rainy afternoon does not derail a whole day.",
   },
   {
     icon: "💰",
-    title: "Budget Tracking",
-    desc: "Visual budget breakdown ensures you stay within your spending limits",
+    title: "A budget that holds",
+    desc: "Transport, stays, meals, and activities in one honest number — not a vague “starting from” price.",
+  },
+  {
+    icon: "🗺️",
+    title: "Every stop, on the map",
+    desc: "See how your days fit together geographically before you are standing in the wrong part of town.",
   },
   {
     icon: "🔗",
-    title: "Share Instantly",
-    desc: "Share your trip via link, WhatsApp, Twitter, or QR code — no signup",
+    title: "One link, no sign-up",
+    desc: "Share a finished itinerary with the people you are travelling with. They can open it anywhere.",
   },
 ];
 
@@ -62,6 +62,7 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [suggestedDestination, setSuggestedDestination] = useState("");
 
   const handleSubmit = async (data: TripRequest) => {
     setIsGenerating(true);
@@ -88,27 +89,31 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const chooseDestination = (destination: string) => {
+    setSuggestedDestination(destination);
+    window.setTimeout(() => document.getElementById("plan")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+
   return (
     <main className="min-h-screen">
       {/* ── Hero Section ─────────────────────────────────────────── */}
       {!itinerary && (
-        <section className="gradient-hero">
-          <nav className="border-b border-glass-border bg-background/70 px-4 backdrop-blur"><div className="mx-auto flex max-w-6xl items-center justify-between py-4"><span className="font-display text-3xl text-foreground">YatraAI</span><span className="font-ticket text-[10px] tracking-[.14em] text-foreground-muted">INDIA TRAVEL PLANNER</span><a href="#plan" className="font-ticket border border-glass-border px-3 py-2 text-[10px] tracking-[.1em] text-accent">PLAN A TRIP</a></div></nav>
-          <div className="mx-auto grid max-w-6xl gap-10 px-4 pb-16 pt-16 lg:grid-cols-[1.05fr_.95fr] lg:items-center">
+        <section className="reference-home">
+          <nav className="reference-nav"><div className="reference-wrap reference-nav-inner"><div className="reference-brand"><span>Yatra<span>AI</span></span><small>Ghoomte raho</small></div><a href="#plan" className="reference-nav-cta">Plan a trip <span>→</span></a></div></nav>
+          <div className="reference-wrap reference-hero-grid">
             <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .55 }}>
-              <p className="section-eyebrow">Your India, your way</p>
-              <h1 className="font-display mt-4 text-6xl text-foreground sm:text-7xl md:text-8xl">WHERE ARE<br />WE <span className="text-accent">HEADING</span><br />TODAY?</h1>
-              <p className="mt-6 max-w-lg text-base font-medium leading-7 text-foreground-secondary">A thoughtful AI trip planner for journeys worth taking slowly—built around your dates, budget, travel vibe, and the way India actually moves.</p>
-              <div className="mt-8 flex flex-wrap gap-3"><a href="#plan" className="font-ticket bg-accent px-5 py-4 text-xs font-bold tracking-[.08em] text-[#24160a]">PLAN MY JOURNEY →</a><a href="#destinations" className="font-ticket border border-glass-border px-5 py-4 text-xs tracking-[.08em] text-foreground">EXPLORE DESTINATIONS</a></div>
-              <p className="font-ticket mt-5 text-[10px] tracking-[.08em] text-foreground-muted">DOMESTIC INDIA ONLY · NO SIGNUP · BUILT FOR REAL JOURNEYS</p>
+              <p className="reference-eyebrow">India, end to end</p>
+              <h1 className="reference-hero-title">Namaste.<br />Where are we<br /><span>heading today?</span></h1>
+              <p className="reference-hero-copy">Give YatraAI your cities and dates. It plans the routes, the stays, the food, and a budget that actually adds up — grounded in real places, not a generic listicle.</p>
+              <div className="reference-hero-actions"><a href="#plan" className="reference-primary-cta">Plan my journey <span>→</span></a><a href="#destinations" className="reference-secondary-cta">Explore destinations</a></div>
+              <p className="reference-hero-note">No sign-up · Free to plan · Built for domestic India travel</p>
             </motion.div>
             <DepartureBoard />
           </div>
 
-          <div id="plan" className="mx-auto max-w-6xl px-4 pb-20">
-            <div className="ticket-stub p-6 md:p-8"><div className="mb-5 flex items-center justify-between"><div><p className="section-eyebrow">Issue your ticket</p><h2 className="font-display mt-1 text-4xl text-foreground">Plan the route</h2></div><span className="font-ticket text-xs text-foreground-muted">YATRA / 01</span></div>
-            {!isGenerating ? <TripForm onSubmit={handleSubmit} isLoading={isGenerating} /> : <LoadingState />}</div>
-          </div>
+          <div id="plan" className="reference-ticket-section"><div className="reference-wrap">
+            {!isGenerating ? <TripForm key={suggestedDestination} onSubmit={handleSubmit} isLoading={isGenerating} initialDestination={suggestedDestination} /> : <LoadingState />}
+          </div></div>
 
           {/* Error */}
           {error && (
@@ -133,32 +138,27 @@ export default function Home() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4 }}
-              className="rail-features mx-auto max-w-6xl px-4 pb-20"
+              className="reference-features"
             >
-              <p className="section-eyebrow text-center">Everything you need, on one route</p><h2 className="font-display mb-10 mt-2 text-center text-5xl text-foreground">Travel, connected</h2>
-              <div className="grid grid-cols-2 gap-5 md:grid-cols-3">
+              <div className="reference-wrap"><div className="reference-feature-heading"><p className="reference-eyebrow">How it helps</p><h2>Everything a trip needs,<br />in one line</h2><p>Not another list of places. A trip that makes sense from the moment you leave home to the moment you return.</p></div>
+              <div className="reference-rail">
                 {FEATURES.map((feature, idx) => (
                   <motion.div
                     key={feature.title}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.5 + idx * 0.1 }}
-                    className="rail-stop px-3 text-center"
+                    className="reference-rail-stop"
                   >
-                    <div className="text-2xl mb-2">{feature.icon}</div><h3 className="font-ticket text-xs font-bold tracking-[.08em] text-foreground mb-2">
-                      {feature.title}
-                    </h3>
-                    <p className="text-xs leading-5 text-foreground-muted">
-                      {feature.desc}
-                    </p>
+                    <div className="reference-stop-dot" /><div className="reference-stop-icon">{feature.icon}</div><h3>{feature.title}</h3><p>{feature.desc}</p>
                   </motion.div>
                 ))}
-              </div>
+              </div></div>
             </motion.div>
           )}
 
-          <div id="destinations"><DestinationPosters /></div>
-          <div className="pb-10 text-center font-ticket text-[10px] tracking-[.08em] text-foreground-muted"><p>BUILT WITH GEMINI AI · OPENSTREETMAP · OPENWEATHERMAP</p></div>
+          <DestinationPosters onSelect={chooseDestination} />
+          <footer className="reference-footer"><div className="reference-wrap"><div className="reference-brand"><span>Yatra<span>AI</span></span><small>Ghoomte raho</small></div><p>Built for the way India travels.</p><a href="https://github.com/Bilal-03/ai-travel-planner-india" target="_blank" rel="noreferrer">View source ↗</a></div></footer>
         </section>
       )}
 
