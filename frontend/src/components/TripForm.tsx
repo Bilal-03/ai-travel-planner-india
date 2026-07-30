@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import CityAutocomplete from "./CityAutocomplete";
-import { TravelVibe, TripRequest, getVibeEmoji } from "@/lib/api";
+import { TravelVibe, TripRequest } from "@/lib/api";
 
 interface TripFormProps {
   onSubmit: (data: TripRequest) => void;
@@ -20,11 +20,7 @@ const VIBES: { value: TravelVibe; label: string; desc: string }[] = [
   { value: "nightlife", label: "Nightlife", desc: "Bars & clubs" },
 ];
 
-function formatBudgetLabel(value: number): string {
-  if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`;
-  if (value >= 1000) return `₹${(value / 1000).toFixed(0)}K`;
-  return `₹${value}`;
-}
+function formatBudgetLabel(value: number): string { return `₹${value.toLocaleString("en-IN")}`; }
 
 export default function TripForm({ onSubmit, isLoading, initialDestination = "" }: TripFormProps) {
   const [origin, setOrigin] = useState("");
@@ -98,7 +94,6 @@ export default function TripForm({ onSubmit, isLoading, initialDestination = "" 
             value={origin}
             onChange={setOrigin}
             onSelectionChange={setIsOriginSelected}
-            icon="🛫"
             id="origin-city"
           />
           {errors.origin && (
@@ -112,7 +107,6 @@ export default function TripForm({ onSubmit, isLoading, initialDestination = "" 
             value={destination}
             onChange={setDestination}
             onSelectionChange={setIsDestinationSelected}
-            icon="🛬"
             id="destination-city"
           />
           {errors.destination && (
@@ -163,15 +157,12 @@ export default function TripForm({ onSubmit, isLoading, initialDestination = "" 
 
       {/* Budget Slider */}
       <div className="planner-budget mt-6">
-        <label htmlFor="budget-slider" className="block text-sm font-medium text-foreground-secondary mb-2">
+        <div className="flex items-center justify-between mb-2"><label htmlFor="budget-slider" className="block text-sm font-medium text-foreground-secondary">
           Budget
         </label>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-foreground-muted text-xs">₹1,000</span>
           <span className="text-xl font-bold gradient-text">
             {formatBudgetLabel(budget)}
           </span>
-          <span className="text-foreground-muted text-xs">₹1,00,000</span>
         </div>
         <input
           id="budget-slider"
@@ -183,10 +174,6 @@ export default function TripForm({ onSubmit, isLoading, initialDestination = "" 
           onChange={(e) => setBudget(Number(e.target.value))}
           className="w-full cursor-pointer"
         />
-        <div className="flex justify-between text-xs text-foreground-muted mt-1">
-          <span>Budget</span>
-          <span>Luxury</span>
-        </div>
       </div>
 
       {/* Vibe Selector */}
@@ -214,9 +201,7 @@ export default function TripForm({ onSubmit, isLoading, initialDestination = "" 
                 `}
                 id={`vibe-${vibe.value}`}
               >
-                <span className="mr-1">{getVibeEmoji(vibe.value)}</span><span>
-                  {vibe.label}
-                </span>
+                {vibe.label}
               </motion.button>
             );
           })}

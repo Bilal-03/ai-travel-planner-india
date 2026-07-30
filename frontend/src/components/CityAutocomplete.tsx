@@ -9,7 +9,7 @@ interface CityAutocompleteProps {
   value: string;
   onChange: (city: string) => void;
   onSelectionChange?: (selected: boolean) => void;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   id: string;
 }
 
@@ -106,9 +106,7 @@ export default function CityAutocomplete({
         {label}
       </label>
       <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground-muted text-lg">
-          {icon}
-        </span>
+        {icon && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground-muted text-lg">{icon}</span>}
         <input
           id={id}
           type="text"
@@ -123,10 +121,10 @@ export default function CityAutocomplete({
           aria-expanded={isOpen}
           aria-controls={`${id}-results`}
           aria-activedescendant={activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
-          className="w-full pl-10 pr-4 py-3 bg-glass-bg border border-glass-border rounded-xl
+          className={`w-full ${icon ? "pl-10" : "px-4"} pr-4 py-3 bg-glass-bg border border-glass-border rounded-xl
                      text-foreground placeholder:text-foreground-muted
                      focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30
-                     transition-all duration-200"
+                     transition-all duration-200`}
         />
         {isLoading && (
           <span className="absolute right-3 top-1/2 -translate-y-1/2">
