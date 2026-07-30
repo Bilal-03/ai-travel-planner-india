@@ -16,6 +16,7 @@ const teko = Teko({
 
 const spaceMono = Space_Mono({
   variable: "--font-mono",
+  weight: ["400", "700"],
   subsets: ["latin"],
   display: "swap",
 });
