@@ -4,12 +4,14 @@ import "./globals.css";
 
 const manrope = Manrope({
   variable: "--font-manrope",
+  weight: ["400", "500", "600", "700", "800"],
   subsets: ["latin"],
   display: "swap",
 });
 
 const teko = Teko({
   variable: "--font-teko",
+  weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
   display: "swap",
 });
