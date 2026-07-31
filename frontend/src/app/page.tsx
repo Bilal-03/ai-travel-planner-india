@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
-import HomeHero from "@/components/home/HomeHero";
+import HomeHero from "@/components/HomeHero";
 import TripForm from "@/components/TripForm";
-import FeaturesRail from "@/components/home/FeaturesRail";
-import DestinationPostcards from "@/components/home/DestinationPostcards";
+import FeaturesRail from "@/components/FeaturesRail";
+import DestinationPostcards from "@/components/DestinationPostcards";
 import LoadingState from "@/components/LoadingState";
 import ItineraryTimeline from "@/components/ItineraryTimeline";
 import TransportCard from "@/components/TransportCard";
