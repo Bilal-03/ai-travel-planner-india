@@ -1,25 +1,35 @@
 import type { Metadata } from "next";
-import { Manrope, Space_Mono, Teko } from "next/font/google";
+import { Inter, Outfit, Teko, Space_Mono } from "next/font/google";
 import "./globals.css";
 
-const manrope = Manrope({
-  variable: "--font-manrope",
-  weight: ["400", "500", "600", "700", "800"],
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
   display: "swap",
 });
 
+const outfit = Outfit({
+  variable: "--font-outfit",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+// Used by the homepage: condensed display face for the hero + departure
+// board (Teko is designed by an Indian type foundry — ties the headline
+// treatment back to railway signage rather than a generic SaaS look).
 const teko = Teko({
   variable: "--font-teko",
-  weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
+  weight: ["500", "600", "700"],
   display: "swap",
 });
 
+// Used for ticket/board data — fares, codes, labels — anywhere the copy
+// wants to read like a boarding pass rather than body prose.
 const spaceMono = Space_Mono({
-  variable: "--font-mono",
-  weight: ["400", "700"],
+  variable: "--font-space-mono",
   subsets: ["latin"],
+  weight: ["400", "700"],
   display: "swap",
 });
 
@@ -48,7 +58,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${manrope.variable} ${teko.variable} ${spaceMono.variable}`}>
+    <html
+      lang="en"
+      className={`${inter.variable} ${outfit.variable} ${teko.variable} ${spaceMono.variable}`}
+    >
       <head>
         <meta name="color-scheme" content="dark" />
         <link

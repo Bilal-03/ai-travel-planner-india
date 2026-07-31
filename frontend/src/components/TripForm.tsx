@@ -3,12 +3,11 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import CityAutocomplete from "./CityAutocomplete";
-import { TravelVibe, TripRequest } from "@/lib/api";
+import { TravelVibe, TripRequest, getVibeEmoji } from "@/lib/api";
 
 interface TripFormProps {
   onSubmit: (data: TripRequest) => void;
   isLoading: boolean;
-  initialDestination?: string;
 }
 
 const VIBES: { value: TravelVibe; label: string; desc: string }[] = [
@@ -20,13 +19,15 @@ const VIBES: { value: TravelVibe; label: string; desc: string }[] = [
   { value: "nightlife", label: "Nightlife", desc: "Bars & clubs" },
 ];
 
-function formatBudgetLabel(value: number): string { return `₹${value.toLocaleString("en-IN")}`; }
+function formatBudgetLabel(value: number): string {
+  if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`;
+  if (value >= 1000) return `₹${(value / 1000).toFixed(0)}K`;
+  return `₹${value}`;
+}
 
-export default function TripForm({ onSubmit, isLoading, initialDestination = "" }: TripFormProps) {
+export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
   const [origin, setOrigin] = useState("");
-  const [destination, setDestination] = useState(initialDestination);
-  const [isOriginSelected, setIsOriginSelected] = useState(false);
-  const [isDestinationSelected, setIsDestinationSelected] = useState(Boolean(initialDestination));
+  const [destination, setDestination] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [budget, setBudget] = useState(15000);
@@ -41,8 +42,8 @@ export default function TripForm({ onSubmit, isLoading, initialDestination = "" 
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
-    if (!origin || !isOriginSelected) newErrors.origin = "Choose an origin from the suggestions";
-    if (!destination || !isDestinationSelected) newErrors.destination = "Choose a destination from the suggestions";
+    if (!origin) newErrors.origin = "Select an origin city";
+    if (!destination) newErrors.destination = "Select a destination city";
     if (!startDate) newErrors.startDate = "Pick a start date";
     if (!endDate) newErrors.endDate = "Pick an end date";
     if (startDate && endDate && new Date(endDate) <= new Date(startDate)) {
@@ -70,177 +71,190 @@ export default function TripForm({ onSubmit, isLoading, initialDestination = "" 
   const today = new Date().toISOString().split("T")[0];
 
   return (
-    <motion.form
-      onSubmit={handleSubmit}
+    <motion.div
       initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className="planner-ticket"
-      id="trip-form"
+      className="max-w-3xl mx-auto rounded-xl overflow-hidden border border-glass-border shadow-[0_40px_80px_-30px_rgba(0,0,0,0.55)] grid grid-cols-1 md:grid-cols-[1fr_180px]"
     >
-      <div className="planner-main">
-      <div className="mb-8">
-        <p className="section-eyebrow">Book the plan, not just the ticket</p>
-        <h2 className="font-display mt-3 text-5xl text-foreground">Plan your journey</h2>
-        <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-foreground-secondary">Tell us where you&apos;re starting, where you&apos;re headed, and what the trip is for. YatraAI handles the rest.</p>
-      </div>
-
-      {/* Origin & Destination */}
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-        <div className="relative z-20 planner-field">
-          <CityAutocomplete
-            label="From"
-            placeholder="e.g. Delhi"
-            value={origin}
-            onChange={setOrigin}
-            onSelectionChange={setIsOriginSelected}
-            id="origin-city"
-          />
-          {errors.origin && (
-            <p className="text-error text-xs mt-1">{errors.origin}</p>
-          )}
-        </div>
-        <div className="relative z-10 planner-field">
-          <CityAutocomplete
-            label="To"
-            placeholder="e.g. Goa"
-            value={destination}
-            onChange={setDestination}
-            onSelectionChange={setIsDestinationSelected}
-            id="destination-city"
-          />
-          {errors.destination && (
-            <p className="text-error text-xs mt-1">{errors.destination}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Dates */}
-      <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
-        <div className="planner-field">
-          <label htmlFor="start-date" className="block text-sm font-medium text-foreground-secondary mb-2">
-            Depart
-          </label>
-          <input
-            id="start-date"
-            type="date"
-            value={startDate}
-            min={today}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full px-4 py-3 bg-glass-bg border border-glass-border rounded-xl
-                       text-foreground focus:outline-none focus:border-primary focus:ring-1
-                       focus:ring-primary/30 transition-all duration-200"
-          />
-          {errors.startDate && (
-            <p className="text-error text-xs mt-1">{errors.startDate}</p>
-          )}
-        </div>
-        <div className="planner-field">
-          <label htmlFor="end-date" className="block text-sm font-medium text-foreground-secondary mb-2">
-            Return
-          </label>
-          <input
-            id="end-date"
-            type="date"
-            value={endDate}
-            min={startDate || today}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-full px-4 py-3 bg-glass-bg border border-glass-border rounded-xl
-                       text-foreground focus:outline-none focus:border-primary focus:ring-1
-                       focus:ring-primary/30 transition-all duration-200"
-          />
-          {errors.endDate && (
-            <p className="text-error text-xs mt-1">{errors.endDate}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Budget Slider */}
-      <div className="planner-budget mt-6">
-        <div className="flex items-center justify-between mb-2"><label htmlFor="budget-slider" className="block text-sm font-medium text-foreground-secondary">
-          Budget
-        </label>
-          <span className="text-xl font-bold gradient-text">
-            {formatBudgetLabel(budget)}
+      {/* ── Main ticket body ─────────────────────────────────── */}
+      <form onSubmit={handleSubmit} className="bg-surface px-6 py-8 md:px-10 md:py-10 space-y-6" id="trip-form">
+        <div>
+          <span className="font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-[0.16em] text-marigold">
+            Book the plan, not just the ticket
           </span>
+          <h2 className="mt-2 font-[family-name:var(--font-teko)] font-semibold uppercase tracking-wide text-3xl md:text-4xl text-foreground">
+            Plan your journey
+          </h2>
+          <p className="mt-2 text-foreground-muted text-sm max-w-md">
+            Tell us where you&apos;re starting, where you&apos;re headed, and what the trip is for.
+            YatraAI handles the rest.
+          </p>
         </div>
-        <input
-          id="budget-slider"
-          type="range"
-          min={1000}
-          max={100000}
-          step={500}
-          value={budget}
-          onChange={(e) => setBudget(Number(e.target.value))}
-          className="w-full cursor-pointer"
-        />
-      </div>
 
-      {/* Vibe Selector */}
-      <div className="planner-vibes mt-7">
-        <label className="block text-sm font-medium text-foreground-secondary mb-3">
-          Travel Vibe
-        </label>
-        <div className="flex flex-wrap gap-2">
-          {VIBES.map((vibe) => {
-            const isSelected = selectedVibes.includes(vibe.value);
-            return (
-              <motion.button
-                key={vibe.value}
-                type="button"
-                onClick={() => toggleVibe(vibe.value)}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className={`
-                  planner-vibe transition-all duration-200
-                  ${
+        {/* Origin & Destination */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="relative z-20">
+            <CityAutocomplete
+              label="From"
+              placeholder="e.g. Delhi"
+              value={origin}
+              onChange={setOrigin}
+              icon="🛫"
+              id="origin-city"
+            />
+            {errors.origin && <p className="text-error text-xs mt-1">{errors.origin}</p>}
+          </div>
+          <div className="relative z-10">
+            <CityAutocomplete
+              label="To"
+              placeholder="e.g. Goa"
+              value={destination}
+              onChange={setDestination}
+              icon="🛬"
+              id="destination-city"
+            />
+            {errors.destination && <p className="text-error text-xs mt-1">{errors.destination}</p>}
+          </div>
+        </div>
+
+        {/* Dates */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label
+              htmlFor="start-date"
+              className="block font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted mb-2"
+            >
+              Depart
+            </label>
+            <input
+              id="start-date"
+              type="date"
+              value={startDate}
+              min={today}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-4 py-3 bg-black/20 border border-glass-border rounded
+                         text-foreground font-semibold focus:outline-none focus:border-marigold focus:ring-1
+                         focus:ring-marigold/40 transition-all duration-200"
+            />
+            {errors.startDate && <p className="text-error text-xs mt-1">{errors.startDate}</p>}
+          </div>
+          <div>
+            <label
+              htmlFor="end-date"
+              className="block font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted mb-2"
+            >
+              Return
+            </label>
+            <input
+              id="end-date"
+              type="date"
+              value={endDate}
+              min={startDate || today}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-4 py-3 bg-black/20 border border-glass-border rounded
+                         text-foreground font-semibold focus:outline-none focus:border-marigold focus:ring-1
+                         focus:ring-marigold/40 transition-all duration-200"
+            />
+            {errors.endDate && <p className="text-error text-xs mt-1">{errors.endDate}</p>}
+          </div>
+        </div>
+
+        {/* Budget Slider */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label
+              htmlFor="budget-slider"
+              className="font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted"
+            >
+              Budget
+            </label>
+            <span className="font-[family-name:var(--font-space-mono)] text-lg font-bold text-marigold">
+              {formatBudgetLabel(budget)}
+            </span>
+          </div>
+          <input
+            id="budget-slider"
+            type="range"
+            min={1000}
+            max={100000}
+            step={1000}
+            value={budget}
+            onChange={(e) => setBudget(Number(e.target.value))}
+            className="w-full cursor-pointer"
+          />
+          <div className="flex justify-between font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-wide text-foreground-muted mt-1">
+            <span>Budget</span>
+            <span>Luxury</span>
+          </div>
+        </div>
+
+        {/* Vibe Selector */}
+        <div>
+          <label className="block font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted mb-3">
+            Travel vibe
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {VIBES.map((vibe) => {
+              const isSelected = selectedVibes.includes(vibe.value);
+              return (
+                <motion.button
+                  key={vibe.value}
+                  type="button"
+                  onClick={() => toggleVibe(vibe.value)}
+                  whileTap={{ scale: 0.96 }}
+                  className={`px-4 py-2.5 rounded-full border font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide transition-all duration-150 flex items-center gap-1.5 ${
                     isSelected
-                      ? "active"
-                      : ""
-                  }
-                `}
-                id={`vibe-${vibe.value}`}
-              >
-                {vibe.label}
-              </motion.button>
-            );
-          })}
+                      ? "border-marigold bg-marigold text-[#24160a] font-bold"
+                      : "border-glass-border text-foreground-muted hover:border-foreground hover:text-foreground"
+                  }`}
+                  id={`vibe-${vibe.value}`}
+                  title={vibe.desc}
+                >
+                  <span>{getVibeEmoji(vibe.value)}</span>
+                  {vibe.label}
+                </motion.button>
+              );
+            })}
+          </div>
+          {errors.vibes && <p className="text-error text-xs mt-2">{errors.vibes}</p>}
         </div>
-        {errors.vibes && (
-          <p className="text-error text-xs mt-2">{errors.vibes}</p>
-        )}
-      </div>
 
-      {/* Submit */}
-      <motion.button
-        type="submit"
-        disabled={isLoading}
-        whileHover={isLoading ? {} : { scale: 1.02 }}
-        whileTap={isLoading ? {} : { scale: 0.98 }}
-        className={`
-          planner-submit transition-all duration-300
-          ${
+        {/* Submit */}
+        <motion.button
+          type="submit"
+          disabled={isLoading}
+          whileHover={isLoading ? {} : { scale: 1.01 }}
+          whileTap={isLoading ? {} : { scale: 0.98 }}
+          className={`w-full py-4 rounded-[3px] font-[family-name:var(--font-space-mono)] font-bold text-sm uppercase tracking-wide transition-all duration-300 ${
             isLoading
-              ? "opacity-50 cursor-not-allowed"
-              : ""
-          }
-        `}
-        id="generate-trip-btn"
-      >
-        {isLoading ? (
-          <span className="flex items-center justify-center gap-2">
-            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            Planning your trip...
-          </span>
-        ) : (
-          "Generate itinerary"
-        )}
-      </motion.button>
+              ? "bg-marigold/40 cursor-not-allowed text-[#24160a]/70"
+              : "bg-marigold text-[#24160a] hover:shadow-[0_6px_24px_rgba(242,169,59,0.3)]"
+          }`}
+          id="generate-trip-btn"
+        >
+          {isLoading ? (
+            <span className="flex items-center justify-center gap-2">
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Planning your trip...
+            </span>
+          ) : (
+            "Generate itinerary"
+          )}
+        </motion.button>
+      </form>
+
+      {/* ── Perforated ticket stub ───────────────────────────── */}
+      <div className="ticket-perforated relative flex items-center justify-center min-h-[80px] md:min-h-0 bg-[repeating-linear-gradient(135deg,var(--rust)_0_10px,var(--marigold-2)_10px_20px)]">
+        <div className="absolute inset-0 bg-background opacity-[0.86]" />
+        <div className="relative z-[2] px-6 py-4 md:py-0 md:[writing-mode:vertical-rl] font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-[0.16em] text-foreground-muted text-center">
+          Boarding · YatraAI · Domestic India
+        </div>
       </div>
-      <div className="planner-stub" aria-hidden="true"><span>Boarding · YatraAI · Domestic India</span></div>
-    </motion.form>
+    </motion.div>
   );
 }
