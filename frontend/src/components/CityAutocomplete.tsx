@@ -8,7 +8,7 @@ interface CityAutocompleteProps {
   placeholder: string;
   value: string;
   onChange: (city: string) => void;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   id: string;
 }
 
@@ -82,9 +82,11 @@ export default function CityAutocomplete({
         {label}
       </label>
       <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground-muted text-lg">
-          {icon}
-        </span>
+        {icon && (
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground-muted text-lg">
+            {icon}
+          </span>
+        )}
         <input
           id={id}
           type="text"
@@ -93,10 +95,10 @@ export default function CityAutocomplete({
           onFocus={() => results.length > 0 && setIsOpen(true)}
           placeholder={placeholder}
           autoComplete="off"
-          className="w-full pl-10 pr-4 py-3 bg-black/20 border border-glass-border rounded
+          className={`w-full ${icon ? "pl-10" : "px-4"} py-3 bg-black/20 border border-glass-border rounded
                      text-foreground font-semibold placeholder:text-foreground-muted placeholder:font-normal
                      focus:outline-none focus:border-marigold focus:ring-1 focus:ring-marigold/40
-                     transition-all duration-200"
+                     transition-all duration-200`}
         />
         {isLoading && (
           <span className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -120,7 +122,6 @@ export default function CityAutocomplete({
                          transition-colors duration-150 flex items-center gap-3
                          border-b border-glass-border last:border-0"
             >
-              <span className="text-marigold">📍</span>
               <div>
                 <div className="text-foreground font-medium">{city.name}</div>
                 {city.state && (

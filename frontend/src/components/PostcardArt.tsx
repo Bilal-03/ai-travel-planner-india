@@ -95,3 +95,32 @@ export function KeralaArt() {
     </svg>
   );
 }
+
+export function VaranasiArt() {
+  return (
+    <svg className="w-full aspect-[4/3] block" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+      <rect width="400" height="300" fill="#E8901F" />
+      <circle cx="302" cy="68" r="34" fill="#F4EEDE" opacity="0.9" />
+      <rect y="188" width="400" height="112" fill="#1C8079" />
+      <path d="M0 207 Q100 180 200 210 T400 202 V300H0Z" fill="#166b65" />
+      <path d="M55 190V112H88V190M102 190V82H141V190M155 190V122H190V190M207 190V65H252V190M268 190V105H310V190" fill="#C4522B" />
+      <path d="M70 112 L88 83 L106 112 M117 82 L141 47 L165 82 M222 65 L252 25 L282 65" fill="#0B1330" />
+      <path d="M25 230 Q60 202 95 230 T165 230" stroke="#F2A93B" strokeWidth="7" fill="none" />
+    </svg>
+  );
+}
+
+export function MumbaiArt() {
+  return (
+    <svg className="w-full aspect-[4/3] block" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+      <rect width="400" height="300" fill="#1C8079" />
+      <rect y="196" width="400" height="104" fill="#0B1330" />
+      <circle cx="78" cy="72" r="35" fill="#F2A93B" />
+      <path d="M78 112V188M78 129L48 160M78 139L108 164" stroke="#0B1330" strokeWidth="6" />
+      <path d="M145 196V96H255V196M171 196V128H229V196" fill="#F4EEDE" />
+      <path d="M145 96 Q200 38 255 96 M160 96 Q200 60 240 96" stroke="#C4522B" strokeWidth="10" fill="none" />
+      <path d="M0 223 Q100 198 200 224 T400 218V300H0Z" fill="#166b65" />
+      <path d="M290 196V122H342V196M300 122L316 91L332 122" fill="#C4522B" />
+    </svg>
+  );
+}

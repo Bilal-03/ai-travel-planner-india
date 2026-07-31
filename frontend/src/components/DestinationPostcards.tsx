@@ -8,6 +8,8 @@ import {
   ManaliArt,
   JaipurArt,
   KeralaArt,
+  VaranasiArt,
+  MumbaiArt,
 } from "./PostcardArt";
 
 interface Destination {
@@ -23,6 +25,8 @@ const DESTINATIONS: Destination[] = [
   { city: "Manali", meta: "Mountains · 540 km avg", Art: ManaliArt },
   { city: "Jaipur", meta: "Forts & jaali · 280 km avg", Art: JaipurArt },
   { city: "Kerala", meta: "Backwaters · 700 km avg", Art: KeralaArt },
+  { city: "Varanasi", meta: "Ghats & temples · 790 km avg", Art: VaranasiArt },
+  { city: "Mumbai", meta: "Coast & culture · 410 km avg", Art: MumbaiArt },
 ];
 
 export default function DestinationPostcards() {
@@ -35,7 +39,7 @@ export default function DestinationPostcards() {
               Where people are heading
             </span>
             <h2 className="mt-3 font-[family-name:var(--font-teko)] font-semibold uppercase tracking-wide text-3xl md:text-4xl text-foreground">
-              Six starting points
+              Eight starting points
             </h2>
           </div>
           <p className="text-foreground-muted max-w-sm">

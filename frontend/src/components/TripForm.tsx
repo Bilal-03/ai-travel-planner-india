@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import CityAutocomplete from "./CityAutocomplete";
-import { TravelVibe, TripRequest, getVibeEmoji } from "@/lib/api";
+import { TravelVibe, TripRequest } from "@/lib/api";
 
 interface TripFormProps {
   onSubmit: (data: TripRequest) => void;
@@ -99,7 +99,6 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
               placeholder="e.g. Delhi"
               value={origin}
               onChange={setOrigin}
-              icon="🛫"
               id="origin-city"
             />
             {errors.origin && <p className="text-error text-xs mt-1">{errors.origin}</p>}
@@ -110,7 +109,6 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
               placeholder="e.g. Goa"
               value={destination}
               onChange={setDestination}
-              icon="🛬"
               id="destination-city"
             />
             {errors.destination && <p className="text-error text-xs mt-1">{errors.destination}</p>}
@@ -194,7 +192,7 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
                     type="button"
                     onClick={() => toggleVibe(vibe.value)}
                     whileTap={{ scale: 0.96 }}
-                    className={`px-3 py-2 rounded-full border font-[family-name:var(--font-space-mono)] text-[11px] uppercase tracking-wide transition-all duration-150 flex items-center gap-1.5 ${
+                    className={`px-3 py-2 rounded-full border font-[family-name:var(--font-space-mono)] text-[11px] uppercase tracking-wide transition-all duration-150 ${
                       isSelected
                         ? "border-marigold bg-marigold text-[#24160a] font-bold"
                         : "border-glass-border text-foreground-muted hover:border-foreground hover:text-foreground"
@@ -202,7 +200,6 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
                     id={`vibe-${vibe.value}`}
                     title={vibe.desc}
                   >
-                    <span>{getVibeEmoji(vibe.value)}</span>
                     {vibe.label}
                   </motion.button>
                 );

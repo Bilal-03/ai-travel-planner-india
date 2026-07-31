@@ -58,8 +58,8 @@ export default function FeaturesRail() {
         </div>
 
         <div className="relative">
-          <div className="hidden min-[900px]:block absolute top-[22px] left-0 right-0 h-[2px] rail-line" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 min-[900px]:grid-cols-3 gap-x-[30px] gap-y-10">
+          <div className="hidden lg:block absolute top-[22px] left-0 right-0 h-[2px] rail-line" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-[30px] gap-y-10">
             {FEATURES.map((f, idx) => (
               <motion.div
                 key={f.title}
@@ -67,7 +67,7 @@ export default function FeaturesRail() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-60px" }}
                 transition={{ delay: idx * 0.06, duration: 0.5 }}
-                className="relative pt-11 min-[900px]:pt-0"
+                className="relative pt-11 lg:pt-0"
               >
                 <div className="relative z-10 w-11 h-11 rounded-full bg-surface border-2 border-marigold flex items-center justify-center text-xl mb-4">
                   {f.icon}
