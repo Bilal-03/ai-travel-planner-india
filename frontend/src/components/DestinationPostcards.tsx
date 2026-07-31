@@ -27,8 +27,8 @@ const DESTINATIONS: Destination[] = [
 
 export default function DestinationPostcards() {
   return (
-    <section id="destinations" className="px-4 py-10 md:py-20">
-      <div className="max-w-6xl mx-auto">
+    <section id="destinations" className="px-7 pt-[10px] pb-[110px]">
+      <div className="max-w-[1180px] mx-auto">
         <div className="flex flex-wrap items-end justify-between gap-5 mb-10">
           <div>
             <span className="font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-[0.16em] text-marigold">
@@ -43,7 +43,7 @@ export default function DestinationPostcards() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-[22px]">
           {DESTINATIONS.map((d, idx) => (
             <motion.article
               key={d.city}

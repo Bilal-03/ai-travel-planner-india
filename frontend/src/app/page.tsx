@@ -72,7 +72,7 @@ export default function Home() {
         <>
           <HomeHero />
 
-          <section className="px-4 pb-10 md:pb-16">
+          <section id="plan" className="px-7 pt-[30px] pb-[90px]">
             {!isGenerating ? (
               <TripForm onSubmit={handleSubmit} isLoading={isGenerating} />
             ) : (

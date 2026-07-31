@@ -4,13 +4,13 @@
 
 :root {
   /* Dark mode default */
-  --background: #0a0a1a;
-  --background-secondary: #0f1129;
-  --surface: #151733;
-  --surface-hover: #1c1f45;
-  --foreground: #f0f0ff;
-  --foreground-secondary: #94a3b8;
-  --foreground-muted: #64748b;
+  --background: #0b1330;
+  --background-secondary: #121a42;
+  --surface: #161e4a;
+  --surface-hover: #1c2557;
+  --foreground: #edeaf5;
+  --foreground-secondary: #97a0c9;
+  --foreground-muted: #6b76ab;
 
   /* Brand */
   --primary: #6366f1;
@@ -105,7 +105,7 @@
   --color-glass-bg: var(--glass-bg);
   --color-glass-border: var(--glass-border);
   --color-glass-highlight: var(--glass-highlight);
-  --font-sans: var(--font-inter);
+  --font-sans: var(--font-manrope);
   --font-display: var(--font-outfit);
 
   /* India homepage palette — used by Hero/TripForm/FeaturesRail/
@@ -133,8 +133,21 @@ html {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-inter, 'Inter', system-ui, sans-serif);
+  font-family: var(--font-manrope, 'Manrope', system-ui, sans-serif);
   min-height: 100vh;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+  opacity: 0.045;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 /* ── Glass Card ────────────────────────────────────────────────── */
@@ -350,21 +363,21 @@ body {
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  height: 6px;
-  border-radius: 3px;
-  background: linear-gradient(to right, var(--primary), var(--accent));
+  height: 4px;
+  border-radius: 2px;
+  background: var(--glass-border);
   outline: none;
 }
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: white;
+  background: var(--marigold);
   cursor: pointer;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 0 0 4px rgba(242, 169, 59, 0.18);
   transition: transform 0.15s ease;
 }
 
@@ -373,11 +386,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 input[type="range"]::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: white;
+  background: var(--marigold);
   cursor: pointer;
   border: none;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 0 0 4px rgba(242, 169, 59, 0.18);
 }

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Inter, Outfit, Teko, Space_Mono } from "next/font/google";
+import { Manrope, Outfit, Teko, Space_Mono } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
   display: "swap",
 });
@@ -60,7 +60,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${outfit.variable} ${teko.variable} ${spaceMono.variable}`}
+      className={`${manrope.variable} ${outfit.variable} ${teko.variable} ${spaceMono.variable}`}
     >
       <head>
         <meta name="color-scheme" content="dark" />

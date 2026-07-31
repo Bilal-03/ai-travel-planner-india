@@ -7,7 +7,7 @@ interface HeaderProps {
 export default function Header({ onLogoClick }: HeaderProps) {
   return (
     <header className="sticky top-0 z-50 backdrop-blur-md bg-background/75 border-b border-glass-border">
-      <div className="max-w-6xl mx-auto flex items-center justify-between px-4 py-4">
+      <div className="max-w-[1180px] mx-auto flex items-center justify-between px-7 py-4">
         <button
           onClick={onLogoClick}
           type="button"
@@ -21,24 +21,12 @@ export default function Header({ onLogoClick }: HeaderProps) {
           </span>
         </button>
 
-        <nav className="flex items-center gap-5 sm:gap-6">
+        <nav>
           <a
-            href="#trip-form"
-            className="hidden sm:inline font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted hover:text-foreground transition-colors"
+            href="#plan"
+            className="font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-[0.08em] px-[18px] py-[10px] rounded-[3px] border border-white/25 text-foreground hover:border-marigold hover:text-marigold transition-colors"
           >
             Plan a trip
-          </a>
-          <a
-            href="#destinations"
-            className="hidden sm:inline font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted hover:text-foreground transition-colors"
-          >
-            Destinations
-          </a>
-          <a
-            href="#trip-form"
-            className="font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide px-4 py-2.5 rounded-[3px] border border-glass-border text-foreground hover:border-marigold hover:text-marigold transition-colors"
-          >
-            Plan my journey
           </a>
         </nav>
       </div>

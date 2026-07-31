@@ -43,23 +43,23 @@ const FEATURES: Feature[] = [
 
 export default function FeaturesRail() {
   return (
-    <section className="px-4 py-20 md:py-28">
-      <div className="max-w-6xl mx-auto">
-        <div className="max-w-xl mb-14">
+    <section className="px-7 pt-5 pb-[100px]">
+      <div className="max-w-[1180px] mx-auto">
+        <div className="max-w-[60ch] mb-[56px]">
           <span className="font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-[0.16em] text-marigold">
             How it helps
           </span>
-          <h2 className="mt-3 font-[family-name:var(--font-teko)] font-semibold uppercase tracking-wide text-3xl md:text-4xl text-foreground">
+          <h2 className="mt-3 font-[family-name:var(--font-teko)] font-semibold uppercase tracking-wide text-[clamp(2rem,4vw,2.9rem)] text-foreground">
             Everything a trip needs, in one line
           </h2>
-          <p className="mt-3 text-foreground-muted">
+          <p className="mt-[14px] font-medium text-foreground-secondary">
             Six things happen every time you generate a plan — not six separate tools to juggle.
           </p>
         </div>
 
         <div className="relative">
-          <div className="hidden md:block absolute top-[22px] left-0 right-0 h-[2px] rail-line" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-10">
+          <div className="hidden min-[900px]:block absolute top-[22px] left-0 right-0 h-[2px] rail-line" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 min-[900px]:grid-cols-3 gap-x-[30px] gap-y-10">
             {FEATURES.map((f, idx) => (
               <motion.div
                 key={f.title}
@@ -67,13 +67,13 @@ export default function FeaturesRail() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-60px" }}
                 transition={{ delay: idx * 0.06, duration: 0.5 }}
-                className="relative"
+                className="relative pt-11 min-[900px]:pt-0"
               >
                 <div className="relative z-10 w-11 h-11 rounded-full bg-surface border-2 border-marigold flex items-center justify-center text-xl mb-4">
                   {f.icon}
                 </div>
-                <h3 className="font-semibold text-foreground mb-1.5">{f.title}</h3>
-                <p className="text-sm text-foreground-muted">{f.desc}</p>
+                <h3 className="font-extrabold text-[1.12rem] text-foreground mb-2">{f.title}</h3>
+                <p className="text-[0.92rem] font-medium text-foreground-secondary">{f.desc}</p>
               </motion.div>
             ))}
           </div>

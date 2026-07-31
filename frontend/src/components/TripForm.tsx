@@ -76,21 +76,23 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-80px" }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className="max-w-4xl mx-auto rounded-xl overflow-hidden border border-glass-border shadow-[0_40px_80px_-30px_rgba(0,0,0,0.55)] grid grid-cols-1 md:grid-cols-[1fr_150px]"
+      className="max-w-[1180px] mx-auto rounded-[10px] overflow-hidden border border-glass-border shadow-[0_40px_80px_-30px_rgba(0,0,0,0.55)] grid grid-cols-1 min-[860px]:grid-cols-[1fr_260px]"
     >
       {/* ── Main ticket body ─────────────────────────────────── */}
-      <form onSubmit={handleSubmit} className="bg-surface px-6 py-6 md:px-9 md:py-7 space-y-5" id="trip-form">
+      <form onSubmit={handleSubmit} className="bg-surface px-5 py-10 sm:px-8 md:px-12 space-y-5" id="trip-form">
         <div>
           <span className="font-[family-name:var(--font-space-mono)] text-[11px] uppercase tracking-[0.16em] text-marigold">
             Book the plan, not just the ticket
           </span>
-          <h2 className="mt-1.5 font-[family-name:var(--font-teko)] font-semibold uppercase tracking-wide text-2xl md:text-3xl text-foreground">
+          <h2 className="mt-1.5 font-[family-name:var(--font-teko)] font-semibold uppercase tracking-wide text-[clamp(2rem,3.6vw,2.8rem)] text-foreground">
             Plan your journey
           </h2>
+          <p className="mt-2.5 max-w-[52ch] font-medium text-foreground-secondary">
+            Tell us where you&apos;re starting, where you&apos;re headed, and what the trip is for. YatraAI handles the rest.
+          </p>
         </div>
 
-        {/* From / To / Depart / Return — one row on desktop */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-[18px] pt-2">
           <div className="relative z-20">
             <CityAutocomplete
               label="From"
@@ -153,8 +155,7 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
           </div>
         </div>
 
-        {/* Budget + Vibe — side by side on desktop */}
-        <div className="grid grid-cols-1 md:grid-cols-[0.85fr_1.15fr] gap-6">
+        <div className="pb-1">
           <div>
             <div className="flex items-center justify-between mb-2">
               <label
@@ -177,13 +178,10 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
               onChange={(e) => setBudget(Number(e.target.value))}
               className="w-full cursor-pointer"
             />
-            <div className="flex justify-between font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-wide text-foreground-muted mt-1">
-              <span>Budget</span>
-              <span>Luxury</span>
-            </div>
           </div>
+        </div>
 
-          <div>
+        <div>
             <label className="block font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted mb-2">
               Travel vibe
             </label>
@@ -211,7 +209,6 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
               })}
             </div>
             {errors.vibes && <p className="text-error text-xs mt-2">{errors.vibes}</p>}
-          </div>
         </div>
 
         {/* Submit */}
@@ -220,7 +217,7 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
           disabled={isLoading}
           whileHover={isLoading ? {} : { scale: 1.01 }}
           whileTap={isLoading ? {} : { scale: 0.98 }}
-          className={`w-full py-3.5 rounded-[3px] font-[family-name:var(--font-space-mono)] font-bold text-sm uppercase tracking-wide transition-all duration-300 ${
+          className={`w-full sm:w-auto px-[26px] py-[15px] rounded-[3px] font-[family-name:var(--font-space-mono)] text-[0.78rem] uppercase tracking-[0.06em] transition-all duration-300 ${
             isLoading
               ? "bg-marigold/40 cursor-not-allowed text-[#24160a]/70"
               : "bg-marigold text-[#24160a] hover:shadow-[0_6px_24px_rgba(242,169,59,0.3)]"
@@ -242,9 +239,9 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
       </form>
 
       {/* ── Perforated ticket stub ───────────────────────────── */}
-      <div className="ticket-perforated relative flex items-center justify-center min-h-[80px] md:min-h-0 bg-[repeating-linear-gradient(135deg,var(--rust)_0_10px,var(--marigold-2)_10px_20px)]">
+      <div className="ticket-perforated relative flex items-center justify-center min-h-[120px] min-[860px]:min-h-0 bg-[repeating-linear-gradient(135deg,var(--rust)_0_10px,var(--marigold-2)_10px_20px)]">
         <div className="absolute inset-0 bg-background opacity-[0.86]" />
-        <div className="relative z-[2] px-6 py-4 md:py-0 md:[writing-mode:vertical-rl] font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-[0.16em] text-foreground-muted text-center">
+        <div className="relative z-[2] px-6 py-4 min-[860px]:py-0 min-[860px]:[writing-mode:vertical-rl] font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-[0.16em] text-foreground-muted text-center">
           Boarding · YatraAI · Domestic India
         </div>
       </div>
