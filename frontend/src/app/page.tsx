@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
-import HomeHero from "@/components/HomeHero";
+import HomeHero from "@/components/home/HomeHero";
+import Header from "@/components/home/Header";
+import Footer from "@/components/home/Footer";
 import TripForm from "@/components/TripForm";
-import FeaturesRail from "@/components/FeaturesRail";
-import DestinationPostcards from "@/components/DestinationPostcards";
+import FeaturesRail from "@/components/home/FeaturesRail";
+import DestinationPostcards from "@/components/home/DestinationPostcards";
 import LoadingState from "@/components/LoadingState";
 import ItineraryTimeline from "@/components/ItineraryTimeline";
 import TransportCard from "@/components/TransportCard";
@@ -57,6 +59,14 @@ export default function Home() {
 
   return (
     <main className="min-h-screen">
+      <Header
+        onLogoClick={
+          itinerary
+            ? handleNewTrip
+            : () => window.scrollTo({ top: 0, behavior: "smooth" })
+        }
+      />
+
       {/* ── Home: hero, ticket form, features, destinations ─────────── */}
       {!itinerary && (
         <>
@@ -88,14 +98,6 @@ export default function Home() {
 
           <FeaturesRail />
           <DestinationPostcards />
-
-          {/* Footer */}
-          <div className="px-4 pb-16 pt-4 text-center font-[family-name:var(--font-space-mono)] text-[11px] text-foreground-muted tracking-wide border-t border-glass-border">
-            <p className="pt-8">
-              Built with Gemini AI · OpenStreetMap · Amadeus · OpenWeatherMap
-            </p>
-            <p className="mt-1">Entirely free-tier powered — no credit card needed</p>
-          </div>
         </>
       )}
 
@@ -248,6 +250,8 @@ export default function Home() {
           </motion.div>
         </section>
       )}
+
+      <Footer />
     </main>
   );
 }

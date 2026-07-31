@@ -76,25 +76,21 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-80px" }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className="max-w-3xl mx-auto rounded-xl overflow-hidden border border-glass-border shadow-[0_40px_80px_-30px_rgba(0,0,0,0.55)] grid grid-cols-1 md:grid-cols-[1fr_180px]"
+      className="max-w-4xl mx-auto rounded-xl overflow-hidden border border-glass-border shadow-[0_40px_80px_-30px_rgba(0,0,0,0.55)] grid grid-cols-1 md:grid-cols-[1fr_150px]"
     >
       {/* ── Main ticket body ─────────────────────────────────── */}
-      <form onSubmit={handleSubmit} className="bg-surface px-6 py-8 md:px-10 md:py-10 space-y-6" id="trip-form">
+      <form onSubmit={handleSubmit} className="bg-surface px-6 py-6 md:px-9 md:py-7 space-y-5" id="trip-form">
         <div>
-          <span className="font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-[0.16em] text-marigold">
+          <span className="font-[family-name:var(--font-space-mono)] text-[11px] uppercase tracking-[0.16em] text-marigold">
             Book the plan, not just the ticket
           </span>
-          <h2 className="mt-2 font-[family-name:var(--font-teko)] font-semibold uppercase tracking-wide text-3xl md:text-4xl text-foreground">
+          <h2 className="mt-1.5 font-[family-name:var(--font-teko)] font-semibold uppercase tracking-wide text-2xl md:text-3xl text-foreground">
             Plan your journey
           </h2>
-          <p className="mt-2 text-foreground-muted text-sm max-w-md">
-            Tell us where you&apos;re starting, where you&apos;re headed, and what the trip is for.
-            YatraAI handles the rest.
-          </p>
         </div>
 
-        {/* Origin & Destination */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* From / To / Depart / Return — one row on desktop */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="relative z-20">
             <CityAutocomplete
               label="From"
@@ -117,10 +113,6 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
             />
             {errors.destination && <p className="text-error text-xs mt-1">{errors.destination}</p>}
           </div>
-        </div>
-
-        {/* Dates */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label
               htmlFor="start-date"
@@ -134,8 +126,8 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
               value={startDate}
               min={today}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-4 py-3 bg-black/20 border border-glass-border rounded
-                         text-foreground font-semibold focus:outline-none focus:border-marigold focus:ring-1
+              className="w-full px-3 py-3 bg-black/20 border border-glass-border rounded
+                         text-foreground text-sm font-semibold focus:outline-none focus:border-marigold focus:ring-1
                          focus:ring-marigold/40 transition-all duration-200"
             />
             {errors.startDate && <p className="text-error text-xs mt-1">{errors.startDate}</p>}
@@ -153,72 +145,73 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
               value={endDate}
               min={startDate || today}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full px-4 py-3 bg-black/20 border border-glass-border rounded
-                         text-foreground font-semibold focus:outline-none focus:border-marigold focus:ring-1
+              className="w-full px-3 py-3 bg-black/20 border border-glass-border rounded
+                         text-foreground text-sm font-semibold focus:outline-none focus:border-marigold focus:ring-1
                          focus:ring-marigold/40 transition-all duration-200"
             />
             {errors.endDate && <p className="text-error text-xs mt-1">{errors.endDate}</p>}
           </div>
         </div>
 
-        {/* Budget Slider */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label
-              htmlFor="budget-slider"
-              className="font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted"
-            >
-              Budget
-            </label>
-            <span className="font-[family-name:var(--font-space-mono)] text-lg font-bold text-marigold">
-              {formatBudgetLabel(budget)}
-            </span>
+        {/* Budget + Vibe — side by side on desktop */}
+        <div className="grid grid-cols-1 md:grid-cols-[0.85fr_1.15fr] gap-6">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label
+                htmlFor="budget-slider"
+                className="font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted"
+              >
+                Budget
+              </label>
+              <span className="font-[family-name:var(--font-space-mono)] text-base font-bold text-marigold">
+                {formatBudgetLabel(budget)}
+              </span>
+            </div>
+            <input
+              id="budget-slider"
+              type="range"
+              min={1000}
+              max={100000}
+              step={1000}
+              value={budget}
+              onChange={(e) => setBudget(Number(e.target.value))}
+              className="w-full cursor-pointer"
+            />
+            <div className="flex justify-between font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-wide text-foreground-muted mt-1">
+              <span>Budget</span>
+              <span>Luxury</span>
+            </div>
           </div>
-          <input
-            id="budget-slider"
-            type="range"
-            min={1000}
-            max={100000}
-            step={1000}
-            value={budget}
-            onChange={(e) => setBudget(Number(e.target.value))}
-            className="w-full cursor-pointer"
-          />
-          <div className="flex justify-between font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-wide text-foreground-muted mt-1">
-            <span>Budget</span>
-            <span>Luxury</span>
-          </div>
-        </div>
 
-        {/* Vibe Selector */}
-        <div>
-          <label className="block font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted mb-3">
-            Travel vibe
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {VIBES.map((vibe) => {
-              const isSelected = selectedVibes.includes(vibe.value);
-              return (
-                <motion.button
-                  key={vibe.value}
-                  type="button"
-                  onClick={() => toggleVibe(vibe.value)}
-                  whileTap={{ scale: 0.96 }}
-                  className={`px-4 py-2.5 rounded-full border font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide transition-all duration-150 flex items-center gap-1.5 ${
-                    isSelected
-                      ? "border-marigold bg-marigold text-[#24160a] font-bold"
-                      : "border-glass-border text-foreground-muted hover:border-foreground hover:text-foreground"
-                  }`}
-                  id={`vibe-${vibe.value}`}
-                  title={vibe.desc}
-                >
-                  <span>{getVibeEmoji(vibe.value)}</span>
-                  {vibe.label}
-                </motion.button>
-              );
-            })}
+          <div>
+            <label className="block font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted mb-2">
+              Travel vibe
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {VIBES.map((vibe) => {
+                const isSelected = selectedVibes.includes(vibe.value);
+                return (
+                  <motion.button
+                    key={vibe.value}
+                    type="button"
+                    onClick={() => toggleVibe(vibe.value)}
+                    whileTap={{ scale: 0.96 }}
+                    className={`px-3 py-2 rounded-full border font-[family-name:var(--font-space-mono)] text-[11px] uppercase tracking-wide transition-all duration-150 flex items-center gap-1.5 ${
+                      isSelected
+                        ? "border-marigold bg-marigold text-[#24160a] font-bold"
+                        : "border-glass-border text-foreground-muted hover:border-foreground hover:text-foreground"
+                    }`}
+                    id={`vibe-${vibe.value}`}
+                    title={vibe.desc}
+                  >
+                    <span>{getVibeEmoji(vibe.value)}</span>
+                    {vibe.label}
+                  </motion.button>
+                );
+              })}
+            </div>
+            {errors.vibes && <p className="text-error text-xs mt-2">{errors.vibes}</p>}
           </div>
-          {errors.vibes && <p className="text-error text-xs mt-2">{errors.vibes}</p>}
         </div>
 
         {/* Submit */}
@@ -227,7 +220,7 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
           disabled={isLoading}
           whileHover={isLoading ? {} : { scale: 1.01 }}
           whileTap={isLoading ? {} : { scale: 0.98 }}
-          className={`w-full py-4 rounded-[3px] font-[family-name:var(--font-space-mono)] font-bold text-sm uppercase tracking-wide transition-all duration-300 ${
+          className={`w-full py-3.5 rounded-[3px] font-[family-name:var(--font-space-mono)] font-bold text-sm uppercase tracking-wide transition-all duration-300 ${
             isLoading
               ? "bg-marigold/40 cursor-not-allowed text-[#24160a]/70"
               : "bg-marigold text-[#24160a] hover:shadow-[0_6px_24px_rgba(242,169,59,0.3)]"
