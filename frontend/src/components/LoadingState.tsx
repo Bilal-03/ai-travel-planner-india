@@ -31,7 +31,7 @@ export default function LoadingState({ waitingForBackend = false, status, onCanc
   const progress = waitingForBackend ? Math.max(status?.progress || 0, 4) : status?.progress || 8;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass gradient-border mt-5 max-w-lg rounded-2xl p-6 text-center">
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass gradient-border mx-auto mt-5 w-full max-w-lg rounded-2xl p-6 text-center">
       <motion.div className="mb-4 text-5xl" animate={{ y: [0, -8, 0] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}>
         {waitingForBackend ? "⏳" : STEP_ICONS[status?.step || "starting"] || "🧳"}
       </motion.div>

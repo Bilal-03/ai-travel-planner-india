@@ -305,30 +305,32 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
         </details>
 
         {/* Submit */}
-        <motion.button
-          type="submit"
-          disabled={isLoading}
-          whileHover={isLoading ? {} : { scale: 1.01 }}
-          whileTap={isLoading ? {} : { scale: 0.98 }}
-          className={`w-full sm:w-auto px-[26px] py-[15px] rounded-[3px] font-[family-name:var(--font-space-mono)] text-[0.78rem] uppercase tracking-[0.06em] transition-all duration-300 ${
-            isLoading
-              ? "bg-marigold/40 cursor-not-allowed text-[#24160a]/70"
-              : "bg-marigold text-[#24160a] hover:shadow-[0_6px_24px_rgba(242,169,59,0.3)]"
-          }`}
-          id="generate-trip-btn"
-        >
-          {isLoading ? (
-            <span className="flex items-center justify-center gap-2">
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Planning your trip...
-            </span>
-          ) : (
-            "Generate itinerary"
-          )}
-        </motion.button>
+        <div className="flex justify-center">
+          <motion.button
+            type="submit"
+            disabled={isLoading}
+            whileHover={isLoading ? {} : { scale: 1.01 }}
+            whileTap={isLoading ? {} : { scale: 0.98 }}
+            className={`w-full sm:w-auto px-[26px] py-[15px] rounded-[3px] font-[family-name:var(--font-space-mono)] text-[0.78rem] uppercase tracking-[0.06em] transition-all duration-300 ${
+              isLoading
+                ? "bg-marigold/40 cursor-not-allowed text-[#24160a]/70"
+                : "bg-marigold text-[#24160a] hover:shadow-[0_6px_24px_rgba(242,169,59,0.3)]"
+            }`}
+            id="generate-trip-btn"
+          >
+            {isLoading ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Planning your trip...
+              </span>
+            ) : (
+              "Generate itinerary"
+            )}
+          </motion.button>
+        </div>
       </form>
 
       {/* ── Perforated ticket stub ───────────────────────────── */}

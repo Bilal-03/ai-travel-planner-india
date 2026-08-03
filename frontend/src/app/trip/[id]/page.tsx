@@ -169,7 +169,7 @@ export default function TripDetailPage() {
 
         <details className="glass mb-8 overflow-hidden rounded-xl"><summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-foreground">🗺️ View interactive map</summary><div className="border-t border-glass-border"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div></details>
 
-        <section className="mb-8 print:hidden"><h2 className="mb-3 text-xl font-bold text-foreground">Secondary tools</h2><div className="glass flex items-center justify-between rounded-xl p-4"><div><h3 className="font-semibold text-foreground">🔗 Share this trip</h3><p className="text-xs text-foreground-muted">This link is view-only, so your group can safely browse the plan.</p></div><ShareTrip tripId={itinerary.id} /></div></section>
+        <section className="mb-8 print:hidden"><h2 className="mb-3 text-xl font-bold text-foreground">Secondary tools</h2><div className="glass flex items-center justify-between rounded-xl p-4"><div><h3 className="font-semibold text-foreground">🔗 Share this trip</h3><p className="text-xs text-foreground-muted">Shared itineraries are read-only. Your group can safely browse the plan.</p></div><ShareTrip tripId={itinerary.id} /></div></section>
 
         {/* CTA */}
         <div className="text-center mt-12 mb-8">

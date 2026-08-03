@@ -430,6 +430,8 @@ _add_destination_catalogue("pondicherry", "https://www.incredibleindia.gov.in/en
     ("Botanical Garden", "garden", ["relaxation"], 11.9270, 79.8260), ("Basilica of the Sacred Heart of Jesus", "historic", ["culture", "spiritual"], 11.9263, 79.8277),
     ("Immaculate Conception Cathedral", "historic", ["culture", "spiritual"], 11.9324, 79.8309), ("Manakula Vinayagar Temple", "place_of_worship", ["spiritual", "culture"], 11.9329, 79.8341),
     ("Bharati Park", "park", ["relaxation"], 11.9304, 79.8335), ("Puducherry Museum", "museum", ["culture"], 11.9292, 79.8352),
+    ("Serenity Beach", "beach", ["relaxation"], 11.9933, 79.8448), ("Chunnambar Boat House", "attraction", ["relaxation", "adventure"], 11.8714, 79.8068),
+    ("French War Memorial", "historic", ["culture"], 11.9315, 79.8357),
 ])
 
 _add_destination_catalogue("madurai", "https://www.incredibleindia.gov.in/en/tamil-nadu/madurai", [

@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import re
+from copy import deepcopy
 from datetime import date, timedelta
 from typing import Awaitable, Callable, Optional
 
@@ -46,7 +47,11 @@ from app.services.photos import get_destination_photos
 
 logger = logging.getLogger(__name__)
 
-MAX_REPAIR_ITERATIONS = 1
+MAX_REPAIR_ITERATIONS = 3
+DEFAULT_ACTIVITY_START = 9 * 60
+LATEST_ACTIVITY_END = 20 * 60
+MIN_ROUTE_BUFFER_MINUTES = 10
+COORDINATE_MATCH_RADIUS_KM = 2.0
 
 STAY_RATE_PER_NIGHT = {
     AccommodationPreference.BUDGET: 1200,
@@ -236,6 +241,296 @@ def _summary_matches_activities(summary: object, activities: list[dict]) -> bool
                for word, matches in claims.items())
 
 
+def _normalize_place_name(value: object) -> str:
+    """Normalize the names Gemini and map providers use for the same POI."""
+    normalized = re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold())
+    return " ".join(normalized.split())
+
+
+def _activity_coordinates(activity: dict) -> Optional[GeoPoint]:
+    """Read coordinates from the flat shape returned by Gemini, if present."""
+    coordinates = activity.get("coordinates")
+    if not isinstance(coordinates, dict):
+        coordinates = activity
+    try:
+        lat = float(coordinates.get("lat"))
+        lng = float(coordinates.get("lng"))
+    except (TypeError, ValueError):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return None
+    return GeoPoint(lat=lat, lng=lng)
+
+
+def _resolve_approved_poi(
+    activity: dict,
+    approved_by_name: dict[str, dict],
+    approved_pois: list[dict],
+) -> Optional[dict]:
+    """Resolve a model activity to reviewed/map data without trusting its name."""
+    exact = approved_by_name.get(_normalize_place_name(activity.get("name")))
+    if exact:
+        return exact
+
+    # Gemini sometimes returns a local alias or slightly different spelling.
+    # Coordinates supplied in the same response let us safely map that alias to
+    # a reviewed POI without accepting an arbitrary invented place.
+    coordinates = _activity_coordinates(activity)
+    if not coordinates:
+        return None
+    nearest = min(
+        approved_pois,
+        key=lambda poi: haversine_distance(
+            coordinates,
+            GeoPoint(**poi["coordinates"]),
+        ),
+        default=None,
+    )
+    if nearest and haversine_distance(coordinates, GeoPoint(**nearest["coordinates"])) <= COORDINATE_MATCH_RADIUS_KM:
+        return nearest
+    return None
+
+
+def _default_meals(existing: object) -> list[dict]:
+    """Keep the planner response usable when Gemini omits or invents meals."""
+    meals = [deepcopy(meal) for meal in existing if isinstance(meal, dict)] if isinstance(existing, list) else []
+    defaults = [
+        ("breakfast", "local breakfast", 150),
+        ("lunch", "regional lunch", 350),
+        ("dinner", "local dinner", 500),
+    ]
+    existing_types = {str(meal.get("meal_type", "")).casefold() for meal in meals}
+    for meal_type, label, cost in defaults:
+        if len(meals) >= 3:
+            break
+        if meal_type not in existing_types:
+            meals.append({
+                "name": f"Suggested meal type: {label}",
+                "meal_type": meal_type,
+                "cuisine": "Indian",
+                "estimated_cost": cost,
+                "notes": "Restaurant verification unavailable",
+            })
+            existing_types.add(meal_type)
+    while len(meals) < 2:
+        meals.append({
+            "name": "Suggested meal type: local meal",
+            "meal_type": "meal",
+            "cuisine": "Indian",
+            "estimated_cost": 300,
+            "notes": "Restaurant verification unavailable",
+        })
+    return meals
+
+
+def _catalogue_activity(poi: dict, note: str = "") -> dict:
+    coordinates = poi["coordinates"]
+    duration = int(poi.get("estimated_visit_minutes", 60))
+    return {
+        "name": poi["name"],
+        "category": poi.get("category", "attraction"),
+        "lat": coordinates["lat"],
+        "lng": coordinates["lng"],
+        "start_time": "09:00",
+        "end_time": f"{(9 * 60 + duration) // 60:02d}:{(9 * 60 + duration) % 60:02d}",
+        "estimated_cost": int(poi.get("estimated_cost", 0)),
+        "notes": note,
+        "is_backup": False,
+    }
+
+
+def _canonicalize_plan(
+    plan: object,
+    request: TripRequest,
+    approved_pois: list[dict],
+) -> dict:
+    """Make Gemini's flexible JSON safe before strict validation."""
+    source = deepcopy(plan) if isinstance(plan, dict) else {}
+    approved_by_name = {
+        _normalize_place_name(poi.get("name")): poi
+        for poi in approved_pois
+        if poi.get("name")
+    }
+    expected_days = (request.end_date - request.start_date).days + 1
+    days_by_number: dict[int, dict] = {}
+    used_day_numbers: set[int] = set()
+
+    raw_days = source.get("day_plans", [])
+    if not isinstance(raw_days, list):
+        raw_days = []
+
+    for index, raw_day in enumerate(raw_days, start=1):
+        if not isinstance(raw_day, dict):
+            continue
+        try:
+            day_number = int(raw_day.get("day_number", index))
+        except (TypeError, ValueError):
+            day_number = index
+        if day_number < 1 or day_number > expected_days or day_number in used_day_numbers:
+            day_number = next(
+                (candidate for candidate in range(1, expected_days + 1) if candidate not in used_day_numbers),
+                index,
+            )
+        used_day_numbers.add(day_number)
+        day = deepcopy(raw_day)
+        day["day_number"] = day_number
+        day["date"] = (request.start_date + timedelta(days=day_number - 1)).isoformat()
+        changed = False
+
+        for key in ("activities", "backup_activities"):
+            cleaned: list[dict] = []
+            raw_activities = day.get(key, [])
+            if not isinstance(raw_activities, list):
+                raw_activities = []
+                changed = True
+            for raw_activity in raw_activities:
+                if not isinstance(raw_activity, dict):
+                    changed = True
+                    continue
+                poi = _resolve_approved_poi(raw_activity, approved_by_name, approved_pois)
+                if not poi:
+                    logger.warning(
+                        "Dropping itinerary activity not present in approved POIs: %s",
+                        raw_activity.get("name"),
+                    )
+                    changed = True
+                    continue
+                activity = deepcopy(raw_activity)
+                coordinates = poi["coordinates"]
+                if _normalize_place_name(activity.get("name")) != _normalize_place_name(poi["name"]):
+                    changed = True
+                activity.update({
+                    "name": poi["name"],
+                    "category": poi.get("category", "attraction"),
+                    "lat": coordinates["lat"],
+                    "lng": coordinates["lng"],
+                })
+                if not isinstance(activity.get("estimated_cost"), (int, float)):
+                    activity["estimated_cost"] = poi.get("estimated_cost", 0)
+                cleaned.append(activity)
+            day[key] = cleaned
+
+        meals = day.get("meals", [])
+        normalized_meals = _default_meals(meals)
+        for meal in normalized_meals:
+            name = str(meal.get("name", "")).strip()
+            if name and not name.casefold().startswith("suggested meal type:"):
+                if _normalize_place_name(name) not in approved_by_name:
+                    meal["name"] = f"Suggested meal type: {meal.get('meal_type', 'local meal')}"
+                    meal["notes"] = meal.get("notes") or "Restaurant verification unavailable"
+                    changed = True
+        day["meals"] = normalized_meals
+
+        if changed:
+            names = [activity["name"] for activity in day["activities"]]
+            day["notes"] = f"Day {day_number}: {', '.join(names[:3])}" if names else f"Day {day_number} in {request.destination}"
+        days_by_number[day_number] = day
+
+    day_plans: list[dict] = []
+    for day_number in range(1, expected_days + 1):
+        day = days_by_number.get(day_number)
+        if day is None:
+            day = {
+                "day_number": day_number,
+                "date": (request.start_date + timedelta(days=day_number - 1)).isoformat(),
+                "notes": f"Day {day_number} in {request.destination}",
+                "activities": [],
+                "meals": _default_meals([]),
+                "backup_activities": [],
+            }
+        day_plans.append(day)
+
+    used_names = {
+        _normalize_place_name(activity.get("name"))
+        for day in day_plans
+        for activity in day.get("activities", [])
+    }
+    available_pois = [
+        poi for poi in approved_pois
+        if _normalize_place_name(poi.get("name")) not in used_names
+    ] or approved_pois
+
+    # An empty interior day is almost always a malformed model response. Give
+    # it one reviewed stop so the user never receives a broken multi-day plan.
+    for day in day_plans[1:-1]:
+        if day.get("activities"):
+            continue
+        if not available_pois:
+            break
+        poi = available_pois.pop(0)
+        day["activities"] = [_catalogue_activity(poi, "Added from the reviewed destination catalogue.")]
+        day["notes"] = f"Day {day['day_number']}: {poi['name']}"
+        used_names.add(_normalize_place_name(poi["name"]))
+
+    source["day_plans"] = day_plans
+    source["tips"] = source.get("tips", []) if isinstance(source.get("tips", []), list) else []
+    return source
+
+
+async def _repair_plan_schedule(plan: dict, approved_pois: list[dict]) -> None:
+    """Reflow activities around real route times before strict validation."""
+    approved_by_name = {
+        _normalize_place_name(poi.get("name")): poi
+        for poi in approved_pois
+        if poi.get("name")
+    }
+    for day in plan.get("day_plans", []):
+        activities = day.get("activities", [])
+        if not isinstance(activities, list) or not activities:
+            continue
+
+        resolved: list[tuple[dict, dict, Optional[int], int]] = []
+        for index, activity in enumerate(activities):
+            if not isinstance(activity, dict):
+                continue
+            poi = _resolve_approved_poi(activity, approved_by_name, approved_pois)
+            if poi:
+                resolved.append((activity, poi, _minutes_since_midnight(activity.get("start_time")), index))
+        resolved.sort(key=lambda item: (item[2] is None, item[2] or 0, item[3]))
+        if not resolved:
+            day["activities"] = []
+            continue
+
+        stops = [GeoPoint(**item[1]["coordinates"]) for item in resolved]
+        durations = [int(item[1].get("estimated_visit_minutes", 60)) for item in resolved]
+        _, _, route_segments = await validate_day_feasibility(stops, durations)
+        scheduled: list[dict] = []
+        cursor = DEFAULT_ACTIVITY_START
+        dropped = False
+
+        for index, (activity, poi, original_start, _) in enumerate(resolved):
+            travel_minutes = math.ceil(route_segments[index - 1].duration_minutes) if index and index - 1 < len(route_segments) else 0
+            start = max(
+                DEFAULT_ACTIVITY_START if index == 0 else cursor + travel_minutes + MIN_ROUTE_BUFFER_MINUTES,
+                original_start or DEFAULT_ACTIVITY_START,
+            )
+            window = _opening_window(poi.get("opening_hours"))
+            if window:
+                start = max(start, window[0])
+            duration = durations[index]
+            end = start + duration
+            if end > LATEST_ACTIVITY_END or (window and end > window[1]):
+                dropped = True
+                break
+
+            updated = deepcopy(activity)
+            updated["name"] = poi["name"]
+            updated["start_time"] = f"{start // 60:02d}:{start % 60:02d}"
+            updated["end_time"] = f"{end // 60:02d}:{end % 60:02d}"
+            scheduled.append(updated)
+            cursor = end
+
+        if len(scheduled) != len(activities) or any(
+            activity.get("start_time") != updated.get("start_time")
+            or activity.get("end_time") != updated.get("end_time")
+            for activity, updated in zip(activities, scheduled)
+        ):
+            day["activities"] = scheduled
+            if dropped or scheduled:
+                names = [activity["name"] for activity in scheduled]
+                day["notes"] = f"Day {day.get('day_number')}: {', '.join(names[:3])}" if names else f"Day {day.get('day_number')}"
+
+
 async def _validate_plan(
     plan: dict,
     request: TripRequest,
@@ -250,7 +545,7 @@ async def _validate_plan(
     route_segments: list[RouteSegment] = []
     local_transport: dict[int, tuple[int, int]] = {}
     approved_by_name = {
-        " ".join(str(poi.get("name", "")).casefold().split()): poi
+        _normalize_place_name(poi.get("name")): poi
         for poi in approved_pois if poi.get("name")
     }
     poi_names = set(approved_by_name)
@@ -264,20 +559,25 @@ async def _validate_plan(
 
     for day in day_plans:
         day_number = day.get("day_number", "?")
+        try:
+            day_number_int = int(day_number)
+        except (TypeError, ValueError):
+            day_number_int = None
         meals = day.get("meals", [])
         if len(meals) < 2:
             issues.append(
                 f"Day {day_number} has only {len(meals)} meals — need at least 2"
             )
         for meal in meals:
-            name = " ".join(str(meal.get("name", "")).casefold().split())
-            if name and not name.startswith("suggested meal type:") and name not in poi_names:
+            raw_name = str(meal.get("name", "")).strip()
+            name = _normalize_place_name(raw_name)
+            if raw_name and not raw_name.casefold().startswith("suggested meal type:") and name not in poi_names:
                 issues.append(
                     f"Day {day_number} meal '{meal.get('name')}' is not a verified place; use Suggested meal type instead"
                 )
 
         activities = day.get("activities", [])
-        if not activities and day.get("day_number", 1) not in [1, expected_days]:
+        if not activities and day_number_int not in [1, expected_days]:
             issues.append(
                 f"Day {day_number} has no activities planned"
             )
@@ -289,8 +589,7 @@ async def _validate_plan(
         previous_end: Optional[int] = None
         resolved_activities: list[tuple[dict, dict, int, int]] = []
         for activity in activities:
-            name = " ".join(str(activity.get("name", "")).casefold().split())
-            poi = approved_by_name.get(name)
+            poi = _resolve_approved_poi(activity, approved_by_name, approved_pois)
             if not poi:
                 issues.append(f"Day {day_number} includes unverified activity '{activity.get('name')}'")
                 continue
@@ -510,14 +809,13 @@ def _plan_to_itinerary(
     total_days = (request.end_date - request.start_date).days + 1
 
     approved_by_name = {
-        " ".join(poi.get("name", "").casefold().split()): poi
+        _normalize_place_name(poi.get("name")): poi
         for poi in approved_pois or []
         if poi.get("name")
     }
 
     def approved_activity(act: dict, is_backup: bool = False) -> Optional[Activity]:
-        name = " ".join(str(act.get("name", "")).casefold().split())
-        source_poi = approved_by_name.get(name)
+        source_poi = _resolve_approved_poi(act, approved_by_name, approved_pois or [])
         if not source_poi:
             logger.warning("Discarding itinerary activity not present in approved POIs: %s", act.get("name"))
             return None
@@ -773,6 +1071,12 @@ async def generate_itinerary(
         notes.append("Generated without AI — basic itinerary from available data")
         plan = _build_fallback_plan(request, pois, weather_data or [])
 
+    # The model may return aliases, string day numbers, omitted meals, or an
+    # empty interior day. Normalize those cases before strict validation, then
+    # reflow each stop around the actual route times.
+    plan = _canonicalize_plan(plan, request, pois)
+    await _repair_plan_schedule(plan, pois)
+
     # ── Step 5: Validate & Repair ─────────────────────────────────────
     await report("validating", "Checking every stop, timing, and local journey…", 76)
     for iteration in range(MAX_REPAIR_ITERATIONS):
@@ -785,7 +1089,8 @@ async def generate_itinerary(
         repair_prompt = _build_repair_prompt(issues, json.dumps(plan, default=str))
         repaired = await _call_gemini(repair_prompt)
         if repaired:
-            plan = repaired
+            plan = _canonicalize_plan(repaired, request, pois)
+            await _repair_plan_schedule(plan, pois)
         else:
             notes.append(f"Plan has minor issues that couldn't be auto-fixed: {', '.join(issues[:3])}")
             break
@@ -795,8 +1100,27 @@ async def generate_itinerary(
     await report("routing", "Finalising routes and a fully calculated budget…", 90)
     issues, route_segments, local_transport = await _validate_plan(plan, request, pois)
     if issues:
-        logger.warning("Rejecting infeasible itinerary: %s", issues)
-        raise ValueError("Could not generate a feasible itinerary: " + "; ".join(issues[:3]))
+        # A deterministic plan is preferable to showing a validation error
+        # when the AI response remains malformed after its repair attempts.
+        logger.warning("AI itinerary remained invalid; using deterministic fallback: %s", issues)
+        fallback_plan = _canonicalize_plan(
+            _build_fallback_plan(request, pois, weather_data or []),
+            request,
+            pois,
+        )
+        await _repair_plan_schedule(fallback_plan, pois)
+        fallback_issues, fallback_segments, fallback_local_transport = await _validate_plan(
+            fallback_plan,
+            request,
+            pois,
+        )
+        if fallback_issues:
+            logger.warning("Deterministic itinerary also failed validation: %s", fallback_issues)
+            raise ValueError("Could not generate a feasible itinerary: " + "; ".join(fallback_issues[:3]))
+        plan = fallback_plan
+        route_segments = fallback_segments
+        local_transport = fallback_local_transport
+        notes.append("The first AI draft needed correction, so a verified itinerary was generated instead.")
 
     # ── Step 7: Build Itinerary ───────────────────────────────────────
     itinerary = _plan_to_itinerary(
