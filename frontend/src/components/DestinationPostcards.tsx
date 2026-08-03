@@ -19,14 +19,14 @@ interface Destination {
 }
 
 const DESTINATIONS: Destination[] = [
-  { city: "Goa", meta: "Beaches · 620 km avg", Art: GoaArt },
-  { city: "Hampi", meta: "Ruins · 340 km avg", Art: HampiArt },
-  { city: "Rishikesh", meta: "River & hills · 240 km avg", Art: RishikeshArt },
-  { city: "Manali", meta: "Mountains · 540 km avg", Art: ManaliArt },
-  { city: "Jaipur", meta: "Forts & jaali · 280 km avg", Art: JaipurArt },
-  { city: "Kerala", meta: "Backwaters · 700 km avg", Art: KeralaArt },
-  { city: "Varanasi", meta: "Ghats & temples · 790 km avg", Art: VaranasiArt },
-  { city: "Mumbai", meta: "Coast & culture · 410 km avg", Art: MumbaiArt },
+  { city: "Goa", meta: "Beaches & sunsets", Art: GoaArt },
+  { city: "Hampi", meta: "Ancient ruins", Art: HampiArt },
+  { city: "Rishikesh", meta: "River & hills", Art: RishikeshArt },
+  { city: "Manali", meta: "Mountain escapes", Art: ManaliArt },
+  { city: "Jaipur", meta: "Forts & jaali", Art: JaipurArt },
+  { city: "Kerala", meta: "Backwaters & coasts", Art: KeralaArt },
+  { city: "Varanasi", meta: "Ghats & temples", Art: VaranasiArt },
+  { city: "Mumbai", meta: "Coast & culture", Art: MumbaiArt },
 ];
 
 export default function DestinationPostcards() {

@@ -6,11 +6,11 @@ All monetary values are in INR (₹).
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time
+from datetime import date, datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Enums ──────────────────────────────────────────────────────────────
@@ -27,6 +27,30 @@ class TravelVibe(str, Enum):
 class TransportMode(str, Enum):
     FLIGHT = "flight"
     TRAIN = "train"
+    ROAD = "road"
+
+
+class AccommodationPreference(str, Enum):
+    BUDGET = "budget"
+    STANDARD = "standard"
+    COMFORT = "comfort"
+
+
+class TravelPreference(str, Enum):
+    CHEAPEST = "cheapest"
+    FASTEST = "fastest"
+    BALANCED = "balanced"
+
+
+class TripPace(str, Enum):
+    RELAXED = "relaxed"
+    BALANCED = "balanced"
+    PACKED = "packed"
+
+
+class DietaryPreference(str, Enum):
+    VEGETARIAN = "vegetarian"
+    NON_VEGETARIAN = "non_vegetarian"
 
 
 class WeatherSeverity(str, Enum):
@@ -47,6 +71,42 @@ class TripRequest(BaseModel):
         default=[TravelVibe.CULTURE],
         description="Travel vibes/preferences",
     )
+    transport_mode: Optional[TransportMode] = Field(
+        None,
+        description="Transport mode selected by the traveller; omit to use the recommendation",
+    )
+    accommodation_preference: AccommodationPreference = Field(
+        AccommodationPreference.BUDGET,
+        description="Estimated stay tier used for the trip budget",
+    )
+    adults: int = Field(2, ge=1, le=20, description="Number of adult travellers")
+    children: int = Field(0, ge=0, le=20, description="Number of child travellers")
+    travel_preference: TravelPreference = TravelPreference.BALANCED
+    pace: TripPace = TripPace.BALANCED
+    dietary_preference: Optional[DietaryPreference] = None
+    senior_citizens: int = Field(0, ge=0, le=20)
+    accessibility_requirements: Optional[str] = Field(None, max_length=500)
+    allow_early_morning_travel: bool = False
+    allow_late_night_travel: bool = False
+
+    @model_validator(mode="after")
+    def validate_trip_constraints(self) -> "TripRequest":
+        if self.origin.strip().casefold() == self.destination.strip().casefold():
+            raise ValueError("Origin and destination must be different cities")
+        if self.start_date < date.today():
+            raise ValueError("Departure date cannot be in the past")
+        if self.end_date < self.start_date:
+            raise ValueError("Return date cannot be before departure date")
+        if (self.end_date - self.start_date).days + 1 > 14:
+            raise ValueError("Trips can be no longer than 14 days")
+        travellers = self.adults + self.children
+        if self.budget < travellers * 1_500:
+            raise ValueError(
+                f"Budget is too low for {travellers} traveller(s); enter at least ₹{travellers * 1_500:,}"
+            )
+        if self.senior_citizens > self.adults:
+            raise ValueError("Senior citizens cannot exceed the number of adults")
+        return self
 
 
 # ── Geo Models ─────────────────────────────────────────────────────────
@@ -99,6 +159,12 @@ class TransportOption(BaseModel):
     arrival_city: str
     is_recommended: bool = False
     is_fallback: bool = Field(False, description="True if this is from static fallback data")
+    field_provenance: dict[str, str] = Field(
+        default_factory=dict,
+        description="Per-field source labels; transport cards must not imply all data is live",
+    )
+    availability_status: str = "Not checked"
+    last_checked_at: Optional[datetime] = None
 
 
 # ── POI Models ─────────────────────────────────────────────────────────
@@ -159,6 +225,8 @@ class DayPlan(BaseModel):
     backup_activities: list[Activity] = []
     day_budget: int = 0
     day_spent: int = 0
+    local_transport_minutes: int = 0
+    local_transport_cost: int = 0
     notes: Optional[str] = None
 
 
@@ -169,13 +237,18 @@ class RouteSegment(BaseModel):
     geometry: Optional[list[list[float]]] = None  # [[lng, lat], ...]
     distance_km: float = 0
     duration_minutes: float = 0
+    day_number: Optional[int] = None
 
 
 class BudgetBreakdown(BaseModel):
+    outbound_transport: int = 0
+    return_transport: int = 0
     transport: int = 0
     food: int = 0
     activities: int = 0
     accommodation: int = 0
+    local_transport: int = 0
+    taxes_buffer: int = 0
     miscellaneous: int = 0
     total_estimated: int = 0
     remaining: int = 0
@@ -189,6 +262,16 @@ class Itinerary(BaseModel):
     end_date: date
     total_days: int
     vibes: list[TravelVibe]
+    accommodation_preference: AccommodationPreference = AccommodationPreference.BUDGET
+    adults: int = 2
+    children: int = 0
+    travel_preference: TravelPreference = TravelPreference.BALANCED
+    pace: TripPace = TripPace.BALANCED
+    dietary_preference: Optional[DietaryPreference] = None
+    senior_citizens: int = 0
+    accessibility_requirements: Optional[str] = None
+    allow_early_morning_travel: bool = False
+    allow_late_night_travel: bool = False
     transport_options: list[TransportOption] = []
     selected_transport: Optional[TransportOption] = None
     day_plans: list[DayPlan] = []

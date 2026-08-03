@@ -4,13 +4,11 @@
 
 ### AI-Powered India Travel Planner
 
-**Plan your perfect domestic India trip in seconds — powered by Gemini AI, real flight/train data, weather forecasts, and interactive maps.**
+**Plan a domestic India trip with Gemini-assisted activities, transparent transport sources, deterministic budgeting, weather forecasts, and interactive maps.**
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20App-6366f1?style=for-the-badge&logo=vercel)](https://ai-travel-planner-india-seven.vercel.app)
 [![Backend API](https://img.shields.io/badge/API%20Docs-FastAPI-009688?style=for-the-badge&logo=fastapi)](https://yatraai-backend.onrender.com/docs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
-
-![YatraAI Screenshot](docs/screenshot.png)
 
 </div>
 
@@ -21,13 +19,12 @@
 | Feature | Description |
 |---|---|
 | 🤖 **AI Itinerary Generation** | Google Gemini 2.5 Flash creates personalized day-by-day plans |
-| ✈️🚂 **Flights & Trains** | Live provider results when configured, with transparent fare estimates and booking links otherwise |
+| ✈️🚂 **Flights & Trains** | Skyscanner results when configured; train schedules and fares retain separate source labels |
 | 🗺️ **Interactive Maps** | Leaflet + OpenStreetMap with routes and POI markers |
 | 🌤️ **Weather-Aware Planning** | OpenWeatherMap forecasts with indoor backup activities |
-| 💰 **Budget Tracking** | Visual breakdown — transport, food, activities, accommodation |
-| 🔗 **Instant Sharing** | Share via link, WhatsApp, Twitter, or QR code — no signup |
-| ✨ **Plan Refinement** | Update a saved itinerary with natural-language follow-up requests |
-| 🎉 **Festival-Aware** | Surfaces relevant festival dates and crowd-aware travel guidance |
+| 💰 **Budget Tracking** | Deterministic breakdown — outbound/return transport, food, activities, stay, local transport and buffer |
+| 🔗 **Instant Sharing** | View-only links, WhatsApp sharing, and persistent saved itineraries |
+| ✨ **Plan Refinement** | The planning browser can update its saved itinerary with a follow-up request |
 | 🧳 **Packing List** | Generates a weather- and vibe-aware checklist on demand |
 | 🖨️ **Print / PDF** | Print any itinerary or save it as a PDF from the browser |
 | 🏙️ **City Autocomplete** | Instant search across popular Indian cities and destinations, with an OSM fallback |
@@ -44,7 +41,7 @@
 | [TypeScript](https://www.typescriptlang.org/) | Type safety |
 | [Tailwind CSS 4](https://tailwindcss.com/) | Utility-first styling |
 | [Framer Motion](https://www.framer.com/motion/) | Animations |
-| [React Leaflet](https://react-leaflet.js.org/) | Interactive maps |
+| [Leaflet](https://leafletjs.com/) | Interactive maps |
 | [QRCode.react](https://github.com/zpao/qrcode.react) | QR code generation |
 
 ### Backend
@@ -55,7 +52,7 @@
 | [Neon](https://neon.com/) | Serverless PostgreSQL database |
 | [Upstash Redis](https://upstash.com/) | API response caching |
 | [Skyscanner RapidAPI](https://rapidapi.com/) | Optional live flight search |
-| [RailRadar](https://rapidapi.com/railradar/) | Train search |
+| [RailRadar](https://rapidapi.com/railradar/) | Train schedule data (fare and availability are not confirmed) |
 | [OpenWeatherMap](https://openweathermap.org/) | Weather forecasts |
 | [Nominatim / OSM](https://nominatim.org/) | One-off city geocoding fallback (free) |
 | [OSRM](http://project-osrm.org/) | Route calculation (free) |
@@ -105,7 +102,7 @@ Frontend will be at: `http://localhost:3000`
 
 ## 🔑 Environment Variables
 
-Create a `.env` file at the root from `.env.example`:
+Copy the included root [`.env.example`](.env.example) to `.env` for the backend, and copy [`frontend/.env.example`](frontend/.env.example) to `frontend/.env.local` for the public frontend URL:
 
 | Variable | Required | Description | Get it from |
 |---|---|---|---|
@@ -163,10 +160,12 @@ ai-travel-planner-india/
 │       │   └── transport.py  # Flights & trains
 │       ├── models/           # Pydantic data models
 │       ├── services/         # Business logic
-│       │   ├── gemini.py     # AI itinerary generation
+│       │   ├── gemini_planner.py # AI itinerary generation and validation
 │       │   ├── transport.py  # Flight/train search
 │       │   ├── weather.py    # Weather forecasts
-│       │   └── osm.py        # Maps & routing
+│       │   ├── routing.py    # Full stop-to-stop route calculation
+│       │   ├── poi_discovery.py # POI lookup
+│       │   └── trip_storage.py # Shared-itinerary persistence
 │       ├── cache/            # Redis/in-memory caching
 │       └── config.py         # Settings & env vars
 │
@@ -174,6 +173,9 @@ ai-travel-planner-india/
     ├── next.config.ts
     ├── vercel.json           # Vercel deployment config
     ├── package.json
+    ├── playwright.config.ts  # Browser-test setup
+    ├── e2e/
+    │   └── trip-flow.spec.ts # Form → generation → shared-page test
     └── src/
         ├── app/
         │   ├── page.tsx      # Home page
@@ -209,6 +211,19 @@ Contributions are welcome! Please follow these steps:
 - Frontend: Use TypeScript strictly, follow the existing component patterns
 - Commits: Use [Conventional Commits](https://www.conventionalcommits.org/) format
 
+### Tests
+
+```bash
+# Backend deterministic budget, transport, validation, route and safety tests
+cd backend
+pytest
+
+# Frontend lint and browser flow (install browsers once with `npx playwright install`)
+cd frontend
+npm run lint
+npm run test:e2e
+```
+
 ---
 
 ## 📜 License
@@ -222,7 +237,8 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 - [Google Gemini AI](https://ai.google.dev/) for the LLM backbone
 - [OpenStreetMap](https://www.openstreetmap.org/) & [Nominatim](https://nominatim.org/) for free geocoding
 - [OSRM](http://project-osrm.org/) for free routing
-- [Amadeus](https://developers.amadeus.com/) for flight data
+- [Skyscanner](https://www.skyscanner.net/) for optional flight search
+- [RailRadar](https://rapidapi.com/railradar/) for train schedules
 - [OpenWeatherMap](https://openweathermap.org/) for weather data
 
 ---

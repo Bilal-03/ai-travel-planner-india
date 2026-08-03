@@ -24,8 +24,10 @@ export default function CityAutocomplete({
   const [results, setResults] = useState<CitySearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isWaking, setIsWaking] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const searchControllerRef = useRef<AbortController | null>(null);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -38,22 +40,37 @@ export default function CityAutocomplete({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => () => searchControllerRef.current?.abort(), []);
+
   const searchCities = useCallback(async (q: string) => {
     if (q.length < 2) {
+      searchControllerRef.current?.abort();
+      searchControllerRef.current = null;
       setResults([]);
+      setIsWaking(false);
+      setIsLoading(false);
       return;
     }
 
+    searchControllerRef.current?.abort();
+    const controller = new AbortController();
+    searchControllerRef.current = controller;
     setIsLoading(true);
+    const wakingTimer = setTimeout(() => setIsWaking(true), 900);
     try {
-      const cities = await api.searchCities(q);
+      const cities = await api.searchCities(q, controller.signal);
+      if (searchControllerRef.current !== controller) return;
       setResults(cities);
       setIsOpen(cities.length > 0);
     } catch {
       // Fallback: show nothing on error
-      setResults([]);
+      if (searchControllerRef.current === controller) setResults([]);
     } finally {
-      setIsLoading(false);
+      clearTimeout(wakingTimer);
+      if (searchControllerRef.current === controller) {
+        setIsLoading(false);
+        setIsWaking(false);
+      }
     }
   }, []);
 
@@ -109,6 +126,7 @@ export default function CityAutocomplete({
           </span>
         )}
       </div>
+      {isWaking && <p className="mt-1 text-xs text-foreground-muted">Waking up city search…</p>}
 
       {/* Dropdown */}
       {isOpen && results.length > 0 && (

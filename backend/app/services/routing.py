@@ -5,6 +5,7 @@ Calculates travel times and routes between POIs for feasibility validation.
 
 import asyncio
 import logging
+import math
 from typing import Optional
 
 import httpx
@@ -107,8 +108,18 @@ async def validate_day_feasibility(
             total_travel_minutes += segment.duration_minutes
             segments.append(segment)
         else:
-            # Estimate 30 min if OSRM fails
+            # Keep the estimate as a segment too, so the local-transport budget
+            # and the feasibility result use identical data even when routing is down.
+            lat_delta = (stops[i + 1].lat - stops[i].lat) * 111
+            lng_delta = (stops[i + 1].lng - stops[i].lng) * 111 * math.cos(math.radians(stops[i].lat))
+            estimated_distance = round(math.hypot(lat_delta, lng_delta), 1)
             total_travel_minutes += 30
+            segments.append(RouteSegment(
+                from_point=stops[i],
+                to_point=stops[i + 1],
+                distance_km=estimated_distance,
+                duration_minutes=30,
+            ))
 
     total_visit_minutes = sum(visit_durations)
     total_hours = (total_travel_minutes + total_visit_minutes) / 60

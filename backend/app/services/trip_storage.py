@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS trips (
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     budget INTEGER NOT NULL,
+    owner_token_hash TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )
 """
@@ -48,6 +49,9 @@ def _ensure_schema_sync() -> bool:
             with _connect() as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(_SCHEMA)
+                    # Existing installations predate edit-token protection.
+                    # Keep this migration additive so shared links remain readable.
+                    cursor.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS owner_token_hash TEXT")
             _schema_ready = True
             logger.info("Connected to Neon PostgreSQL; trips table is ready")
             return True
@@ -60,7 +64,7 @@ async def _ensure_schema() -> bool:
     return bool(settings.database_url) and await asyncio.to_thread(_ensure_schema_sync)
 
 
-async def save_trip(itinerary: Itinerary) -> str:
+async def save_trip(itinerary: Itinerary, owner_token_hash: str | None = None) -> str:
     """Save an itinerary and return its stable, shareable ID."""
     trip_id = str(uuid.uuid4())[:12]
     itinerary.id = trip_id
@@ -72,16 +76,21 @@ async def save_trip(itinerary: Itinerary) -> str:
                 with _connect() as connection:
                     with connection.cursor() as cursor:
                         cursor.execute(
-                            """INSERT INTO trips (id, itinerary_json, origin, destination, start_date, end_date, budget, created_at)
-                            VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s)""",
+                            """INSERT INTO trips (id, itinerary_json, origin, destination, start_date, end_date, budget, owner_token_hash, created_at)
+                            VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)""",
                             (trip_id, data, itinerary.origin.name, itinerary.destination.name,
-                             itinerary.start_date, itinerary.end_date, itinerary.budget.total_estimated, created_at),
+                             itinerary.start_date, itinerary.end_date, itinerary.budget.total_estimated,
+                             owner_token_hash, created_at),
                         )
             await asyncio.to_thread(insert)
             return trip_id
         except Exception as error:
             logger.error("Neon save failed; using memory: %s", error)
-    _memory_store[trip_id] = {"itinerary": data, "created_at": created_at}
+    _memory_store[trip_id] = {
+        "itinerary": data,
+        "owner_token_hash": owner_token_hash,
+        "created_at": created_at,
+    }
     return trip_id
 
 
@@ -104,6 +113,23 @@ async def get_trip(trip_id: str) -> Optional[Itinerary]:
     return Itinerary.model_validate_json(cached["itinerary"]) if cached else None
 
 
+async def get_trip_owner_token_hash(trip_id: str) -> Optional[str]:
+    """Return the write capability hash without ever including it in shared JSON."""
+    if await _ensure_schema():
+        try:
+            def fetch() -> Optional[str]:
+                with _connect() as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT owner_token_hash FROM trips WHERE id = %s", (trip_id,))
+                        row = cursor.fetchone()
+                        return row[0] if row else None
+            return await asyncio.to_thread(fetch)
+        except Exception as error:
+            logger.error("Neon owner-token lookup failed; using memory: %s", error)
+    cached = _memory_store.get(trip_id)
+    return cached.get("owner_token_hash") if cached else None
+
+
 async def update_trip(itinerary: Itinerary) -> None:
     """Persist refinements and packing-list changes without changing the share URL."""
     data = itinerary.model_dump_json()
@@ -117,4 +143,9 @@ async def update_trip(itinerary: Itinerary) -> None:
             return
         except Exception as error:
             logger.error("Neon update failed; using memory: %s", error)
-    _memory_store[itinerary.id] = {"itinerary": data, "created_at": datetime.utcnow().isoformat()}
+    existing = _memory_store.get(itinerary.id, {})
+    _memory_store[itinerary.id] = {
+        "itinerary": data,
+        "owner_token_hash": existing.get("owner_token_hash"),
+        "created_at": datetime.utcnow().isoformat(),
+    }

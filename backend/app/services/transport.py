@@ -1,11 +1,12 @@
 """
-Transport service — Amadeus flights + IRCTC trains + static fallback data.
+Transport service — Skyscanner flights + RailRadar schedules + transparent fallback estimates.
 Searches for transport options between Indian cities, with aggressive caching
 and graceful fallback when API quotas are exhausted.
 """
 
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -114,6 +115,15 @@ def _estimated_train_option(origin: str, destination: str, distance_km: float | 
         departure_city=origin.title(),
         arrival_city=destination.title(),
         is_fallback=True,
+        field_provenance={
+            "train": "No schedule data available",
+            "schedule": "Not available",
+            "fare": "Estimated 3A fare",
+            "availability": "Not available",
+            "travel_date": "Not date-verified",
+        },
+        availability_status="Not available",
+        last_checked_at=datetime.now(timezone.utc),
     )
 
 
@@ -139,6 +149,15 @@ def _get_fallback_trains(
                 departure_city=origin.title(),
                 arrival_city=destination.title(),
                 is_fallback=True,
+                field_provenance={
+                    "train": "Static schedule reference (not live)",
+                    "schedule": "Static schedule reference (not date-verified)",
+                    "fare": f"Estimated {train['class']} fare",
+                    "availability": "Not available",
+                    "travel_date": "Not date-verified",
+                },
+                availability_status="Not available",
+                last_checked_at=datetime.now(timezone.utc),
             ))
 
     return results or [_estimated_train_option(origin, destination, distance_km)]
@@ -234,6 +253,13 @@ def _get_fallback_flights(
                 "departure_city": origin.title(),
                 "arrival_city": destination.title(),
                 "is_fallback": True,
+                "field_provenance": {
+                    "fare": "Estimated fare guidance",
+                    "schedule": "Not available",
+                    "availability": "Not available",
+                },
+                "availability_status": "Not available",
+                "last_checked_at": datetime.now(timezone.utc).isoformat(),
             })
     if results:
         return results
@@ -250,6 +276,13 @@ def _get_fallback_flights(
         "departure_city": origin.title(),
         "arrival_city": destination.title(),
         "is_fallback": True,
+        "field_provenance": {
+            "fare": "Estimated fare guidance",
+            "schedule": "Not available",
+            "availability": "Not available",
+        },
+        "availability_status": "Not available",
+        "last_checked_at": datetime.now(timezone.utc).isoformat(),
     }]
 
 # ── Skyscanner Flight Search ──────────────────────────────────────────
@@ -332,7 +365,14 @@ async def search_flights(
                         "arrival_time": arr_time,
                         "departure_city": origin.title(),
                         "arrival_city": destination.title(),
-                        "is_fallback": False,
+                    "is_fallback": False,
+                    "field_provenance": {
+                        "fare": "Flight search result",
+                        "schedule": "Flight search result",
+                        "availability": "Not provided by search result",
+                    },
+                    "availability_status": "Not provided by search result",
+                    "last_checked_at": datetime.now(timezone.utc).isoformat(),
                     })
                 except Exception as e:
                     logger.warning(f"Failed to parse flight itinerary: {e}")
@@ -407,20 +447,32 @@ async def search_trains(
             from_details = train_entry.get("from", {})
             to_details = train_entry.get("to", {})
             
-            # RailRadar provides duration in minutes natively
+            # RailRadar provides schedule metadata, but neither confirmed fares
+            # nor seat availability. Never present its results as a live booking.
             duration_minutes = train_entry.get("duration", 0)
+            distance = distance_km or _estimated_route_distance(origin, destination)
+            estimated_fare = max(350, int(distance * 1.45 + 250))
 
             trains.append({
                 "mode": "train",
                 "provider": train_details.get("name", "Unknown Train"),
                 "code": train_details.get("number", ""),
-                "price": 1500,  # Fares are often not returned in basic endpoints
+                "price": estimated_fare,
                 "duration_minutes": duration_minutes,
                 "departure_time": from_details.get("departure", ""),
                 "arrival_time": to_details.get("arrival", ""),
                 "departure_city": origin.title(),
                 "arrival_city": destination.title(),
                 "is_fallback": False,
+                "field_provenance": {
+                    "train": "RailRadar schedule data",
+                    "schedule": "RailRadar schedule data (not date-verified)",
+                    "fare": "Estimated 3A fare",
+                    "availability": "Not available",
+                    "travel_date": "Not verified against operating days",
+                },
+                "availability_status": "Not available",
+                "last_checked_at": datetime.now(timezone.utc).isoformat(),
             })
         except Exception as e:
             logger.warning(f"Failed to parse train data: {e}")
@@ -431,6 +483,28 @@ async def search_trains(
         return [f.model_dump() for f in fallbacks]
 
     return trains
+
+
+def _road_option(origin: str, destination: str, distance_km: float) -> TransportOption:
+    """Return a transparent self-drive/cab estimate; it is never a live quote."""
+    return TransportOption(
+        mode=TransportMode.ROAD,
+        provider="Road trip estimate",
+        code=None,
+        # Intercity cab estimate including a modest toll allowance.
+        price=max(900, int(distance_km * 13 + 350)),
+        duration_minutes=max(90, int(distance_km / 45 * 60)),
+        departure_city=origin.title(),
+        arrival_city=destination.title(),
+        is_fallback=True,
+        field_provenance={
+            "fare": "Estimated intercity cab, fuel, and toll cost",
+            "schedule": "Traveller-selected departure time",
+            "availability": "Not checked",
+        },
+        availability_status="Not checked",
+        last_checked_at=datetime.now(timezone.utc),
+    )
 
 
 # ── Combined Transport Search ─────────────────────────────────────────
@@ -466,6 +540,8 @@ async def search_transport(
     if isinstance(train_results, list):
         for t in train_results:
             options.append(TransportOption(**t))
+
+    options.append(_road_option(origin, destination, distance_km))
 
     # Sort by price
     options.sort(key=lambda o: o.price)

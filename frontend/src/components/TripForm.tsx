@@ -3,7 +3,15 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import CityAutocomplete from "./CityAutocomplete";
-import { TravelVibe, TripRequest } from "@/lib/api";
+import {
+  AccommodationPreference,
+  DietaryPreference,
+  TravelPreference,
+  TravelVibe,
+  TripPace,
+  TripRequest,
+  TransportMode,
+} from "@/lib/api";
 
 interface TripFormProps {
   onSubmit: (data: TripRequest) => void;
@@ -19,19 +27,24 @@ const VIBES: { value: TravelVibe; label: string; desc: string }[] = [
   { value: "nightlife", label: "Nightlife", desc: "Bars & clubs" },
 ];
 
-function formatBudgetLabel(value: number): string {
-  if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`;
-  if (value >= 1000) return `₹${(value / 1000).toFixed(0)}K`;
-  return `₹${value}`;
-}
-
 export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [budget, setBudget] = useState(15000);
+  const [adults, setAdults] = useState(2);
+  const [children, setChildren] = useState(0);
+  const [travelPreference, setTravelPreference] = useState<TravelPreference>("balanced");
+  const [pace, setPace] = useState<TripPace>("balanced");
   const [selectedVibes, setSelectedVibes] = useState<TravelVibe[]>(["culture"]);
+  const [transportMode, setTransportMode] = useState<TransportMode | undefined>();
+  const [accommodationPreference, setAccommodationPreference] = useState<AccommodationPreference>("budget");
+  const [dietaryPreference, setDietaryPreference] = useState<DietaryPreference | undefined>();
+  const [seniorCitizens, setSeniorCitizens] = useState(0);
+  const [accessibilityRequirements, setAccessibilityRequirements] = useState("");
+  const [allowEarlyMorningTravel, setAllowEarlyMorningTravel] = useState(false);
+  const [allowLateNightTravel, setAllowLateNightTravel] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const toggleVibe = (vibe: TravelVibe) => {
@@ -46,9 +59,13 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
     if (!destination) newErrors.destination = "Select a destination city";
     if (!startDate) newErrors.startDate = "Pick a start date";
     if (!endDate) newErrors.endDate = "Pick an end date";
-    if (startDate && endDate && new Date(endDate) <= new Date(startDate)) {
-      newErrors.endDate = "End date must be after start date";
+    if (origin && destination && origin.trim().toLowerCase() === destination.trim().toLowerCase()) {
+      newErrors.destination = "Choose a different destination";
     }
+    if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
+      newErrors.endDate = "Return date cannot be before departure";
+    }
+    if (budget < (adults + children) * 1500) newErrors.budget = "This total is too low for your travel party";
     if (selectedVibes.length === 0) newErrors.vibes = "Select at least one vibe";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -65,6 +82,17 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
       end_date: endDate,
       budget,
       vibes: selectedVibes,
+      transport_mode: transportMode,
+      accommodation_preference: accommodationPreference,
+      adults,
+      children,
+      travel_preference: travelPreference,
+      pace,
+      dietary_preference: dietaryPreference,
+      senior_citizens: seniorCitizens,
+      accessibility_requirements: accessibilityRequirements.trim() || undefined,
+      allow_early_morning_travel: allowEarlyMorningTravel,
+      allow_late_night_travel: allowLateNightTravel,
     });
   };
 
@@ -153,29 +181,48 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
           </div>
         </div>
 
-        <div className="pb-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-[18px]">
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label
-                htmlFor="budget-slider"
-                className="font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted"
-              >
-                Budget
+            <label className="block font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted mb-2">
+              Travellers
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs text-foreground-secondary">Adults
+                <input type="number" min={1} max={20} value={adults} onChange={(event) => setAdults(Math.max(1, Number(event.target.value) || 1))} className="mt-1 w-full rounded border border-glass-border bg-black/20 px-3 py-2 text-sm text-foreground" />
               </label>
-              <span className="font-[family-name:var(--font-space-mono)] text-base font-bold text-marigold">
-                {formatBudgetLabel(budget)}
-              </span>
+              <label className="text-xs text-foreground-secondary">Children
+                <input type="number" min={0} max={20} value={children} onChange={(event) => setChildren(Math.max(0, Number(event.target.value) || 0))} className="mt-1 w-full rounded border border-glass-border bg-black/20 px-3 py-2 text-sm text-foreground" />
+              </label>
             </div>
-            <input
-              id="budget-slider"
-              type="range"
-              min={1000}
-              max={100000}
-              step={1000}
-              value={budget}
-              onChange={(e) => setBudget(Number(e.target.value))}
-              className="w-full cursor-pointer"
-            />
+          </div>
+          <div>
+            <label htmlFor="trip-budget" className="block font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted mb-2">
+              Total trip budget for {adults + children} traveller{adults + children === 1 ? "" : "s"}, including transport and stay
+            </label>
+            <div className="flex rounded border border-glass-border bg-black/20 focus-within:border-marigold">
+              <span className="px-3 py-2 text-foreground-muted">₹</span>
+              <input id="trip-budget" type="number" min={(adults + children) * 1500} max={1000000} step={500} value={budget} onChange={(event) => setBudget(Number(event.target.value) || 0)} className="min-w-0 flex-1 bg-transparent py-2 pr-3 text-sm font-semibold text-foreground outline-none" />
+            </div>
+            {errors.budget && <p className="text-error text-xs mt-1">{errors.budget}</p>}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-[18px]">
+          <div>
+            <label className="block font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted mb-2">Travel preference</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(["cheapest", "fastest", "balanced"] as TravelPreference[]).map((preference) => (
+                <button key={preference} type="button" onClick={() => setTravelPreference(preference)} className={`rounded border px-2 py-2 text-xs capitalize transition-colors ${travelPreference === preference ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted hover:text-foreground"}`}>{preference}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-muted mb-2">Pace</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(["relaxed", "balanced", "packed"] as TripPace[]).map((option) => (
+                <button key={option} type="button" onClick={() => setPace(option)} className={`rounded border px-2 py-2 text-xs capitalize transition-colors ${pace === option ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted hover:text-foreground"}`}>{option}</button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -207,6 +254,55 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
             </div>
             {errors.vibes && <p className="text-error text-xs mt-2">{errors.vibes}</p>}
         </div>
+
+        <details className="rounded border border-glass-border bg-black/10 p-3">
+          <summary className="cursor-pointer font-[family-name:var(--font-space-mono)] text-xs uppercase tracking-wide text-foreground-secondary">
+            More preferences
+          </summary>
+          <div className="mt-4 space-y-4">
+            <div>
+              <span className="block text-xs text-foreground-secondary mb-2">Transport preference</span>
+              <div className="grid grid-cols-4 gap-2">
+                <button type="button" onClick={() => setTransportMode(undefined)} className={`rounded border px-2 py-2 text-xs ${!transportMode ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted"}`}>Any</button>
+                {(["train", "flight", "road"] as TransportMode[]).map((mode) => (
+                  <button key={mode} type="button" onClick={() => setTransportMode(mode)} className={`rounded border px-2 py-2 text-xs capitalize ${transportMode === mode ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted"}`}>{mode}</button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="block text-xs text-foreground-secondary mb-2">Hotel level</span>
+              <div className="grid grid-cols-3 gap-2">
+                {(["budget", "standard", "comfort"] as AccommodationPreference[]).map((tier) => (
+                  <button key={tier} type="button" onClick={() => setAccommodationPreference(tier)} className={`rounded border px-2 py-2 text-xs capitalize ${accommodationPreference === tier ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted"}`}>{tier}</button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="block text-xs text-foreground-secondary mb-2">Food preference</span>
+              <div className="grid grid-cols-3 gap-2">
+                <button type="button" onClick={() => setDietaryPreference(undefined)} className={`rounded border px-2 py-2 text-xs ${!dietaryPreference ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted"}`}>No preference</button>
+                <button type="button" onClick={() => setDietaryPreference("vegetarian")} className={`rounded border px-2 py-2 text-xs ${dietaryPreference === "vegetarian" ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted"}`}>Vegetarian</button>
+                <button type="button" onClick={() => setDietaryPreference("non_vegetarian")} className={`rounded border px-2 py-2 text-xs ${dietaryPreference === "non_vegetarian" ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted"}`}>Non-vegetarian</button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-[150px_1fr] gap-3">
+              <label className="text-xs text-foreground-secondary">Senior citizens
+                <input type="number" min={0} max={adults} value={seniorCitizens} onChange={(event) => setSeniorCitizens(Math.min(adults, Math.max(0, Number(event.target.value) || 0)))} className="mt-1 w-full rounded border border-glass-border bg-black/20 px-3 py-2 text-sm text-foreground" />
+              </label>
+              <label className="text-xs text-foreground-secondary">Accessibility requirements
+                <input type="text" maxLength={500} value={accessibilityRequirements} onChange={(event) => setAccessibilityRequirements(event.target.value)} placeholder="Wheelchair access, step-free routes…" className="mt-1 w-full rounded border border-glass-border bg-black/20 px-3 py-2 text-sm text-foreground" />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-foreground-secondary">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={allowEarlyMorningTravel} onChange={(event) => setAllowEarlyMorningTravel(event.target.checked)} /> Early-morning travel is okay</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={allowLateNightTravel} onChange={(event) => setAllowLateNightTravel(event.target.checked)} /> Late-night travel is okay</label>
+            </div>
+          </div>
+        </details>
 
         {/* Submit */}
         <motion.button

@@ -12,3 +12,6 @@ psycopg[binary]>=3.2.0
 
 # Utilities
 haversine>=2.8.0
+
+# Test tooling
+pytest>=8.0.0

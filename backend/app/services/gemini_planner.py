@@ -6,8 +6,10 @@ with a propose → validate → repair loop for quality assurance.
 
 import json
 import logging
+import math
+import re
 from datetime import date, timedelta
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from google import genai
 from google.genai import types
@@ -16,6 +18,7 @@ from app.cache.redis_cache import cached
 from app.config import settings
 from app.models.trip import (
     Activity,
+    AccommodationPreference,
     BudgetBreakdown,
     DayPlan,
     DayWeather,
@@ -26,6 +29,8 @@ from app.models.trip import (
     POI,
     RouteSegment,
     TransportOption,
+    TransportMode,
+    TravelPreference,
     TravelVibe,
     TripRequest,
     WeatherSeverity,
@@ -37,18 +42,23 @@ from app.services.poi_discovery import discover_pois
 from app.services.routing import get_route_segment, validate_day_feasibility
 from app.services.transport import search_transport
 from app.services.weather import get_forecast
-from app.services.festivals import get_festivals_for_trip
 from app.services.photos import get_destination_photos
 
 logger = logging.getLogger(__name__)
 
 MAX_REPAIR_ITERATIONS = 1
 
+STAY_RATE_PER_NIGHT = {
+    AccommodationPreference.BUDGET: 1200,
+    AccommodationPreference.STANDARD: 2500,
+    AccommodationPreference.COMFORT: 5000,
+}
+
 SYSTEM_PROMPT = """You are an expert India domestic travel planner. You create detailed, practical, 
 budget-conscious day-by-day itineraries for travelers within India.
 
 IMPORTANT RULES:
-1. All costs must be in INR (₹). Use realistic Indian prices.
+1. All individual activity and meal costs must be per traveller, in INR (₹). Use realistic Indian prices.
 2. Plan activities from 8:00 AM to 8:00 PM max per day.
 3. Allow 30-60 min between activities for travel time.
 4. Include 3 meals per day (breakfast, lunch, dinner) with estimated costs.
@@ -57,7 +67,13 @@ IMPORTANT RULES:
 7. Respect the user's travel vibe preferences.
 8. First and last days may have reduced activities due to travel.
 9. Suggest specific, real places — not generic "visit a temple".
-10. Include estimated costs for every activity and meal.
+10. Include estimated costs for every activity and meal. Do NOT calculate totals,
+    category budgets, transport, hotel, local transport, or taxes: the backend calculates them.
+11. Only name a restaurant when it appears in supplied place data. Otherwise use
+    "Suggested meal type: <dish or food area>" — never invent a generic restaurant.
+12. Match the requested pace: relaxed means fewer, longer stops; packed means more
+    stops only when the full travel-time validation can still pass.
+13. Respect dietary, accessibility, and early/late travel constraints supplied in trip details.
 
 You MUST respond with valid JSON matching the exact schema provided. No markdown, no explanations — ONLY JSON."""
 
@@ -71,18 +87,13 @@ def _build_planning_prompt(
     weather: list[dict],
     distance_km: float,
     festivals: list[dict],
+    selected_transport: Optional[TransportOption] = None,
 ) -> str:
     """Build the grounded planning prompt with real data."""
 
     total_days = (request.end_date - request.start_date).days + 1
 
-    # Estimate transport cost from best option
-    transport_cost = 0
-    if transport_options:
-        cheapest = min(transport_options, key=lambda t: t.get("price", 99999))
-        transport_cost = cheapest.get("price", 0) * 2  # Round trip
-
-    daily_budget = (request.budget - transport_cost) // max(total_days, 1)
+    selected_transport_data = selected_transport.model_dump() if selected_transport else None
 
     # Give Gemini every POI returned by the reviewed catalogue and the map
     # adapter. The trip length controls what it schedules, never what it can
@@ -94,8 +105,15 @@ def _build_planning_prompt(
 TRIP DETAILS:
 - Dates: {request.start_date} to {request.end_date} ({total_days} days)
 - Total Budget: ₹{request.budget:,}
-- Transport Budget (round trip estimate): ₹{transport_cost:,}
-- Daily Budget for activities + food: ₹{daily_budget:,}
+- Travellers: {request.adults} adult(s), {request.children} child(ren)
+- Travel preference: {request.travel_preference.value}
+- Pace: {request.pace.value}
+- Dietary preference: {request.dietary_preference.value if request.dietary_preference else 'no restriction'}
+- Accessibility: {request.accessibility_requirements or ('senior travellers in party' if request.senior_citizens else 'none stated')}
+- Early-morning travel accepted: {'yes' if request.allow_early_morning_travel else 'no'}
+- Late-night travel accepted: {'yes' if request.allow_late_night_travel else 'no'}
+- Selected transport (budgeted both ways by the server): {json.dumps(selected_transport_data, default=str)}
+- Accommodation preference: {request.accommodation_preference.value}
 - Vibes: {', '.join(v.value for v in request.vibes)}
 - Distance: {distance_km:.0f} km
 
@@ -119,17 +137,8 @@ preserve suitable unscheduled places as alternatives.
 Use the supplied names and coordinates for priority landmarks; do not replace them
 with generic or invented attractions.
 
-TRANSPORT OPTIONS (real data):
-{json.dumps(transport_options[:5], indent=2, default=str)}
-
 WEATHER FORECAST:
 {json.dumps(weather, indent=2, default=str)}
-
-FESTIVALS OR EVENTS DURING THIS TRIP:
-{json.dumps(festivals, indent=2, default=str)}
-
-If events are present, factor in crowds, closures, booking lead times, and an
-optional respectful festival experience. Do not invent event dates.
 
 Respond with ONLY valid JSON in this exact format:
 {{
@@ -153,7 +162,7 @@ Respond with ONLY valid JSON in this exact format:
       ],
       "meals": [
         {{
-          "name": "Restaurant/food spot name",
+          "name": "Suggested meal type: regional dish or food area",
           "meal_type": "breakfast/lunch/dinner",
           "cuisine": "South Indian/etc",
           "estimated_cost": 300,
@@ -175,13 +184,6 @@ Respond with ONLY valid JSON in this exact format:
       ]
     }}
   ],
-  "budget_breakdown": {{
-    "transport": {transport_cost},
-    "food": 0,
-    "activities": 0,
-    "accommodation": 0,
-    "miscellaneous": 0
-  }},
   "tips": ["Useful travel tip 1", "Useful travel tip 2"]
 }}"""
 
@@ -202,42 +204,139 @@ Please fix these issues and return the corrected plan in the EXACT SAME JSON for
 Only return valid JSON — no markdown, no explanations."""
 
 
-def _validate_plan(plan: dict, request: TripRequest) -> list[str]:
-    """Validate the generated plan for budget and feasibility issues."""
-    issues = []
+def _minutes_since_midnight(value: object) -> Optional[int]:
+    """Parse the compact HH:MM times returned by the itinerary model."""
+    match = re.fullmatch(r"([01]\d|2[0-3]):([0-5]\d)", str(value or ""))
+    return int(match.group(1)) * 60 + int(match.group(2)) if match else None
 
+
+def _opening_window(value: object) -> Optional[tuple[int, int]]:
+    """Handle the common OSM `09:00-17:00` shape; unknown formats stay unknown."""
+    match = re.search(r"(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})", str(value or ""))
+    if not match:
+        return None
+    start, end = (_minutes_since_midnight(part.zfill(5)) for part in match.groups())
+    return (start, end) if start is not None and end is not None else None
+
+
+def _summary_matches_activities(summary: object, activities: list[dict]) -> bool:
+    """Catch claims such as 'shopping' when no corresponding stop exists."""
+    text = str(summary or "").casefold()
+    haystack = " ".join(
+        f"{activity.get('name', '')} {activity.get('category', '')}".casefold()
+        for activity in activities
+    )
+    claims = {
+        "shopping": ("market", "bazaar", "shop", "mall"),
+        "beach": ("beach",),
+        "museum": ("museum", "gallery"),
+        "temple": ("temple", "mandir", "worship"),
+    }
+    return all(not (word in text and not any(match in haystack for match in matches))
+               for word, matches in claims.items())
+
+
+async def _validate_plan(
+    plan: dict,
+    request: TripRequest,
+    approved_pois: list[dict],
+) -> tuple[list[str], list[RouteSegment], dict[int, tuple[int, int]]]:
+    """Validate real stop-to-stop travel, timings, opening windows, and summaries.
+
+    The returned route segments and local-transport estimates are the same values
+    used by the final itinerary, so the map and budget cannot drift from validation.
+    """
+    issues: list[str] = []
+    route_segments: list[RouteSegment] = []
+    local_transport: dict[int, tuple[int, int]] = {}
+    approved_by_name = {
+        " ".join(str(poi.get("name", "")).casefold().split()): poi
+        for poi in approved_pois if poi.get("name")
+    }
+    poi_names = set(approved_by_name)
     day_plans = plan.get("day_plans", [])
-    budget = plan.get("budget_breakdown", {})
 
-    # Check total cost vs budget
-    total_cost = sum(budget.values())
-    if total_cost > request.budget * 1.1:  # 10% tolerance
-        issues.append(
-            f"Total estimated cost (₹{total_cost:,}) exceeds budget (₹{request.budget:,}) by more than 10%"
-        )
-
-    # Check day count
     expected_days = (request.end_date - request.start_date).days + 1
     if len(day_plans) != expected_days:
         issues.append(
             f"Plan has {len(day_plans)} days but trip is {expected_days} days"
         )
 
-    # Check each day has meals
     for day in day_plans:
+        day_number = day.get("day_number", "?")
         meals = day.get("meals", [])
         if len(meals) < 2:
             issues.append(
-                f"Day {day.get('day_number', '?')} has only {len(meals)} meals — need at least 2"
+                f"Day {day_number} has only {len(meals)} meals — need at least 2"
             )
+        for meal in meals:
+            name = " ".join(str(meal.get("name", "")).casefold().split())
+            if name and not name.startswith("suggested meal type:") and name not in poi_names:
+                issues.append(
+                    f"Day {day_number} meal '{meal.get('name')}' is not a verified place; use Suggested meal type instead"
+                )
 
         activities = day.get("activities", [])
         if not activities and day.get("day_number", 1) not in [1, expected_days]:
             issues.append(
-                f"Day {day.get('day_number', '?')} has no activities planned"
+                f"Day {day_number} has no activities planned"
             )
+        if not _summary_matches_activities(day.get("notes"), activities):
+            issues.append(f"Day {day_number} summary describes something not present in its activities")
 
-    return issues
+        stops: list[GeoPoint] = []
+        visit_durations: list[int] = []
+        previous_end: Optional[int] = None
+        resolved_activities: list[tuple[dict, dict, int, int]] = []
+        for activity in activities:
+            name = " ".join(str(activity.get("name", "")).casefold().split())
+            poi = approved_by_name.get(name)
+            if not poi:
+                issues.append(f"Day {day_number} includes unverified activity '{activity.get('name')}'")
+                continue
+            start = _minutes_since_midnight(activity.get("start_time"))
+            end = _minutes_since_midnight(activity.get("end_time"))
+            if start is None or end is None or end <= start:
+                issues.append(f"Day {day_number} has invalid timing for '{poi['name']}'")
+                continue
+            if previous_end is not None and start < previous_end:
+                issues.append(f"Day {day_number} has overlapping activities around '{poi['name']}'")
+            previous_end = end
+            duration = int(poi.get("estimated_visit_minutes", 60))
+            if end - start < duration:
+                issues.append(f"Day {day_number} does not allow the stated visit time for '{poi['name']}'")
+            window = _opening_window(poi.get("opening_hours"))
+            if window and (start < window[0] or end > window[1]):
+                issues.append(f"Day {day_number} schedules '{poi['name']}' outside its listed opening hours")
+            coordinates = poi.get("coordinates", {})
+            stops.append(GeoPoint(lat=coordinates["lat"], lng=coordinates["lng"]))
+            visit_durations.append(duration)
+            resolved_activities.append((activity, poi, start, end))
+
+        feasible, total_hours, segments = await validate_day_feasibility(stops, visit_durations)
+        for segment in segments:
+            segment.day_number = int(day_number) if str(day_number).isdigit() else None
+        route_segments.extend(segments)
+        if stops and not feasible:
+            issues.append(f"Day {day_number} needs {total_hours:.1f} hours including every stop-to-stop journey")
+        for index, segment in enumerate(segments, start=1):
+            previous = resolved_activities[index - 1]
+            current = resolved_activities[index]
+            earliest_arrival = previous[3] + math.ceil(segment.duration_minutes)
+            if current[2] < earliest_arrival:
+                issues.append(
+                    f"Day {day_number} has insufficient travel time from '{previous[1]['name']}' to '{current[1]['name']}'"
+                )
+        if resolved_activities:
+            span = resolved_activities[-1][3] - resolved_activities[0][2]
+            if span > 12 * 60:
+                issues.append(f"Day {day_number} exceeds the 12-hour itinerary window")
+        distance = sum(segment.distance_km for segment in segments)
+        minutes = math.ceil(sum(segment.duration_minutes for segment in segments))
+        # Conservative local cab/auto estimate, including pickup minimums.
+        local_transport[int(day_number)] = (minutes, int(math.ceil(distance * 18 + len(segments) * 30))) if str(day_number).isdigit() else (0, 0)
+
+    return issues, route_segments, local_transport
 
 
 async def _call_gemini(prompt: str, system: str = SYSTEM_PROMPT) -> Optional[dict]:
@@ -278,6 +377,118 @@ async def _call_gemini(prompt: str, system: str = SYSTEM_PROMPT) -> Optional[dic
         return None
 
 
+def _select_transport(
+    options: list[TransportOption],
+    requested_mode: Optional[TransportMode],
+    distance_km: float,
+    preference: TravelPreference = TravelPreference.BALANCED,
+) -> Optional[TransportOption]:
+    """Choose exactly one option before planning; this is also the budgeted option."""
+    for option in options:
+        option.is_recommended = False
+    candidates = [option for option in options if not requested_mode or option.mode == requested_mode]
+    if not candidates:
+        return None
+    if preference == TravelPreference.CHEAPEST:
+        selected = min(candidates, key=lambda option: option.price)
+    elif preference == TravelPreference.FASTEST:
+        selected = min(candidates, key=lambda option: option.duration_minutes)
+    elif requested_mode:
+        selected = min(candidates, key=lambda option: option.price)
+    elif distance_km < 500:
+        selected = min((option for option in candidates if option.mode == TransportMode.TRAIN),
+                       key=lambda option: option.price, default=min(candidates, key=lambda option: option.price))
+    else:
+        selected = min((option for option in candidates if option.mode == TransportMode.FLIGHT),
+                       key=lambda option: option.price, default=min(candidates, key=lambda option: option.price))
+    selected.is_recommended = True
+    return selected
+
+
+def _calculate_budget(
+    day_plans: list[DayPlan], selected_transport: Optional[TransportOption], request: TripRequest
+) -> BudgetBreakdown:
+    """Authoritative arithmetic: LLM output never supplies a category or total."""
+    travellers = request.adults + request.children
+    # Transport, food, and admissions are supplied as per-traveller line items.
+    outbound = selected_transport.price * travellers if selected_transport else 0
+    returning = selected_transport.price * travellers if selected_transport else 0
+    food = sum(meal.estimated_cost for day in day_plans for meal in day.meals) * travellers
+    activities = sum(activity.estimated_cost for day in day_plans for activity in day.activities) * travellers
+    between_stop_transport = sum(day.local_transport_cost for day in day_plans)
+    # Return terminal transfers are not represented by POI-to-POI routes, but
+    # are part of a credible trip total (station/airport/hotel pickup and drop).
+    transfer_per_leg = {
+        TransportMode.FLIGHT: 500,
+        TransportMode.TRAIN: 250,
+        TransportMode.ROAD: 150,
+    }.get(selected_transport.mode if selected_transport else TransportMode.ROAD, 0)
+    local_transport = between_stop_transport + transfer_per_leg * 2
+    nights = max((request.end_date - request.start_date).days, 0)
+    rooms = math.ceil(request.adults / 2)
+    accommodation = nights * STAY_RATE_PER_NIGHT[request.accommodation_preference] * rooms
+    subtotal = outbound + returning + accommodation + food + activities + local_transport
+    taxes_buffer = math.ceil(subtotal * 0.05)
+    total = subtotal + taxes_buffer
+    return BudgetBreakdown(
+        outbound_transport=outbound,
+        return_transport=returning,
+        transport=outbound + returning,
+        food=food,
+        activities=activities,
+        accommodation=accommodation,
+        local_transport=local_transport,
+        taxes_buffer=taxes_buffer,
+        miscellaneous=0,
+        total_estimated=total,
+        remaining=request.budget - total,
+    )
+
+
+def select_transport_for_itinerary(
+    itinerary: Itinerary, mode: TransportMode, provider: str, code: Optional[str]
+) -> Itinerary:
+    """Apply a traveller choice and recalculate the authoritative trip budget."""
+    selected = next(
+        (
+            option for option in itinerary.transport_options
+            if option.mode == mode and option.provider == provider and option.code == code
+        ),
+        None,
+    )
+    if not selected:
+        raise ValueError("That transport option is no longer available for this itinerary")
+    for option in itinerary.transport_options:
+        option.is_recommended = option is selected
+    itinerary.selected_transport = selected
+    if itinerary.day_plans:
+        itinerary.day_plans[0].transport = selected
+        itinerary.day_plans[-1].transport = selected
+    request = TripRequest(
+        origin=itinerary.origin.name,
+        destination=itinerary.destination.name,
+        start_date=itinerary.start_date,
+        end_date=itinerary.end_date,
+        budget=itinerary.budget.total_estimated + itinerary.budget.remaining,
+        vibes=itinerary.vibes,
+        transport_mode=mode,
+        accommodation_preference=itinerary.accommodation_preference,
+        adults=itinerary.adults,
+        children=itinerary.children,
+        travel_preference=itinerary.travel_preference,
+        pace=itinerary.pace,
+        dietary_preference=itinerary.dietary_preference,
+        senior_citizens=itinerary.senior_citizens,
+        accessibility_requirements=itinerary.accessibility_requirements,
+        allow_early_morning_travel=itinerary.allow_early_morning_travel,
+        allow_late_night_travel=itinerary.allow_late_night_travel,
+    )
+    itinerary.budget = _calculate_budget(itinerary.day_plans, selected, request)
+    itinerary.generation_notes = [note for note in itinerary.generation_notes if not note.startswith("Selected transport:")]
+    itinerary.generation_notes.append(f"Selected transport: {selected.provider}; all transport totals use this option round trip.")
+    return itinerary
+
+
 def _plan_to_itinerary(
     plan: dict,
     request: TripRequest,
@@ -291,6 +502,8 @@ def _plan_to_itinerary(
     festivals: list[dict] | None = None,
     packing_list: list[dict] | None = None,
     approved_pois: list[dict] | None = None,
+    selected_transport: Optional[TransportOption] = None,
+    local_transport: dict[int, tuple[int, int]] | None = None,
 ) -> Itinerary:
     """Convert raw AI plan dict into structured Itinerary model."""
 
@@ -364,8 +577,8 @@ def _plan_to_itinerary(
                 notes=meal.get("notes"),
             ))
 
-        # Calculate day spending
-        day_spent = sum(a.estimated_cost for a in activities) + sum(m.estimated_cost for m in meals)
+        local_minutes, local_cost = (local_transport or {}).get(day_num, (0, 0))
+        day_spent = sum(a.estimated_cost for a in activities) + sum(m.estimated_cost for m in meals) + local_cost
 
         day_plans.append(DayPlan(
             day_number=day_num,
@@ -375,34 +588,16 @@ def _plan_to_itinerary(
             meals=meals,
             backup_activities=backup_activities,
             day_spent=day_spent,
+            local_transport_minutes=local_minutes,
+            local_transport_cost=local_cost,
             notes=dp.get("notes"),
         ))
 
-    # Build budget breakdown
-    budget_data = plan.get("budget_breakdown", {})
-    total_food = sum(dp.day_spent for dp in day_plans)
-    budget_breakdown = BudgetBreakdown(
-        transport=budget_data.get("transport", 0),
-        food=budget_data.get("food", total_food),
-        activities=budget_data.get("activities", 0),
-        accommodation=budget_data.get("accommodation", 0),
-        miscellaneous=budget_data.get("miscellaneous", 0),
-    )
-    budget_breakdown.total_estimated = (
-        budget_breakdown.transport + budget_breakdown.food +
-        budget_breakdown.activities + budget_breakdown.accommodation +
-        budget_breakdown.miscellaneous
-    )
-    budget_breakdown.remaining = request.budget - budget_breakdown.total_estimated
-
-    # Select recommended transport
-    selected = None
-    for opt in transport_options:
-        if opt.is_recommended:
-            selected = opt
-            break
-    if not selected and transport_options:
-        selected = transport_options[0]
+    selected = selected_transport or next((opt for opt in transport_options if opt.is_recommended), None)
+    budget_breakdown = _calculate_budget(day_plans, selected, request)
+    if day_plans and selected:
+        day_plans[0].transport = selected
+        day_plans[-1].transport = selected
 
     # Tips from AI
     generation_notes = notes + plan.get("tips", [])
@@ -414,6 +609,16 @@ def _plan_to_itinerary(
         end_date=request.end_date,
         total_days=total_days,
         vibes=request.vibes,
+        accommodation_preference=request.accommodation_preference,
+        adults=request.adults,
+        children=request.children,
+        travel_preference=request.travel_preference,
+        pace=request.pace,
+        dietary_preference=request.dietary_preference,
+        senior_citizens=request.senior_citizens,
+        accessibility_requirements=request.accessibility_requirements,
+        allow_early_morning_travel=request.allow_early_morning_travel,
+        allow_late_night_travel=request.allow_late_night_travel,
         transport_options=transport_options,
         selected_transport=selected,
         day_plans=day_plans,
@@ -427,7 +632,12 @@ def _plan_to_itinerary(
     )
 
 
-async def generate_itinerary(request: TripRequest) -> Itinerary:
+ProgressCallback = Callable[[str, str, int], Awaitable[None]]
+
+
+async def generate_itinerary(
+    request: TripRequest, progress: Optional[ProgressCallback] = None
+) -> Itinerary:
     """
     Main orchestration function — generates a complete itinerary.
 
@@ -444,7 +654,12 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
     import asyncio
     notes: list[str] = []
 
+    async def report(step: str, message: str, percent: int) -> None:
+        if progress:
+            await progress(step, message, percent)
+
     # ── Step 1: Geocode (parallel) ────────────────────────────────────
+    await report("geocoding", "Finding your origin and destination…", 12)
     logger.info(f"🗺️ Geocoding: {request.origin} → {request.destination}")
 
     origin_task = geocode_to_city_info(request.origin)
@@ -461,6 +676,7 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
     logger.info(f"📏 Distance: {distance_km:.0f} km")
 
     # ── Step 3: Parallel data fetching (transport + POI + weather + images) ─
+    await report("trip_context", "Gathering transport, places, weather, and stay context…", 30)
     logger.info("🚂✈️📍🌤️🖼️ Fetching trip context in parallel...")
 
     transport_task = search_transport(
@@ -487,7 +703,9 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
     transport_result, pois, weather_data, photos = await asyncio.gather(
         transport_task, poi_task, weather_task, photos_task, return_exceptions=True,
     )
-    festivals = get_festivals_for_trip(destination.name, request.start_date, request.end_date)
+    # Festival intelligence is intentionally deferred until it can be backed by
+    # a comprehensive, maintained source. Do not present partial dates as trip facts.
+    festivals: list[dict] = []
 
     # Handle transport results
     if isinstance(transport_result, Exception):
@@ -502,6 +720,12 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
         fallback_count = sum(1 for t in transport_options if t.is_fallback)
         if fallback_count > 0:
             notes.append(f"{fallback_count} transport option(s) from estimated data")
+
+    selected_transport = _select_transport(
+        transport_options, request.transport_mode, distance_km, request.travel_preference
+    )
+    if request.transport_mode and not selected_transport:
+        raise ValueError(f"No {request.transport_mode.value} option is available for this route")
 
     # Handle POI results
     if isinstance(pois, Exception):
@@ -525,10 +749,8 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
     if not photos:
         notes.append("Destination photography is unavailable — add an Unsplash key to enable it")
 
-    if festivals:
-        notes.append(f"Festival-aware planning: {', '.join(event['name'] for event in festivals)}")
-
     # ── Step 4: AI Planning ───────────────────────────────────────────
+    await report("planning", "Building your day-by-day itinerary…", 58)
     logger.info("🤖 Generating itinerary with Gemini AI...")
 
     prompt = _build_planning_prompt(
@@ -540,6 +762,7 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
         weather=weather_data or [],
         distance_km=distance_km,
         festivals=festivals,
+        selected_transport=selected_transport,
     )
 
     plan = await _call_gemini(prompt)
@@ -551,8 +774,9 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
         plan = _build_fallback_plan(request, pois, weather_data or [])
 
     # ── Step 5: Validate & Repair ─────────────────────────────────────
+    await report("validating", "Checking every stop, timing, and local journey…", 76)
     for iteration in range(MAX_REPAIR_ITERATIONS):
-        issues = _validate_plan(plan, request)
+        issues, route_segments, local_transport = await _validate_plan(plan, request, pois)
         if not issues:
             logger.info(f"✅ Plan validated on iteration {iteration + 1}")
             break
@@ -566,36 +790,13 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
             notes.append(f"Plan has minor issues that couldn't be auto-fixed: {', '.join(issues[:3])}")
             break
 
-    # ── Step 6: Route Segments (limited, parallel) ────────────────────
-    logger.info("🗺️ Computing route segments...")
-    route_pairs: list[tuple[GeoPoint, GeoPoint]] = []
-
-    for dp in plan.get("day_plans", []):
-        activities = dp.get("activities", [])
-        if len(activities) >= 2:
-            first = activities[0]
-            last = activities[-1]
-            if first.get("lat") and last.get("lat"):
-                route_pairs.append((
-                    GeoPoint(lat=first["lat"], lng=first["lng"]),
-                    GeoPoint(lat=last["lat"], lng=last["lng"]),
-                ))
-        if len(route_pairs) >= 5:
-            break
-
-    # Fetch route segments in parallel
-    if route_pairs:
-        route_tasks = [
-            get_route_segment(from_pt, to_pt)
-            for from_pt, to_pt in route_pairs
-        ]
-        route_results = await asyncio.gather(*route_tasks, return_exceptions=True)
-        route_segments = [
-            seg for seg in route_results
-            if isinstance(seg, RouteSegment)
-        ]
-    else:
-        route_segments = []
+    # A repaired plan needs its own complete route validation.  We retain the
+    # segments from that same validation for the map and local transport budget.
+    await report("routing", "Finalising routes and a fully calculated budget…", 90)
+    issues, route_segments, local_transport = await _validate_plan(plan, request, pois)
+    if issues:
+        logger.warning("Rejecting infeasible itinerary: %s", issues)
+        raise ValueError("Could not generate a feasible itinerary: " + "; ".join(issues[:3]))
 
     # ── Step 7: Build Itinerary ───────────────────────────────────────
     itinerary = _plan_to_itinerary(
@@ -610,10 +811,13 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
         destination_photos=photos,
         festivals=festivals,
         approved_pois=pois,
+        selected_transport=selected_transport,
+        local_transport=local_transport,
     )
 
     logger.info(f"✨ Itinerary generated: {itinerary.total_days} days, "
                 f"₹{itinerary.budget.total_estimated:,} estimated")
+    await report("ready", "Your itinerary is ready.", 98)
 
     return itinerary
 
@@ -625,7 +829,6 @@ def _build_fallback_plan(
 ) -> dict:
     """Build a basic plan without AI when Gemini is unavailable."""
     total_days = (request.end_date - request.start_date).days + 1
-    daily_budget = request.budget // max(total_days, 1)
 
     day_plans = []
     poi_idx = 0
@@ -633,6 +836,7 @@ def _build_fallback_plan(
     for day_num in range(1, total_days + 1):
         day_date = request.start_date + timedelta(days=day_num - 1)
         activities = []
+        next_start = 9 * 60
 
         # Add 3-4 POIs per day
         for _ in range(min(4, len(pois) - poi_idx)):
@@ -640,22 +844,25 @@ def _build_fallback_plan(
                 break
             poi = pois[poi_idx]
             poi_idx += 1
+            visit_minutes = int(poi.get("estimated_visit_minutes", 60))
+            end_minutes = next_start + visit_minutes
             activities.append({
                 "name": poi.get("name", "Unknown"),
                 "category": poi.get("category", "attraction"),
                 "lat": poi.get("coordinates", {}).get("lat", 0),
                 "lng": poi.get("coordinates", {}).get("lng", 0),
-                "start_time": f"{9 + len(activities) * 2:02d}:00",
-                "end_time": f"{10 + len(activities) * 2:02d}:00",
+                "start_time": f"{next_start // 60:02d}:{next_start % 60:02d}",
+                "end_time": f"{end_minutes // 60:02d}:{end_minutes % 60:02d}",
                 "estimated_cost": poi.get("estimated_cost", 100),
                 "notes": "",
                 "is_backup": False,
             })
+            next_start = end_minutes + 30
 
         meals = [
-            {"name": "Local breakfast spot", "meal_type": "breakfast", "cuisine": "Indian", "estimated_cost": 150, "notes": ""},
-            {"name": "Local restaurant", "meal_type": "lunch", "cuisine": "Indian", "estimated_cost": 350, "notes": ""},
-            {"name": "Dinner restaurant", "meal_type": "dinner", "cuisine": "Indian", "estimated_cost": 500, "notes": ""},
+            {"name": "Suggested meal type: local breakfast", "meal_type": "breakfast", "cuisine": "Indian", "estimated_cost": 150, "notes": "Restaurant verification unavailable"},
+            {"name": "Suggested meal type: regional lunch", "meal_type": "lunch", "cuisine": "Indian", "estimated_cost": 350, "notes": "Restaurant verification unavailable"},
+            {"name": "Suggested meal type: local dinner", "meal_type": "dinner", "cuisine": "Indian", "estimated_cost": 500, "notes": "Restaurant verification unavailable"},
         ]
 
         day_plans.append({
@@ -669,13 +876,6 @@ def _build_fallback_plan(
 
     return {
         "day_plans": day_plans,
-        "budget_breakdown": {
-            "transport": 0,
-            "food": daily_budget * total_days // 3,
-            "activities": daily_budget * total_days // 3,
-            "accommodation": daily_budget * total_days // 4,
-            "miscellaneous": daily_budget * total_days // 12,
-        },
         "tips": ["This is a basic itinerary — add your Gemini API key for AI-powered planning"],
     }
 
@@ -720,7 +920,6 @@ def _itinerary_to_plan(itinerary: Itinerary) -> dict:
             }
             for day in itinerary.day_plans
         ],
-        "budget_breakdown": itinerary.budget.model_dump(exclude={"total_estimated", "remaining"}),
         "tips": itinerary.generation_notes,
     }
 
@@ -734,6 +933,17 @@ async def refine_itinerary(itinerary: Itinerary, instruction: str) -> Itinerary:
         end_date=itinerary.end_date,
         budget=itinerary.budget.total_estimated + itinerary.budget.remaining,
         vibes=itinerary.vibes,
+        transport_mode=itinerary.selected_transport.mode if itinerary.selected_transport else None,
+        accommodation_preference=itinerary.accommodation_preference,
+        adults=itinerary.adults,
+        children=itinerary.children,
+        travel_preference=itinerary.travel_preference,
+        pace=itinerary.pace,
+        dietary_preference=itinerary.dietary_preference,
+        senior_citizens=itinerary.senior_citizens,
+        accessibility_requirements=itinerary.accessibility_requirements,
+        allow_early_morning_travel=itinerary.allow_early_morning_travel,
+        allow_late_night_travel=itinerary.allow_late_night_travel,
     )
     existing_plan = _itinerary_to_plan(itinerary)
     prompt = f"""Update this India itinerary according to the traveller's request.
@@ -752,11 +962,17 @@ per day, and return ONLY a valid JSON object matching the current itinerary sche
         itinerary.generation_notes.append("Could not apply that AI refinement right now. Please try again.")
         return itinerary
 
-    issues = _validate_plan(refined_plan, request)
+    approved_pois = [
+        activity.poi.model_dump()
+        for day_plan in itinerary.day_plans
+        for activity in [*day_plan.activities, *day_plan.backup_activities]
+    ]
+    issues, route_segments, local_transport = await _validate_plan(refined_plan, request, approved_pois)
     if issues:
         repaired = await _call_gemini(_build_repair_prompt(issues, json.dumps(refined_plan, default=str)))
         if repaired:
             refined_plan = repaired
+            issues, route_segments, local_transport = await _validate_plan(refined_plan, request, approved_pois)
 
     refined = _plan_to_itinerary(
         plan=refined_plan,
@@ -765,16 +981,14 @@ per day, and return ONLY a valid JSON object matching the current itinerary sche
         destination=itinerary.destination,
         transport_options=itinerary.transport_options,
         weather_forecast=itinerary.weather_forecast,
-        route_segments=itinerary.route_segments,
+        route_segments=route_segments,
         notes=[f"AI refinement applied: {instruction}"],
         destination_photos=[photo.model_dump() for photo in itinerary.destination_photos],
-        festivals=[festival.model_dump() for festival in itinerary.festivals],
+        festivals=[],
         packing_list=[item.model_dump() for item in itinerary.packing_list],
-        approved_pois=[
-            activity.poi.model_dump()
-            for day_plan in itinerary.day_plans
-            for activity in [*day_plan.activities, *day_plan.backup_activities]
-        ],
+        approved_pois=approved_pois,
+        selected_transport=itinerary.selected_transport,
+        local_transport=local_transport,
     )
     refined.id = itinerary.id
     return refined

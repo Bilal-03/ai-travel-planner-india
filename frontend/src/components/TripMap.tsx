@@ -16,6 +16,18 @@ const DAY_COLORS = [
   "#f59e0b", "#ec4899", "#ef4444", "#14b8a6",
 ];
 
+const POPUP_HTML_ENTITIES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+function escapePopupHtml(value: string | null | undefined): string {
+  return (value || "").replace(/[&<>"']/g, (character) => POPUP_HTML_ENTITIES[character]);
+}
+
 export default function TripMap({
   center,
   dayPlans,
@@ -23,22 +35,20 @@ export default function TripMap({
   destination,
 }: TripMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
+  const mapInstanceRef = useRef<import("leaflet").Map | null>(null);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
-  const [L, setL] = useState<any>(null);
+  const [L, setL] = useState<typeof import("leaflet") | null>(null);
 
   // Store markers and polylines grouped by day index
-  const dayLayersRef = useRef<Map<number, any[]>>(new Map());
+  const dayLayersRef = useRef<Map<number, import("leaflet").Layer[]>>(new Map());
   // Store route polylines (not per-day)
-  const routeLayersRef = useRef<any[]>([]);
+  const routeLayersRef = useRef<{ polyline: import("leaflet").Polyline; dayIdx: number }[]>([]);
   // Store all points for bounds fitting per day
   const dayPointsRef = useRef<Map<number, [number, number][]>>(new Map());
 
   useEffect(() => {
     // Dynamic import of Leaflet (client-only)
-    import("leaflet").then((leaflet) => {
-      setL(leaflet.default);
-    });
+    import("leaflet").then(setL);
   }, []);
 
   useEffect(() => {
@@ -72,7 +82,7 @@ export default function TripMap({
     // Add markers for all activities, grouped by day
     dayPlans.forEach((day, dayIdx) => {
       const color = DAY_COLORS[dayIdx % DAY_COLORS.length];
-      const dayMarkers: any[] = [];
+      const dayMarkers: import("leaflet").Layer[] = [];
       const dayPoints: [number, number][] = [];
 
       day.activities.forEach((act) => {
@@ -106,9 +116,9 @@ export default function TripMap({
           .addTo(map)
           .bindPopup(
             `<div style="font-family: system-ui; padding: 4px;">
-              <strong>${act.poi.name}</strong><br/>
-              <span style="opacity: 0.7">Day ${day.day_number} • ${act.poi.category}</span>
-              ${act.start_time ? `<br/><span style="opacity: 0.7">${act.start_time} – ${act.end_time || ""}</span>` : ""}
+              <strong>${escapePopupHtml(act.poi.name)}</strong><br/>
+              <span style="opacity: 0.7">Day ${day.day_number} • ${escapePopupHtml(act.poi.category)}</span>
+              ${act.start_time ? `<br/><span style="opacity: 0.7">${escapePopupHtml(act.start_time)} – ${escapePopupHtml(act.end_time)}</span>` : ""}
             </div>`
           );
 
@@ -120,18 +130,19 @@ export default function TripMap({
     });
 
     // Draw route segments
-    routeSegments.forEach((seg, idx) => {
+    routeSegments.forEach((seg) => {
       if (seg.geometry && seg.geometry.length > 0) {
         const coords = seg.geometry.map(
           (p: number[]) => [p[1], p[0]] as [number, number]
         );
+        const dayIdx = Math.max((seg.day_number || 1) - 1, 0);
         const polyline = L.polyline(coords, {
-          color: DAY_COLORS[idx % DAY_COLORS.length],
+          color: DAY_COLORS[dayIdx % DAY_COLORS.length],
           weight: 3,
           opacity: 0.7,
           dashArray: "5, 10",
         }).addTo(map);
-        routeLayersRef.current.push(polyline);
+        routeLayersRef.current.push({ polyline, dayIdx });
       }
     });
 
@@ -156,7 +167,7 @@ export default function TripMap({
 
     // Toggle marker visibility per day
     dayLayersRef.current.forEach((markers, dayIdx) => {
-      markers.forEach((marker: any) => {
+      markers.forEach((marker) => {
         if (selectedDay === null || selectedDay === dayIdx) {
           // Show marker
           if (!map.hasLayer(marker)) {
@@ -172,8 +183,8 @@ export default function TripMap({
     });
 
     // Toggle route segment visibility
-    routeLayersRef.current.forEach((polyline: any, idx: number) => {
-      if (selectedDay === null || selectedDay === idx) {
+    routeLayersRef.current.forEach(({ polyline, dayIdx }) => {
+      if (selectedDay === null || selectedDay === dayIdx) {
         if (!map.hasLayer(polyline)) {
           polyline.addTo(map);
         }

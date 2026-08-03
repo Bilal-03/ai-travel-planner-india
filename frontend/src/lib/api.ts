@@ -4,6 +4,27 @@
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const EDIT_TOKEN_HEADER = "X-Trip-Edit-Token";
+
+function editTokenKey(tripId: string): string {
+  return `yatraai:trip-edit-token:${tripId}`;
+}
+
+function saveEditToken(tripId: string, token: string | null): void {
+  if (typeof window !== "undefined" && token) {
+    window.sessionStorage.setItem(editTokenKey(tripId), token);
+  }
+}
+
+function getEditToken(tripId: string): string | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem(editTokenKey(tripId));
+}
+
+function editHeaders(tripId: string): HeadersInit | undefined {
+  const token = getEditToken(tripId);
+  return token ? { [EDIT_TOKEN_HEADER]: token } : undefined;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -27,6 +48,12 @@ export type TravelVibe =
   | "spiritual"
   | "nightlife";
 
+export type TransportMode = "flight" | "train" | "road";
+export type AccommodationPreference = "budget" | "standard" | "comfort";
+export type TravelPreference = "cheapest" | "fastest" | "balanced";
+export type TripPace = "relaxed" | "balanced" | "packed";
+export type DietaryPreference = "vegetarian" | "non_vegetarian";
+
 export interface TripRequest {
   origin: string;
   destination: string;
@@ -34,10 +61,21 @@ export interface TripRequest {
   end_date: string;
   budget: number;
   vibes: TravelVibe[];
+  transport_mode?: TransportMode;
+  accommodation_preference: AccommodationPreference;
+  adults: number;
+  children: number;
+  travel_preference: TravelPreference;
+  pace: TripPace;
+  dietary_preference?: DietaryPreference;
+  senior_citizens: number;
+  accessibility_requirements?: string;
+  allow_early_morning_travel: boolean;
+  allow_late_night_travel: boolean;
 }
 
 export interface TransportOption {
-  mode: "flight" | "train";
+  mode: TransportMode;
   provider: string;
   code: string | null;
   price: number;
@@ -48,6 +86,9 @@ export interface TransportOption {
   arrival_city: string;
   is_recommended: boolean;
   is_fallback: boolean;
+  field_provenance: Record<string, string>;
+  availability_status: string;
+  last_checked_at: string | null;
 }
 
 export interface POI {
@@ -99,14 +140,20 @@ export interface DayPlan {
   backup_activities: Activity[];
   day_budget: number;
   day_spent: number;
+  local_transport_minutes: number;
+  local_transport_cost: number;
   notes: string | null;
 }
 
 export interface BudgetBreakdown {
+  outbound_transport: number;
+  return_transport: number;
   transport: number;
   food: number;
   activities: number;
   accommodation: number;
+  local_transport: number;
+  taxes_buffer: number;
   miscellaneous: number;
   total_estimated: number;
   remaining: number;
@@ -118,6 +165,7 @@ export interface RouteSegment {
   geometry: number[][] | null;
   distance_km: number;
   duration_minutes: number;
+  day_number: number | null;
 }
 
 export interface CityInfo {
@@ -157,6 +205,16 @@ export interface Itinerary {
   end_date: string;
   total_days: number;
   vibes: TravelVibe[];
+  accommodation_preference: AccommodationPreference;
+  adults: number;
+  children: number;
+  travel_preference: TravelPreference;
+  pace: TripPace;
+  dietary_preference: DietaryPreference | null;
+  senior_citizens: number;
+  accessibility_requirements: string | null;
+  allow_early_morning_travel: boolean;
+  allow_late_night_travel: boolean;
   transport_options: TransportOption[];
   selected_transport: TransportOption | null;
   day_plans: DayPlan[];
@@ -168,6 +226,19 @@ export interface Itinerary {
   packing_list: PackingItem[];
   share_url: string | null;
   generation_notes: string[];
+}
+
+export interface GenerationStatus {
+  step: string;
+  message: string;
+  progress: number;
+}
+
+export interface GenerationRequestOptions {
+  signal?: AbortSignal;
+  progressToken?: string;
+  timeoutMs?: number;
+  retries?: number;
 }
 
 // ── API Client ────────────────────────────────────────────────────────
@@ -183,38 +254,95 @@ class ApiError extends Error {
 
 async function request<T>(
   endpoint: string,
-  options?: RequestInit
+  options?: RequestInit & {
+    timeoutMs?: number;
+    retries?: number;
+    onResponse?: (response: Response) => void;
+  }
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
-  });
+  const { timeoutMs = 30_000, retries = 0, onResponse, ...fetchOptions } = options || {};
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new ApiError(body.detail || "Request failed", res.status);
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const abortFromCaller = () => controller.abort();
+    fetchOptions.signal?.addEventListener("abort", abortFromCaller, { once: true });
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      const res = await fetch(url, {
+        ...fetchOptions,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...fetchOptions.headers,
+        },
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new ApiError(body.detail || "Request failed", res.status);
+      }
+      onResponse?.(res);
+      return res.json();
+    } catch (error) {
+      if (fetchOptions.signal?.aborted) throw error;
+      const retryable = !(error instanceof ApiError) || error.status >= 500;
+      if (attempt < retries && retryable && !timedOut) continue;
+      if (timedOut) throw new ApiError("The planner is taking longer than expected. Please retry.", 408);
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+      fetchOptions.signal?.removeEventListener("abort", abortFromCaller);
+    }
   }
-
-  return res.json();
+  throw new ApiError("Request failed", 500);
 }
 
 // ── Endpoints ─────────────────────────────────────────────────────────
 
 export const api = {
   /** Search Indian cities for autocomplete */
-  searchCities: (query: string) =>
-    request<CitySearchResult[]>(`/api/search/cities?q=${encodeURIComponent(query)}`),
+  searchCities: (query: string, signal?: AbortSignal) =>
+    request<CitySearchResult[]>(`/api/search/cities?q=${encodeURIComponent(query)}`, {
+      signal,
+      timeoutMs: 15_000,
+      retries: 1,
+    }),
 
   /** Generate a complete AI itinerary */
-  generateTrip: (data: TripRequest) =>
-    request<Itinerary>("/api/trips/generate", {
+  generateTrip: async (data: TripRequest, options: GenerationRequestOptions = {}) => {
+    let editToken: string | null = null;
+    const itinerary = await request<Itinerary>("/api/trips/generate", {
       method: "POST",
       body: JSON.stringify(data),
-    }),
+      signal: options.signal,
+      timeoutMs: options.timeoutMs ?? 90_000,
+      retries: options.retries ?? 1,
+      headers: options.progressToken ? { "X-Progress-Token": options.progressToken } : undefined,
+      onResponse: (response) => {
+        editToken = response.headers.get(EDIT_TOKEN_HEADER);
+      },
+    });
+    saveEditToken(itinerary.id, editToken);
+    return itinerary;
+  },
+
+  subscribeTripProgress: (token: string, onProgress: (status: GenerationStatus) => void) => {
+    const stream = new EventSource(`${API_BASE}/api/trips/progress/${encodeURIComponent(token)}`);
+    stream.addEventListener("progress", (event) => {
+      try {
+        onProgress(JSON.parse((event as MessageEvent).data) as GenerationStatus);
+      } catch {
+        // Ignore malformed intermediary events; the final request still reports errors.
+      }
+    });
+    return () => stream.close();
+  },
 
   /** Get a saved trip by ID */
   getTrip: (tripId: string) => request<Itinerary>(`/api/trips/${tripId}`),
@@ -230,10 +358,25 @@ export const api = {
     request<Itinerary>(`/api/trips/${tripId}/refine`, {
       method: "POST",
       body: JSON.stringify({ instruction }),
+      headers: editHeaders(tripId),
+    }),
+
+  selectTransport: (tripId: string, option: TransportOption) =>
+    request<Itinerary>(`/api/trips/${tripId}/transport`, {
+      method: "POST",
+      body: JSON.stringify({
+        mode: option.mode,
+        provider: option.provider,
+        code: option.code,
+      }),
+      headers: editHeaders(tripId),
     }),
 
   generatePackingList: (tripId: string) =>
-    request<PackingItem[]>(`/api/trips/${tripId}/packing-list`, { method: "POST" }),
+    request<PackingItem[]>(`/api/trips/${tripId}/packing-list`, {
+      method: "POST",
+      headers: editHeaders(tripId),
+    }),
 
   /** Search flights */
   searchFlights: (from: string, to: string, date: string) =>
@@ -249,6 +392,20 @@ export const api = {
 
   /** Health check */
   health: () => request<{ status: string; services: Record<string, string> }>("/health"),
+
+  /**
+   * Starts a backend cold start as soon as the visitor opens the site.
+   * A failed warm-up is intentionally ignored: the real request will still
+   * surface a useful error to the visitor.
+   */
+  warmUp: async () => {
+    try {
+      await api.health();
+      return true;
+    } catch {
+      return false;
+    }
+  },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────

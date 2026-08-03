@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import HomeHero from "@/components/HomeHero";
@@ -14,11 +14,12 @@ import ItineraryTimeline from "@/components/ItineraryTimeline";
 import TransportCard from "@/components/TransportCard";
 import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
-import TripEnhancements from "@/components/TripEnhancements";
+import { PackingAndPrint, RefineItineraryAction, StaySuggestions } from "@/components/TripEnhancements";
 import {
   api,
   Itinerary,
   TripRequest,
+  GenerationStatus,
   formatINR,
   formatDate,
   getVibeEmoji,
@@ -30,32 +31,91 @@ const TripMap = dynamic(() => import("@/components/TripMap"), { ssr: false });
 
 export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [backendReady, setBackendReady] = useState(false);
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastRequest, setLastRequest] = useState<TripRequest | null>(null);
+  const [generationStatus, setGenerationStatus] = useState<GenerationStatus | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const stopProgressRef = useRef<(() => void) | null>(null);
+
+  // Render's free instances can sleep after inactivity. Start the inexpensive
+  // health request on arrival, while the visitor is completing the form.
+  useEffect(() => {
+    let isMounted = true;
+
+    void api.warmUp().then((isReady) => {
+      if (isMounted && isReady) setBackendReady(true);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleSubmit = async (data: TripRequest) => {
+    abortRef.current?.abort();
+    stopProgressRef.current?.();
+    const controller = new AbortController();
+    const progressToken = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    abortRef.current = controller;
+    stopProgressRef.current = api.subscribeTripProgress(progressToken, setGenerationStatus);
     setIsGenerating(true);
     setError(null);
     setItinerary(null);
+    setLastRequest(data);
+    setGenerationStatus({ step: "starting", message: "Sending your trip request…", progress: 5 });
 
     try {
-      const result = await api.generateTrip(data);
+      const result = await api.generateTrip(data, { signal: controller.signal, progressToken });
+      if (abortRef.current !== controller) return;
       setItinerary(result);
     } catch (err) {
-      if (err instanceof ApiError) {
+      if (abortRef.current !== controller) return;
+      if (controller.signal.aborted) {
+        setError("Generation cancelled. Your completed form is still available to edit or retry.");
+      } else if (err instanceof ApiError) {
         setError(err.message);
       } else {
         setError("Something went wrong. Please try again.");
       }
     } finally {
-      setIsGenerating(false);
+      if (abortRef.current === controller) {
+        stopProgressRef.current?.();
+        stopProgressRef.current = null;
+        abortRef.current = null;
+        setIsGenerating(false);
+      }
     }
+  };
+
+  const cancelGeneration = () => {
+    abortRef.current?.abort();
+    stopProgressRef.current?.();
+    stopProgressRef.current = null;
+    abortRef.current = null;
+    setIsGenerating(false);
+    setGenerationStatus(null);
+    setError("Generation cancelled. Your completed form is still available to edit or retry.");
+  };
+
+  const retryGeneration = () => {
+    if (lastRequest) void handleSubmit(lastRequest);
   };
 
   const handleNewTrip = () => {
     setItinerary(null);
     setError(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleTransportSelect = async (option: Itinerary["transport_options"][number]) => {
+    if (!itinerary) return;
+    try {
+      setItinerary(await api.selectTransport(itinerary.id, option));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn’t update transport. Please try again.");
+    }
   };
 
   return (
@@ -74,11 +134,8 @@ export default function Home() {
           <HomeHero />
 
           <section id="plan" className="px-7 pt-[30px] pb-[90px]">
-            {!isGenerating ? (
-              <TripForm onSubmit={handleSubmit} isLoading={isGenerating} />
-            ) : (
-              <LoadingState />
-            )}
+            <TripForm onSubmit={handleSubmit} isLoading={isGenerating} />
+            {isGenerating && <LoadingState waitingForBackend={!backendReady} status={generationStatus} onCancel={cancelGeneration} onRetry={retryGeneration} />}
 
             {error && (
               <motion.div
@@ -88,10 +145,10 @@ export default function Home() {
               >
                 <p className="text-error font-medium">⚠️ {error}</p>
                 <button
-                  onClick={() => { setError(null); setIsGenerating(false); }}
+                  onClick={() => { setError(null); retryGeneration(); }}
                   className="mt-2 text-sm text-foreground-muted hover:text-foreground transition-colors"
                 >
-                  Try again
+                  Retry request
                 </button>
               </motion.div>
             )}
@@ -120,6 +177,7 @@ export default function Home() {
                   ← New Trip
                 </button>
               </div>
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-foreground-muted">Trip summary</p>
               <h1 className="text-3xl md:text-4xl font-bold font-[family-name:var(--font-outfit)]">
                 <span className="gradient-text">
                   {itinerary.origin.name} → {itinerary.destination.name}
@@ -137,10 +195,9 @@ export default function Home() {
                 </span>
               </div>
             </div>
-            <ShareTrip tripId={itinerary.id} />
           </motion.div>
 
-          {/* Generation Notes */}
+          {/* Trip summary */}
           {itinerary.generation_notes.length > 0 && (
             <motion.div
               initial={{ opacity: 0 }}
@@ -162,85 +219,53 @@ export default function Home() {
             </motion.div>
           )}
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.25 }}
-            className="mb-6"
-          >
-            <TripEnhancements itinerary={itinerary} onUpdate={setItinerary} />
-          </motion.div>
+          {/* Recommended outbound and return journey */}
+          {itinerary.selected_transport && (
+            <section className="mb-8">
+              <h2 className="mb-3 text-xl font-bold text-foreground">🚀 Recommended journey</h2>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div><p className="mb-2 text-sm font-medium text-foreground-secondary">Outbound · {itinerary.origin.name} → {itinerary.destination.name}</p><TransportCard option={itinerary.selected_transport} travelDate={itinerary.start_date} isSelected /></div>
+                <div><p className="mb-2 text-sm font-medium text-foreground-secondary">Return · {itinerary.destination.name} → {itinerary.origin.name}</p><TransportCard option={itinerary.selected_transport} travelDate={itinerary.end_date} isSelected /></div>
+              </div>
+            </section>
+          )}
 
-          {/* Main Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left: Timeline (2 cols) */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Map */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-              >
-                <TripMap
-                  center={itinerary.destination.coordinates}
-                  dayPlans={itinerary.day_plans}
-                  routeSegments={itinerary.route_segments}
-                  destination={itinerary.destination.name}
-                />
-              </motion.div>
-
-              {/* Timeline */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-              >
-                <ItineraryTimeline dayPlans={itinerary.day_plans} />
-              </motion.div>
+          {/* Total budget, with exactly what is covered */}
+          <section className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <BudgetBreakdown budget={itinerary.budget} totalBudget={itinerary.budget.total_estimated + itinerary.budget.remaining} />
+            <div className="rounded-xl border border-glass-border bg-glass-bg p-4 text-sm text-foreground-secondary">
+              <h3 className="font-semibold text-foreground">What this total covers</h3>
+              <p className="mt-2">Selected outbound and return transport, accommodation, meals, activities, local travel, transfers, and buffer.</p>
+              <p className="mt-3 text-xs text-foreground-muted">Excludes personal shopping, travel insurance, optional upgrades, and booking-site fees.</p>
             </div>
+          </section>
 
-            {/* Right: Sidebar (1 col) */}
-            <div className="space-y-6">
-              {/* Transport Options */}
-              {itinerary.transport_options.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
-                >
-                  <h3 className="text-lg font-bold font-[family-name:var(--font-outfit)] text-foreground mb-3 flex items-center gap-2">
-                    🚀 Transport Options
-                  </h3>
-                  <div className="space-y-3">
-                    {itinerary.transport_options.map((opt, idx) => (
-                      <TransportCard
-                        key={idx}
-                        option={opt}
-                        isSelected={
-                          itinerary.selected_transport?.code === opt.code &&
-                          itinerary.selected_transport?.provider === opt.provider
-                        }
-                      />
-                    ))}
-                  </div>
-                </motion.div>
-              )}
+          {/* Day-by-day itinerary remains the primary result */}
+          <section className="mb-8">
+            <ItineraryTimeline dayPlans={itinerary.day_plans} action={<RefineItineraryAction itinerary={itinerary} onUpdate={setItinerary} />} />
+          </section>
 
-              {/* Budget Breakdown */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
-              >
-                <BudgetBreakdown
-                  budget={itinerary.budget}
-                  totalBudget={
-                    itinerary.budget.total_estimated + itinerary.budget.remaining
-                  }
-                />
-              </motion.div>
-            </div>
-          </div>
+          {/* Alternate choices appear after the plan, not before it */}
+          {itinerary.transport_options.some((option) => option.provider !== itinerary.selected_transport?.provider || option.code !== itinerary.selected_transport?.code) && (
+            <section className="mb-8">
+              <h2 className="mb-3 text-xl font-bold text-foreground">Alternative transport options</h2>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {itinerary.transport_options.filter((option) => option.provider !== itinerary.selected_transport?.provider || option.code !== itinerary.selected_transport?.code).map((option, index) => <TransportCard key={index} option={option} travelDate={itinerary.start_date} onClick={() => void handleTransportSelect(option)} />)}
+              </div>
+            </section>
+          )}
+
+          <section className="mb-8"><StaySuggestions itinerary={itinerary} /></section>
+
+          <details className="glass mb-8 overflow-hidden rounded-xl">
+            <summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-foreground">🗺️ View interactive map</summary>
+            <div className="border-t border-glass-border"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div>
+          </details>
+
+          <section className="mb-8 print:hidden">
+            <h2 className="mb-3 text-xl font-bold text-foreground">Secondary tools</h2>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2"><PackingAndPrint itinerary={itinerary} onUpdate={setItinerary} /><div className="glass flex items-center justify-between rounded-xl p-4"><div><h3 className="font-semibold text-foreground">🔗 Share this trip</h3><p className="text-xs text-foreground-muted">Send the live itinerary to your travel group.</p></div><ShareTrip tripId={itinerary.id} /></div></div>
+          </section>
 
           {/* New Trip CTA */}
           <motion.div

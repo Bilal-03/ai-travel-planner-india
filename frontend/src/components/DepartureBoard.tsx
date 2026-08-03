@@ -7,23 +7,22 @@ interface RouteEntry {
   duration: string;
   fare: string;
   mode: string;
-  status: string;
-  statusVariant: "confirmed" | "waitlist";
+  label: string;
 }
 
 // Sample rows only — illustrative of the board mechanic, not live data.
 // Real fares come from the trip form below, via the existing transport API.
 const ROUTE_SETS: RouteEntry[] = [
-  { route: "DEL → GOA", duration: "8h 40m", fare: "₹4,499", mode: "✈ Flight", status: "CNFM", statusVariant: "confirmed" },
-  { route: "DEL → JAIPUR", duration: "4h 30m", fare: "₹899", mode: "🚆 Train", status: "CNFM", statusVariant: "confirmed" },
-  { route: "BLR → HAMPI", duration: "7h 10m", fare: "₹1,150", mode: "🚆 Train", status: "CNFM", statusVariant: "confirmed" },
-  { route: "BLR → GOA", duration: "1h 05m", fare: "₹2,899", mode: "✈ Flight", status: "CNFM", statusVariant: "confirmed" },
-  { route: "MUM → MANALI", duration: "16h 20m", fare: "₹1,650", mode: "🚆 Train", status: "WL 4", statusVariant: "waitlist" },
-  { route: "MUM → RISHIKESH", duration: "15h 45m", fare: "₹1,420", mode: "🚆 Train", status: "CNFM", statusVariant: "confirmed" },
-  { route: "HYD → KERALA", duration: "11h 30m", fare: "₹1,890", mode: "🚆 Train", status: "CNFM", statusVariant: "confirmed" },
-  { route: "DEL → RISHIKESH", duration: "6h 50m", fare: "₹720", mode: "🚆 Train", status: "CNFM", statusVariant: "confirmed" },
-  { route: "DEL → MANALI", duration: "12h 30m", fare: "₹980", mode: "🚆 Train", status: "RAC 2", statusVariant: "waitlist" },
-  { route: "HYD → GOA", duration: "1h 15m", fare: "₹3,299", mode: "✈ Flight", status: "CNFM", statusVariant: "confirmed" },
+  { route: "DEL → GOA", duration: "8h 40m", fare: "₹4,499", mode: "✈ Flight", label: "Sample" },
+  { route: "DEL → JAIPUR", duration: "4h 30m", fare: "₹899", mode: "🚆 Train", label: "Train" },
+  { route: "BLR → HAMPI", duration: "7h 10m", fare: "₹1,150", mode: "🚆 Train", label: "Budget option" },
+  { route: "BLR → GOA", duration: "1h 05m", fare: "₹2,899", mode: "✈ Flight", label: "Flight" },
+  { route: "MUM → MANALI", duration: "16h 20m", fare: "₹1,650", mode: "🚆 Train", label: "Sample" },
+  { route: "MUM → RISHIKESH", duration: "15h 45m", fare: "₹1,420", mode: "🚆 Train", label: "Train" },
+  { route: "HYD → KERALA", duration: "11h 30m", fare: "₹1,890", mode: "🚆 Train", label: "Budget option" },
+  { route: "DEL → RISHIKESH", duration: "6h 50m", fare: "₹720", mode: "🚆 Train", label: "Train" },
+  { route: "DEL → MANALI", duration: "12h 30m", fare: "₹980", mode: "🚆 Train", label: "Sample" },
+  { route: "HYD → GOA", duration: "1h 15m", fare: "₹3,299", mode: "✈ Flight", label: "Flight" },
 ];
 
 const ROW_COUNT = 5;
@@ -80,7 +79,7 @@ export default function DepartureBoard() {
         <span>Duration</span>
         <span>Fare</span>
         <span>Mode</span>
-        <span>Status</span>
+        <span>Label</span>
       </div>
 
       <div>
@@ -103,12 +102,8 @@ export default function DepartureBoard() {
             <span className={`flip text-xs sm:text-sm text-foreground-secondary ${flippingIdx === idx ? "flipping" : ""}`}>
               {row.mode}
             </span>
-            <span
-              className={`flip text-[10px] px-2 py-0.5 rounded w-fit ${flippingIdx === idx ? "flipping" : ""} ${
-                row.statusVariant === "confirmed" ? "bg-teal-india/20 text-teal-300" : "bg-rust/20 text-orange-300"
-              }`}
-            >
-              {row.status}
+            <span className={`flip text-[10px] px-2 py-0.5 rounded w-fit bg-glass-highlight text-foreground-secondary ${flippingIdx === idx ? "flipping" : ""}`}>
+              {row.label}
             </span>
           </div>
         ))}

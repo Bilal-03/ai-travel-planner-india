@@ -1,22 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { DayPlan, formatINR, formatDate, getVibeEmoji } from "@/lib/api";
+import { DayPlan, formatINR, formatDate } from "@/lib/api";
 import WeatherBadge from "./WeatherBadge";
 
 interface ItineraryTimelineProps {
   dayPlans: DayPlan[];
+  action?: ReactNode;
 }
 
-export default function ItineraryTimeline({ dayPlans }: ItineraryTimelineProps) {
+export default function ItineraryTimeline({ dayPlans, action }: ItineraryTimelineProps) {
   const [expandedDay, setExpandedDay] = useState<number | null>(0);
 
   return (
     <div className="space-y-4">
-      <h3 className="text-xl font-bold font-[family-name:var(--font-outfit)] text-foreground flex items-center gap-2">
-        📅 Day-by-Day Itinerary
-      </h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xl font-bold font-[family-name:var(--font-outfit)] text-foreground flex items-center gap-2">
+          📅 Day-by-Day Itinerary
+        </h3>
+        {action}
+      </div>
 
       <div className="relative">
         {/* Vertical timeline line */}
@@ -103,7 +107,7 @@ export default function ItineraryTimeline({ dayPlans }: ItineraryTimelineProps) 
                         {day.transport && (
                           <div className="p-3 rounded-lg border border-glass-border bg-glass-bg">
                             <div className="flex items-center gap-2 text-sm font-medium text-foreground mb-1">
-                              {day.transport.mode === "flight" ? "✈️" : "🚂"}
+                              {day.transport.mode === "flight" ? "✈️" : day.transport.mode === "train" ? "🚂" : "🚗"}
                               Travel: {day.transport.provider}
                             </div>
                             <div className="text-xs text-foreground-muted">
@@ -156,6 +160,13 @@ export default function ItineraryTimeline({ dayPlans }: ItineraryTimelineProps) 
                                 </div>
                               ))}
                             </div>
+                          </div>
+                        )}
+
+                        {day.local_transport_minutes > 0 && (
+                          <div className="flex items-center justify-between rounded-lg bg-glass-bg px-3 py-2 text-xs text-foreground-muted">
+                            <span>🚕 Local travel between stops · {day.local_transport_minutes} min</span>
+                            <span className="font-medium text-foreground-secondary">{formatINR(day.local_transport_cost)}</span>
                           </div>
                         )}
 

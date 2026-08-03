@@ -17,9 +17,12 @@ export default function TransportCard({
   onClick,
 }: TransportCardProps) {
   const isFlight = option.mode === "flight";
+  const isTrain = option.mode === "train";
+  const modeIcon = isFlight ? "✈️" : isTrain ? "🚂" : "🚗";
   const bookingUrl = isFlight
     ? `https://www.google.com/travel/flights?q=${encodeURIComponent(`Flights from ${option.departure_city} to ${option.arrival_city}${travelDate ? ` on ${travelDate}` : ""}`)}`
-    : "https://www.irctc.co.in/nget/train-search";
+    : isTrain ? "https://www.irctc.co.in/nget/train-search"
+    : `https://www.google.com/maps/dir/${encodeURIComponent(option.departure_city)}/${encodeURIComponent(option.arrival_city)}`;
 
   return (
     <motion.div
@@ -51,7 +54,7 @@ export default function TransportCard({
       )}
 
       {/* Fallback badge */}
-      {option.is_fallback && (
+      {option.is_fallback && !isTrain && (
         <span className="absolute -top-2 left-3 px-2 py-0.5 bg-glass-highlight text-foreground-muted text-xs rounded-full">
           Estimated
         </span>
@@ -62,10 +65,10 @@ export default function TransportCard({
         <div className="flex items-center gap-3">
           <div
             className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${
-              isFlight ? "bg-flight/15 text-flight" : "bg-train/15 text-train"
+              isFlight ? "bg-flight/15 text-flight" : isTrain ? "bg-train/15 text-train" : "bg-accent/15 text-accent"
             }`}
           >
-            {isFlight ? "✈️" : "🚂"}
+            {modeIcon}
           </div>
           <div>
             <div className="font-medium text-foreground text-sm">
@@ -106,13 +109,24 @@ export default function TransportCard({
             className={`text-xs px-2 py-0.5 rounded-full ${
               isFlight
                 ? "bg-flight/15 text-flight"
-                : "bg-train/15 text-train"
+                : isTrain ? "bg-train/15 text-train" : "bg-accent/15 text-accent"
             }`}
           >
-            {isFlight ? "Flight" : "Train"}
+            {isFlight ? "Flight" : isTrain ? "Train" : "Road"}
           </span>
         </div>
       </div>
+
+      {(isTrain || Object.keys(option.field_provenance || {}).length > 0) && (
+        <div className="mt-3 border-t border-glass-border pt-3 text-xs text-foreground-muted space-y-1">
+          {option.field_provenance?.train && <div><span className="text-foreground-secondary">Train / number:</span> {option.field_provenance.train}</div>}
+          {option.field_provenance?.schedule && <div><span className="text-foreground-secondary">Schedule:</span> {option.field_provenance.schedule}</div>}
+          {option.field_provenance?.travel_date && <div><span className="text-foreground-secondary">Travel date:</span> {option.field_provenance.travel_date}</div>}
+          {option.field_provenance?.fare && <div><span className="text-foreground-secondary">Fare:</span> {option.field_provenance.fare}</div>}
+          <div><span className="text-foreground-secondary">Availability:</span> {option.field_provenance?.availability || option.availability_status}</div>
+          {option.last_checked_at && <div>Checked {new Date(option.last_checked_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>}
+        </div>
+      )}
 
       {option.is_fallback && (
         <a
@@ -122,9 +136,10 @@ export default function TransportCard({
           onClick={(event) => event.stopPropagation()}
           className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary-light transition-colors"
         >
-          Check live fares {isFlight ? "on Google Flights" : "on IRCTC"} ↗
+          {isFlight ? "Check live fares on Google Flights" : isTrain ? "Check trains on IRCTC" : "View road route"} ↗
         </a>
       )}
+      {onClick && <div className="mt-3 text-xs font-medium text-primary">{isSelected ? "Selected for the full trip" : "Select for the full trip"}</div>}
     </motion.div>
   );
 }
