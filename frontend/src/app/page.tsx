@@ -14,6 +14,7 @@ import ItineraryTimeline from "@/components/ItineraryTimeline";
 import TransportCard from "@/components/TransportCard";
 import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
+import TripEnhancements from "@/components/TripEnhancements";
 import {
   api,
   Itinerary,
@@ -160,6 +161,15 @@ export default function Home() {
               </ul>
             </motion.div>
           )}
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="mb-6"
+          >
+            <TripEnhancements itinerary={itinerary} onUpdate={setItinerary} />
+          </motion.div>
 
           {/* Main Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
