@@ -24,23 +24,7 @@ OVERPASS_API = "https://overpass-api.de/api/interpreter"
 # by lower-value nearby venues. Coordinates should be reviewed when this list
 # is expanded.
 PRIORITY_CITY_LANDMARKS = LANDMARK_CATALOGUE
-"""Temporary compatibility alias while catalogue consumers migrate."""
-
-"""
-Legacy inline data removed. Landmark records now live in
-``app.data.landmark_catalogue`` with explicit source and review metadata.
-"""
-_LEGACY_LANDMARKS: dict[str, list[dict]] = {
-    "removed": [
-        {"name": "Gateway of India", "category": "historic", "coordinates": {"lat": 18.9220, "lng": 72.8347}, "estimated_visit_minutes": 60, "estimated_cost": 0, "priority_rank": 1},
-        {"name": "Chhatrapati Shivaji Maharaj Terminus", "category": "historic", "coordinates": {"lat": 18.9401, "lng": 72.8356}, "estimated_visit_minutes": 60, "estimated_cost": 0, "priority_rank": 2},
-        {"name": "Marine Drive", "category": "viewpoint", "coordinates": {"lat": 18.9430, "lng": 72.8236}, "estimated_visit_minutes": 75, "estimated_cost": 0, "priority_rank": 3},
-        {"name": "Elephanta Caves", "category": "attraction", "coordinates": {"lat": 18.9633, "lng": 72.9315}, "estimated_visit_minutes": 300, "estimated_cost": 400, "priority_rank": 4},
-        {"name": "Haji Ali Dargah", "category": "place_of_worship", "coordinates": {"lat": 18.9827, "lng": 72.8102}, "estimated_visit_minutes": 60, "estimated_cost": 0, "priority_rank": 5},
-        {"name": "Juhu Beach", "category": "beach", "coordinates": {"lat": 19.0883, "lng": 72.8264}, "estimated_visit_minutes": 120, "estimated_cost": 0, "priority_rank": 6},
-        {"name": "Siddhivinayak Temple", "category": "place_of_worship", "coordinates": {"lat": 19.0169, "lng": 72.8305}, "estimated_visit_minutes": 60, "estimated_cost": 0, "priority_rank": 7},
-    ],
-}
+"""Compatibility alias for catalogue consumers during the rollout."""
 
 # Rate limiter
 _last_request_time = 0.0
@@ -100,6 +84,20 @@ VIBE_QUERIES: dict[TravelVibe, list[str]] = {
         'node["leisure"="bowling_alley"](around:{radius},{lat},{lng});',
     ],
 }
+
+# Always include a broad, map-sourced landmark baseline. Vibe filters enrich
+# this list; they must not cause major heritage, arts, or public places to be
+# excluded before the planner sees them.
+LANDMARK_BASELINE_QUERIES = [
+    'nwr["tourism"="attraction"](around:{radius},{lat},{lng});',
+    'nwr["tourism"="museum"](around:{radius},{lat},{lng});',
+    'nwr["historic"](around:{radius},{lat},{lng});',
+    'nwr["amenity"="theatre"](around:{radius},{lat},{lng});',
+    'nwr["amenity"="arts_centre"](around:{radius},{lat},{lng});',
+    'nwr["leisure"="park"](around:{radius},{lat},{lng});',
+    'nwr["natural"="beach"](around:{radius},{lat},{lng});',
+    'nwr["shop"="mall"](around:{radius},{lat},{lng});',
+]
 
 # Time estimates by category (minutes)
 VISIT_TIME_ESTIMATES = {
@@ -162,8 +160,13 @@ def _extract_name(element: dict) -> Optional[str]:
 def _priority_landmarks(city: Optional[str]) -> list[dict]:
     """Return a copy of the destination's reviewed landmark shortlist."""
     normalized_city = " ".join((city or "").casefold().split())
-    if normalized_city == "bombay":
-        normalized_city = "mumbai"
+    city_aliases = {
+        "bangalore": "bengaluru",
+        "bombay": "mumbai",
+        "cochin": "kochi",
+        "benaras": "varanasi",
+    }
+    normalized_city = city_aliases.get(normalized_city, normalized_city)
     return [
         {
             **landmark,
@@ -190,8 +193,11 @@ async def discover_pois(
     """
     priority_pois = _priority_landmarks(city)
 
-    # Build Overpass query combining all vibe categories
-    query_parts = []
+    # Start with major places, then enrich according to the user's intent.
+    query_parts = [
+        template.format(radius=radius, lat=lat, lng=lng)
+        for template in LANDMARK_BASELINE_QUERIES
+    ]
     for vibe_str in vibes:
         try:
             vibe = TravelVibe(vibe_str)
@@ -200,21 +206,13 @@ async def discover_pois(
         for template in VIBE_QUERIES.get(vibe, []):
             query_parts.append(template.format(radius=radius, lat=lat, lng=lng))
 
-    if not query_parts:
-        # Fallback: general tourist attractions
-        query_parts = [
-            f'node["tourism"="attraction"](around:{radius},{lat},{lng});',
-            f'node["tourism"="museum"](around:{radius},{lat},{lng});',
-            f'node["amenity"="restaurant"](around:{radius},{lat},{lng});',
-        ]
-
     union_body = "\n".join(query_parts)
     overpass_query = f"""
     [out:json][timeout:10];
     (
       {union_body}
     );
-    out center {limit};
+    out center {limit * 3};
     """
 
     await _rate_limit()
