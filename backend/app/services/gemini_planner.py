@@ -94,8 +94,20 @@ TRIP DETAILS:
 - Vibes: {', '.join(v.value for v in request.vibes)}
 - Distance: {distance_km:.0f} km
 
-AVAILABLE POIs AT {destination.name.upper()} (real data from OpenStreetMap):
+AVAILABLE POIs AT {destination.name.upper()} (OpenStreetMap plus reviewed landmark shortlist):
 {json.dumps(pois[:20], indent=2, default=str)}
+
+PRIORITY LANDMARKS:
+POIs with an `editorial_landmark_shortlist` source are verified destination-defining
+landmarks and are listed in priority order. Plan landmark coverage deliberately:
+- 1 day: include the top 2 that fit the traveller's vibes and opening/travel constraints.
+- 2 days: include the top 4 that fit.
+- 3 or more days: include every listed priority landmark that fits.
+- Never claim a landmark is open, accessible, or operating without a current source.
+- Elephanta Caves is a separate ferry excursion; schedule it as a half-day at most and
+  do not combine it with a dense South Mumbai day.
+Use the supplied names and coordinates for priority landmarks; do not replace them
+with generic or invented attractions.
 
 TRANSPORT OPTIONS (real data):
 {json.dumps(transport_options[:5], indent=2, default=str)}
@@ -268,10 +280,41 @@ def _plan_to_itinerary(
     destination_photos: list[dict] | None = None,
     festivals: list[dict] | None = None,
     packing_list: list[dict] | None = None,
+    approved_pois: list[dict] | None = None,
 ) -> Itinerary:
     """Convert raw AI plan dict into structured Itinerary model."""
 
     total_days = (request.end_date - request.start_date).days + 1
+
+    approved_by_name = {
+        " ".join(poi.get("name", "").casefold().split()): poi
+        for poi in approved_pois or []
+        if poi.get("name")
+    }
+
+    def approved_activity(act: dict, is_backup: bool = False) -> Optional[Activity]:
+        name = " ".join(str(act.get("name", "")).casefold().split())
+        source_poi = approved_by_name.get(name)
+        if not source_poi:
+            logger.warning("Discarding itinerary activity not present in approved POIs: %s", act.get("name"))
+            return None
+        coordinates = source_poi["coordinates"]
+        cost = act.get("estimated_cost", source_poi.get("estimated_cost", 0))
+        return Activity(
+            poi=POI(
+                name=source_poi["name"],
+                category=source_poi.get("category", "attraction"),
+                coordinates=GeoPoint(lat=coordinates["lat"], lng=coordinates["lng"]),
+                estimated_cost=cost,
+                description=act.get("notes"),
+                opening_hours=source_poi.get("opening_hours"),
+            ),
+            start_time=act.get("start_time"),
+            end_time=act.get("end_time"),
+            estimated_cost=cost,
+            notes=act.get("notes"),
+            is_backup=is_backup,
+        )
 
     # Build day plans
     day_plans: list[DayPlan] = []
@@ -289,44 +332,16 @@ def _plan_to_itinerary(
         # Parse activities
         activities = []
         for act in dp.get("activities", []):
-            activities.append(Activity(
-                poi=POI(
-                    name=act.get("name", "Unknown"),
-                    category=act.get("category", "attraction"),
-                    coordinates=GeoPoint(
-                        lat=act.get("lat", destination.coordinates.lat),
-                        lng=act.get("lng", destination.coordinates.lng),
-                    ),
-                    estimated_cost=act.get("estimated_cost", 0),
-                    description=act.get("notes"),
-                ),
-                start_time=act.get("start_time"),
-                end_time=act.get("end_time"),
-                estimated_cost=act.get("estimated_cost", 0),
-                notes=act.get("notes"),
-                is_backup=act.get("is_backup", False),
-            ))
+            activity = approved_activity(act, act.get("is_backup", False))
+            if activity:
+                activities.append(activity)
 
         # Parse backup activities
         backup_activities = []
         for act in dp.get("backup_activities", []):
-            backup_activities.append(Activity(
-                poi=POI(
-                    name=act.get("name", "Unknown"),
-                    category=act.get("category", "attraction"),
-                    coordinates=GeoPoint(
-                        lat=act.get("lat", destination.coordinates.lat),
-                        lng=act.get("lng", destination.coordinates.lng),
-                    ),
-                    estimated_cost=act.get("estimated_cost", 0),
-                    description=act.get("notes"),
-                ),
-                start_time=act.get("start_time"),
-                end_time=act.get("end_time"),
-                estimated_cost=act.get("estimated_cost", 0),
-                notes=act.get("notes"),
-                is_backup=True,
-            ))
+            activity = approved_activity(act, True)
+            if activity:
+                backup_activities.append(activity)
 
         # Parse meals
         meals = []
@@ -449,6 +464,7 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
         lat=destination.coordinates.lat,
         lng=destination.coordinates.lng,
         vibes=[v.value for v in request.vibes],
+        city=destination.name,
     )
     weather_task = get_forecast(
         lat=destination.coordinates.lat,
@@ -583,6 +599,7 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
         notes=notes,
         destination_photos=photos,
         festivals=festivals,
+        approved_pois=pois,
     )
 
     logger.info(f"✨ Itinerary generated: {itinerary.total_days} days, "
@@ -743,6 +760,11 @@ per day, and return ONLY a valid JSON object matching the current itinerary sche
         destination_photos=[photo.model_dump() for photo in itinerary.destination_photos],
         festivals=[festival.model_dump() for festival in itinerary.festivals],
         packing_list=[item.model_dump() for item in itinerary.packing_list],
+        approved_pois=[
+            activity.poi.model_dump()
+            for day_plan in itinerary.day_plans
+            for activity in [*day_plan.activities, *day_plan.backup_activities]
+        ],
     )
     refined.id = itinerary.id
     return refined

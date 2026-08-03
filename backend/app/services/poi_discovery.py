@@ -11,11 +11,36 @@ from typing import Optional
 import httpx
 
 from app.cache.redis_cache import cached
+from app.data.landmark_catalogue import LANDMARK_CATALOGUE
 from app.models.trip import GeoPoint, POI, TravelVibe
 
 logger = logging.getLogger(__name__)
 
 OVERPASS_API = "https://overpass-api.de/api/interpreter"
+
+# Editorially verified landmark records are kept separate from the live OSM
+# discovery result. They ensure that a destination's defining sights are
+# considered even when an OSM query is incomplete, rate-limited, or dominated
+# by lower-value nearby venues. Coordinates should be reviewed when this list
+# is expanded.
+PRIORITY_CITY_LANDMARKS = LANDMARK_CATALOGUE
+"""Temporary compatibility alias while catalogue consumers migrate."""
+
+"""
+Legacy inline data removed. Landmark records now live in
+``app.data.landmark_catalogue`` with explicit source and review metadata.
+"""
+_LEGACY_LANDMARKS: dict[str, list[dict]] = {
+    "removed": [
+        {"name": "Gateway of India", "category": "historic", "coordinates": {"lat": 18.9220, "lng": 72.8347}, "estimated_visit_minutes": 60, "estimated_cost": 0, "priority_rank": 1},
+        {"name": "Chhatrapati Shivaji Maharaj Terminus", "category": "historic", "coordinates": {"lat": 18.9401, "lng": 72.8356}, "estimated_visit_minutes": 60, "estimated_cost": 0, "priority_rank": 2},
+        {"name": "Marine Drive", "category": "viewpoint", "coordinates": {"lat": 18.9430, "lng": 72.8236}, "estimated_visit_minutes": 75, "estimated_cost": 0, "priority_rank": 3},
+        {"name": "Elephanta Caves", "category": "attraction", "coordinates": {"lat": 18.9633, "lng": 72.9315}, "estimated_visit_minutes": 300, "estimated_cost": 400, "priority_rank": 4},
+        {"name": "Haji Ali Dargah", "category": "place_of_worship", "coordinates": {"lat": 18.9827, "lng": 72.8102}, "estimated_visit_minutes": 60, "estimated_cost": 0, "priority_rank": 5},
+        {"name": "Juhu Beach", "category": "beach", "coordinates": {"lat": 19.0883, "lng": 72.8264}, "estimated_visit_minutes": 120, "estimated_cost": 0, "priority_rank": 6},
+        {"name": "Siddhivinayak Temple", "category": "place_of_worship", "coordinates": {"lat": 19.0169, "lng": 72.8305}, "estimated_visit_minutes": 60, "estimated_cost": 0, "priority_rank": 7},
+    ],
+}
 
 # Rate limiter
 _last_request_time = 0.0
@@ -134,6 +159,22 @@ def _extract_name(element: dict) -> Optional[str]:
     return tags.get("name", tags.get("name:en"))
 
 
+def _priority_landmarks(city: Optional[str]) -> list[dict]:
+    """Return a copy of the destination's reviewed landmark shortlist."""
+    normalized_city = " ".join((city or "").casefold().split())
+    if normalized_city == "bombay":
+        normalized_city = "mumbai"
+    return [
+        {
+            **landmark,
+            "coordinates": dict(landmark["coordinates"]),
+            "osm_tags": {"source": "editorial_landmark_shortlist"},
+            "opening_hours": None,
+        }
+        for landmark in PRIORITY_CITY_LANDMARKS.get(normalized_city, [])
+    ]
+
+
 @cached("pois", ttl_seconds=86400 * 7)  # Cache for 7 days
 async def discover_pois(
     lat: float,
@@ -141,11 +182,14 @@ async def discover_pois(
     vibes: list[str],
     radius: int = 10000,
     limit: int = 30,
+    city: Optional[str] = None,
 ) -> list[dict]:
     """
     Discover POIs around a location based on travel vibes.
     Returns list of dicts for caching.
     """
+    priority_pois = _priority_landmarks(city)
+
     # Build Overpass query combining all vibe categories
     query_parts = []
     for vibe_str in vibes:
@@ -170,7 +214,7 @@ async def discover_pois(
     (
       {union_body}
     );
-    out body {limit};
+    out center {limit};
     """
 
     await _rate_limit()
@@ -186,10 +230,10 @@ async def discover_pois(
             data = resp.json()
     except Exception as e:
         logger.error(f"Overpass API error: {e}")
-        return []
+        return priority_pois
 
-    pois = []
-    seen_names = set()
+    pois = priority_pois
+    seen_names = {poi["name"].casefold() for poi in priority_pois}
 
     for element in data.get("elements", []):
         name = _extract_name(element)
