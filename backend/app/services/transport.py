@@ -5,6 +5,7 @@ and graceful fallback when API quotas are exhausted.
 """
 
 import logging
+import re
 from typing import Optional
 
 import httpx
@@ -158,6 +159,60 @@ FALLBACK_FLIGHTS: list[dict] = [
     {"from": "chennai", "to": "delhi", "provider": "Air India", "code": None, "duration": 175, "price": 6200},
 ]
 
+# The flight-search response occasionally exposes an internal or malformed
+# carrier ``alternateId`` (for example, ``0S`` for SpiceJet).  Prefer the
+# airline's published IATA designator whenever its marketing name is known.
+AIRLINE_IATA_CODES: dict[str, str] = {
+    "air india": "AI",
+    "air india express": "IX",
+    "akasa air": "QP",
+    "alliance air": "9I",
+    "fly91": "IC",
+    "indigo": "6E",
+    "spicejet": "SG",
+    "star air": "S5",
+    "vistara": "UK",
+}
+
+
+def _format_flight_code(provider: str, carrier_code: object, flight_number: object) -> Optional[str]:
+    """Return a readable, canonical flight number without trusting provider aliases."""
+    number = "".join(re.findall(r"\d+", str(flight_number or "")))
+    if not number:
+        return None
+
+    canonical_code = AIRLINE_IATA_CODES.get(provider.casefold().strip())
+    if canonical_code:
+        return f"{canonical_code}{number}"
+
+    # Preserve an unknown carrier code only when it is a plausible IATA-like
+    # identifier. This avoids rendering provider-specific punctuation or IDs.
+    raw_code = re.sub(r"[^A-Z0-9]", "", str(carrier_code or "").upper())
+    return f"{raw_code}{number}" if 2 <= len(raw_code) <= 3 else number
+
+
+def _best_flights_per_airline(flights: list[dict], per_airline: int = 2, total_limit: int = 8) -> list[dict]:
+    """Keep the best-priced, shortest options while avoiding one-airline repetition."""
+    ranked = sorted(
+        flights,
+        key=lambda flight: (
+            flight["price"],
+            flight["duration_minutes"],
+            flight.get("departure_time") or "",
+        ),
+    )
+    chosen: list[dict] = []
+    counts: dict[str, int] = {}
+    for flight in ranked:
+        airline = flight["provider"].casefold().strip()
+        if counts.get(airline, 0) >= per_airline:
+            continue
+        chosen.append(flight)
+        counts[airline] = counts.get(airline, 0) + 1
+        if len(chosen) == total_limit:
+            break
+    return chosen
+
 def _get_fallback_flights(
     origin: str, destination: str, distance_km: float | None = None
 ) -> list[dict]:
@@ -240,7 +295,7 @@ async def search_flights(
             
             flights = []
             itineraries = data.get("data", {}).get("itineraries", [])
-            for it in itineraries[:5]:
+            for it in itineraries:
                 try:
                     price = it.get("price", {}).get("raw", 5000)
                     legs = it.get("legs", [])
@@ -252,13 +307,13 @@ async def search_flights(
                     provider = carriers[0].get("name", "Unknown") if carriers else "Unknown"
                     
                     segs = leg.get("segments", [])
-                    flight_num = ""
+                    flight_num = None
                     if segs:
                         fn = segs[0].get("flightNumber", "")
                         mc = segs[0].get("marketingCarrier", {}).get("alternateId", "")
                         if not mc and carriers:
                             mc = carriers[0].get("alternateId", "")
-                        flight_num = f"{mc}{fn}"
+                        flight_num = _format_flight_code(provider, mc, fn)
                     
                     duration_mins = leg.get("durationInMinutes", 120)
                     dep_time = leg.get("departure", "")
@@ -283,6 +338,7 @@ async def search_flights(
                     logger.warning(f"Failed to parse flight itinerary: {e}")
                     continue
             
+            flights = _best_flights_per_airline(flights)
             if not flights:
                 return _get_fallback_flights(origin, destination, distance_km)
                 
