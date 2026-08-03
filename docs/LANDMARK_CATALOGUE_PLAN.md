@@ -11,7 +11,9 @@ must not create landmark facts or claim current operational details.
 
 For each destination, present a practical number of high-priority places that
 fits the trip length, travel mode, budget, stated preferences, and travel time.
-Do not promise that every landmark can be visited on every trip.
+The catalogue must contain enough reviewed options for a longer trip; it is not
+a fixed three-place recommendation. Do not promise that every landmark can be
+visited on every trip.
 
 The catalogue is the source of truth for editorial prominence. Mutable facts
 such as opening hours, ticket prices, ferry operation, closures, and crowding
@@ -53,15 +55,21 @@ separate licence and provider review is approved.
 
 ## Planner behaviour
 
-1. Load ranked landmark records for the chosen destination.
-2. Filter only by deterministic constraints: date, trip length, user-selected
+1. Load the full ranked landmark set for the chosen destination.
+2. Select a feasible daily capacity rather than a fixed POI cap. A one-day
+   city break schedules three to five major places; a two- to three-day trip
+   schedules six to ten; a four-or-more-day trip schedules 10–15 curated major
+   places and may add relevant local map-sourced options. Retain every
+   available POI as an input and use only timing, travel, budget, and explicit
+   constraints to decide what fits.
+3. Filter only by deterministic constraints: date, trip length, user-selected
    modes, explicit access needs, estimated budget, and known dependencies.
-3. Send the remaining records, their rank, visit duration, and restrictions to
+4. Send the remaining records, their rank, visit duration, and restrictions to
    the language model for sequencing and narrative only.
-4. Validate every planned activity against the selected catalogue record and
+5. Validate every planned activity against the selected catalogue record and
    deterministic timing/budget rules. Do not accept invented landmark names or
    coordinates.
-5. Explain omitted high-priority places where a known constraint makes them
+6. Explain omitted high-priority places where a known constraint makes them
    impractical; otherwise retain them as alternatives.
 
 ## Coverage rollout

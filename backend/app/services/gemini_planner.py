@@ -84,6 +84,11 @@ def _build_planning_prompt(
 
     daily_budget = (request.budget - transport_cost) // max(total_days, 1)
 
+    # Give Gemini every POI returned by the reviewed catalogue and the map
+    # adapter. The trip length controls what it schedules, never what it can
+    # consider; individual activities are still validated against this set.
+    prompt_pois = pois
+
     prompt = f"""Plan a {total_days}-day trip from {origin.name} to {destination.name}.
 
 TRIP DETAILS:
@@ -95,14 +100,19 @@ TRIP DETAILS:
 - Distance: {distance_km:.0f} km
 
 AVAILABLE POIs AT {destination.name.upper()} (OpenStreetMap plus reviewed landmark shortlist):
-{json.dumps(pois[:20], indent=2, default=str)}
+{json.dumps(prompt_pois, indent=2, default=str)}
 
 PRIORITY LANDMARKS:
-POIs with an `editorial_landmark_shortlist` source are verified destination-defining
-landmarks and are listed in priority order. Plan landmark coverage deliberately:
-- 1 day: include the top 2 that fit the traveller's vibes and opening/travel constraints.
-- 2 days: include the top 4 that fit.
-- 3 or more days: include every listed priority landmark that fits.
+POIs with an `editorial_landmark_shortlist` source are reviewed,
+destination-defining landmarks and are listed in priority order. Plan coverage
+by feasible daily capacity, never a fixed landmark cap:
+- 1 day: schedule 3–5 major places.
+- 2–3 days: schedule 6–10 major places across the available days.
+- 4 or more days: schedule 10–15 curated major places, then add relevant
+  local map-sourced options where daily timing and budget permit.
+There is no fixed cap on the available POIs. Always account for the supplied
+visit duration, transit time, daily budget, and opening constraints when known;
+preserve suitable unscheduled places as alternatives.
 - Never claim a landmark is open, accessible, or operating without a current source.
 - Elephanta Caves is a separate ferry excursion; schedule it as a half-day at most and
   do not combine it with a dense South Mumbai day.
@@ -498,7 +508,7 @@ async def generate_itinerary(request: TripRequest) -> Itinerary:
         logger.warning(f"POI discovery failed: {pois}")
         pois = []
     if not pois:
-        notes.append("Limited POI data from OpenStreetMap — AI will supplement with knowledge")
+        notes.append("Limited POI data — only reviewed or map-sourced places can be scheduled")
 
     # Handle weather results
     if isinstance(weather_data, Exception):
