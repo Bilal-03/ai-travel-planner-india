@@ -54,6 +54,7 @@ next-env.d.ts
 
 # ── Testing ──
 coverage/
+frontend/test-results/
 
 # ── OS / Editor ──
 .DS_Store
@@ -78,3 +79,7 @@ yarn-error.log*
 # ── AI agent config files ──
 AGENTS.md
 CLAUDE.md
+
+# ── Private project notes ──
+docs/
+YatraAI Master Implementation Plan.md

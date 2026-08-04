@@ -131,9 +131,7 @@ login flow.
 Phase 7 production deployments must apply the ordered SQL migrations under
 [`backend/migrations/`](backend/migrations/), set `APP_ENV=production`, enable
 `REQUIRE_DURABLE_STORAGE=true` and `REQUIRE_REDIS=true`, and verify `/health`
-reports `ready: true` before accepting traffic. See the
-[Phase 7 completion report](docs/phase-7-completion-report.md) for the complete
-runbook and CI checks.
+reports `ready: true` before accepting traffic.
 
 ---
 

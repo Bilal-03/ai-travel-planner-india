@@ -1,0 +1,8 @@
+[allowlist]
+description = "Synthetic fixture identifiers, not credentials"
+regexes = [
+  '''launch_destinations_v1''',
+  '''test-secret-that-is-at-least-32-characters-long''',
+  '''decision-resolve-001''',
+  '''planner-test-12345678''',
+]

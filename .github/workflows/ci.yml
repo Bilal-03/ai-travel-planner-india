@@ -35,14 +35,12 @@ jobs:
           app/cache/redis_cache.py
           app/providers/gateway.py
           app/providers/resilience.py
-          app/services/account_service.py
           app/services/collaboration_service.py
           app/services/observability.py
           app/services/photos.py
           app/services/trip_storage.py
           app/services/url_safety.py
           app/models/collaboration.py
-          app/api/account.py
           app/api/analytics.py
           app/api/collaboration.py
           app/api/trips.py
