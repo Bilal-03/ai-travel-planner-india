@@ -14,6 +14,10 @@ Redis as the active queue, event replay, idempotency, and cancellation transport
 the migration provides the durable operational record needed when the job
 repository is connected to PostgreSQL in the deployment.
 
+`003_phase4_trip_revisions.sql` adds the previous-itinerary JSONB column used by
+the trip workspace's one-step undo action. The application also applies this
+column additively when it initializes an existing trips table.
+
 Before applying in production, run the migration against a staging database and
 verify the status check constraint and expiry index. Do not hand-edit the live
 schema or replace this file with a runtime `ALTER TABLE` call.

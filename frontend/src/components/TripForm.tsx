@@ -16,6 +16,7 @@ import {
 interface TripFormProps {
   onSubmit: (data: TripRequest) => void;
   isLoading: boolean;
+  initialData?: Partial<TripRequest>;
 }
 
 const VIBES: { value: TravelVibe; label: string; desc: string }[] = [
@@ -27,27 +28,27 @@ const VIBES: { value: TravelVibe; label: string; desc: string }[] = [
   { value: "nightlife", label: "Nightlife", desc: "Bars & clubs" },
 ];
 
-export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
-  const [origin, setOrigin] = useState("");
-  const [destination, setDestination] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [budget, setBudget] = useState(15000);
-  const [adults, setAdults] = useState(2);
-  const [children, setChildren] = useState(0);
-  const [travelPreference, setTravelPreference] = useState<TravelPreference>("balanced");
-  const [pace, setPace] = useState<TripPace>("balanced");
-  const [selectedVibes, setSelectedVibes] = useState<TravelVibe[]>(["culture"]);
-  const [transportMode, setTransportMode] = useState<TransportMode | undefined>();
-  const [accommodationPreference, setAccommodationPreference] = useState<AccommodationPreference>("budget");
-  const [dietaryPreference, setDietaryPreference] = useState<DietaryPreference | undefined>();
-  const [seniorCitizens, setSeniorCitizens] = useState(0);
-  const [accessibilityRequirements, setAccessibilityRequirements] = useState("");
-  const [mandatoryPlaces, setMandatoryPlaces] = useState("");
-  const [excludedPlaces, setExcludedPlaces] = useState("");
-  const [freeTextNotes, setFreeTextNotes] = useState("");
-  const [allowEarlyMorningTravel, setAllowEarlyMorningTravel] = useState(false);
-  const [allowLateNightTravel, setAllowLateNightTravel] = useState(false);
+export default function TripForm({ onSubmit, isLoading, initialData }: TripFormProps) {
+  const [origin, setOrigin] = useState(initialData?.origin || "");
+  const [destination, setDestination] = useState(initialData?.destination || "");
+  const [startDate, setStartDate] = useState(initialData?.start_date || "");
+  const [endDate, setEndDate] = useState(initialData?.end_date || "");
+  const [budget, setBudget] = useState(initialData?.budget ?? 15000);
+  const [adults, setAdults] = useState(initialData?.adults ?? 2);
+  const [children, setChildren] = useState(initialData?.children ?? 0);
+  const [travelPreference, setTravelPreference] = useState<TravelPreference>(initialData?.travel_preference || "balanced");
+  const [pace, setPace] = useState<TripPace>(initialData?.pace || "balanced");
+  const [selectedVibes, setSelectedVibes] = useState<TravelVibe[]>(initialData?.vibes?.length ? initialData.vibes : ["culture"]);
+  const [transportMode, setTransportMode] = useState<TransportMode | undefined>(initialData?.transport_mode);
+  const [accommodationPreference, setAccommodationPreference] = useState<AccommodationPreference>(initialData?.accommodation_preference || "budget");
+  const [dietaryPreference, setDietaryPreference] = useState<DietaryPreference | undefined>(initialData?.dietary_preference);
+  const [seniorCitizens, setSeniorCitizens] = useState(initialData?.senior_citizens ?? 0);
+  const [accessibilityRequirements, setAccessibilityRequirements] = useState(initialData?.accessibility_requirements || "");
+  const [mandatoryPlaces, setMandatoryPlaces] = useState(initialData?.mandatory_places?.join(", ") || "");
+  const [excludedPlaces, setExcludedPlaces] = useState(initialData?.excluded_places?.join(", ") || "");
+  const [freeTextNotes, setFreeTextNotes] = useState(initialData?.free_text_notes || "");
+  const [allowEarlyMorningTravel, setAllowEarlyMorningTravel] = useState(initialData?.allow_early_morning_travel ?? false);
+  const [allowLateNightTravel, setAllowLateNightTravel] = useState(initialData?.allow_late_night_travel ?? false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const toggleVibe = (vibe: TravelVibe) => {
@@ -124,6 +125,11 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
           <p className="mt-2.5 max-w-[52ch] font-medium text-foreground-secondary">
             Tell us where you&apos;re starting, where you&apos;re headed, and what the trip is for. YatraAI handles the rest.
           </p>
+          {initialData?.free_text_notes && (
+            <div className="mt-4 rounded border border-marigold/30 bg-marigold/10 px-3 py-2 text-xs text-foreground-secondary">
+              <span className="font-semibold text-marigold">Quick brief loaded.</span> Check the extracted fields, then adjust anything before generating.
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-[18px] pt-2">

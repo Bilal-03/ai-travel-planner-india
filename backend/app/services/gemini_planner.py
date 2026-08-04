@@ -547,7 +547,10 @@ async def _repair_plan_schedule(
             continue
 
         stops = [GeoPoint(**item[1]["coordinates"]) for item in resolved]
-        durations = [int(item[1].get("estimated_visit_minutes", 60)) for item in resolved]
+        durations = [
+            max(15, int(item[0].get("duration_minutes") or item[1].get("estimated_visit_minutes", 60)))
+            for item in resolved
+        ]
         _, _, route_segments = await validate_day_feasibility(stops, durations)
         scheduled: list[dict] = []
         cursor = DEFAULT_ACTIVITY_START
@@ -661,7 +664,7 @@ async def _validate_plan(
             if previous_end is not None and start < previous_end:
                 issues.append(f"Day {day_number} has overlapping activities around '{poi['name']}'")
             previous_end = end
-            duration = int(poi.get("estimated_visit_minutes", 60))
+            duration = max(15, int(activity.get("duration_minutes") or poi.get("estimated_visit_minutes", 60)))
             if end - start < duration:
                 issues.append(f"Day {day_number} does not allow the stated visit time for '{poi['name']}'")
             window = _opening_window(poi.get("opening_hours"))
@@ -915,6 +918,7 @@ def _plan_to_itinerary(
             estimated_cost=cost,
             notes=act.get("notes"),
             is_backup=is_backup,
+            is_locked=bool(act.get("is_locked", False)),
         )
 
     # Build day plans
@@ -1342,41 +1346,34 @@ def _build_fallback_plan(
 
 def _itinerary_to_plan(itinerary: Itinerary) -> dict:
     """Convert a persisted itinerary into the Gemini plan shape for refinement."""
+
+    def activity_payload(activity: Activity, *, is_backup: bool) -> dict:
+        start = _minutes_since_midnight(activity.start_time)
+        end = _minutes_since_midnight(activity.end_time)
+        duration = end - start if start is not None and end is not None and end > start else activity.poi.estimated_visit_minutes
+        return {
+            "name": activity.poi.name,
+            "category": activity.poi.category,
+            "lat": activity.poi.coordinates.lat,
+            "lng": activity.poi.coordinates.lng,
+            "start_time": activity.start_time,
+            "end_time": activity.end_time,
+            "duration_minutes": max(15, int(duration or 60)),
+            "estimated_cost": activity.estimated_cost,
+            "notes": activity.notes,
+            "is_backup": is_backup,
+            "is_locked": activity.is_locked,
+        }
+
     return {
         "day_plans": [
             {
                 "day_number": day.day_number,
                 "date": day.date.isoformat(),
                 "notes": day.notes,
-                "activities": [
-                    {
-                        "name": activity.poi.name,
-                        "category": activity.poi.category,
-                        "lat": activity.poi.coordinates.lat,
-                        "lng": activity.poi.coordinates.lng,
-                        "start_time": activity.start_time,
-                        "end_time": activity.end_time,
-                        "estimated_cost": activity.estimated_cost,
-                        "notes": activity.notes,
-                        "is_backup": activity.is_backup,
-                    }
-                    for activity in day.activities
-                ],
+                "activities": [activity_payload(activity, is_backup=activity.is_backup) for activity in day.activities],
                 "meals": [meal.model_dump() for meal in day.meals],
-                "backup_activities": [
-                    {
-                        "name": activity.poi.name,
-                        "category": activity.poi.category,
-                        "lat": activity.poi.coordinates.lat,
-                        "lng": activity.poi.coordinates.lng,
-                        "start_time": activity.start_time,
-                        "end_time": activity.end_time,
-                        "estimated_cost": activity.estimated_cost,
-                        "notes": activity.notes,
-                        "is_backup": True,
-                    }
-                    for activity in day.backup_activities
-                ],
+                "backup_activities": [activity_payload(activity, is_backup=True) for activity in day.backup_activities],
             }
             for day in itinerary.day_plans
         ],
@@ -1467,6 +1464,30 @@ async def refine_itinerary(itinerary: Itinerary, instruction: str) -> Itinerary:
         for activity in [*day_plan.activities, *day_plan.backup_activities]
     ]
 
+    if refinement.action in {
+        RefinementAction.ADD_ACTIVITY,
+        RefinementAction.ADD_CUSTOM_ACTIVITY,
+        RefinementAction.REPLACE_ACTIVITY,
+    } and refinement.replacement:
+        replacement_name = refinement.replacement.strip()
+        if not any(_normalize_place_name(poi.get("name")) == _normalize_place_name(replacement_name) for poi in approved_pois):
+            custom_provenance = _planner_estimate_provenance(
+                "This is a traveller-added place or activity without provider verification; confirm its location, hours, and cost before visiting.",
+                confidence=0.2,
+            ).model_dump(mode="json")
+            approved_pois.append({
+                "id": f"custom-{_normalize_place_name(replacement_name).replace(' ', '-')[:40]}",
+                "name": replacement_name,
+                "category": "custom activity",
+                "coordinates": itinerary.destination.coordinates.model_dump(),
+                "estimated_visit_minutes": 60,
+                "estimated_cost": 0,
+                "description": "Added by the traveller.",
+                "opening_hours": None,
+                "provenance": custom_provenance,
+                "field_provenance": {},
+            })
+
     deterministic_plan, changed_days, changed = apply_scoped_refinement(existing_plan, refinement)
     if changed:
         await _repair_plan_schedule(deterministic_plan, approved_pois, changed_days)
@@ -1500,11 +1521,15 @@ async def refine_itinerary(itinerary: Itinerary, instruction: str) -> Itinerary:
             refined.id = itinerary.id
             return refined
 
-    affected_days = changed_days or {
+    affected_days = changed_days or (
+        {refinement.day_number}
+        if refinement.action == RefinementAction.REGENERATE_DAY and refinement.day_number is not None
+        else {
         int(day.get("day_number", index))
         for index, day in enumerate(existing_plan.get("day_plans", []), start=1)
         if isinstance(day, dict)
-    }
+        }
+    )
     prompt = f"""Update this India itinerary according to the traveller's request.
 
 TRAVELLER REQUEST: {instruction}

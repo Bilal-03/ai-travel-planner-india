@@ -1,7 +1,7 @@
 # YatraAI implementation roadmap
 
 This roadmap mirrors the delivery order in the master implementation plan.
-Phases 0, 1, 2, and 3 are complete on their respective branches. Phase 4 is
+Phases 0, 1, 2, 3, and 4 are complete on their respective branches. Phase 5 is
 the next implementation boundary.
 
 ## Phase status
@@ -12,7 +12,7 @@ the next implementation boundary.
 | 1 | Common provenance, freshness, provider-neutral response models | Complete on `codex/phase-1-data-trust` |
 | 2 | Durable trip jobs, Redis events, resumable progress, idempotency | Complete on `codex/phase-2-durable-generation` |
 | 3 | Deterministic constraint engine and scoped itinerary refinement | Complete on `codex/phase-3-constraint-planner` |
-| 4 | Stardrift-inspired but simple trip workspace UX | Not started |
+| 4 | Stardrift-inspired but simple trip workspace UX | Complete on `codex/phase-4-trip-workspace` |
 | 5 | Provider gateway and live travel integrations | Not started |
 | 6 | Multi-destination trips, accounts, and explicit preference memory | Not started |
 | 7 | Offline access, collaboration, analytics, security, and production hardening | Not started |
@@ -60,6 +60,16 @@ budget, plus server-side scoped refinement for affected days and legs. Gemini
 now receives a deterministic candidate schedule before narration, and the
 existing final route/budget validation remains authoritative. See
 `docs/phase-3-completion-report.md` for the exit evidence and limitations.
+
+## Phase 4 gate
+
+Phase 4 is complete after adding a quick natural-language planning brief with a
+reviewable detailed form, a responsive trip workspace, mobile Plan/Map/Budget/
+Chat tabs, server-validated activity editing, recommendation explanations,
+transport comparisons, and one-step server-side undo. The workspace preserves
+the durable generation, provenance, and deterministic constraint contracts from
+Phases 1–3. See `docs/phase-4-completion-report.md` for the exit evidence and
+known limitations.
 
 ## Later sequencing constraints
 

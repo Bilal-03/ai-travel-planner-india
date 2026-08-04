@@ -131,6 +131,13 @@ class RefinementAction(str, Enum):
     REDUCE_BUDGET = "reduce_budget"
     AVOID_EARLY_TRAVEL = "avoid_early_travel"
     ADD_ACTIVITY = "add_activity"
+    ADD_CUSTOM_ACTIVITY = "add_custom_activity"
+    MOVE_ACTIVITY = "move_activity"
+    DELETE_ACTIVITY = "delete_activity"
+    EDIT_DURATION = "edit_duration"
+    LOCK_ACTIVITY = "lock_activity"
+    UNLOCK_ACTIVITY = "unlock_activity"
+    REGENERATE_DAY = "regenerate_day"
     CHANGE_TRANSPORT = "change_transport"
     UNKNOWN = "unknown"
 
@@ -140,6 +147,8 @@ class RefinementInstruction(BaseModel):
     day_number: Optional[int] = None
     target: Optional[str] = None
     replacement: Optional[str] = None
+    target_day_number: Optional[int] = None
+    duration_minutes: Optional[int] = None
     transport_mode: Optional[str] = None
     raw_instruction: str
 
@@ -792,6 +801,96 @@ def parse_refinement_instruction(instruction: str) -> RefinementInstruction:
 
     text = instruction.casefold().strip()
     day_number = _instruction_day(text)
+
+    move_match = re.search(
+        r"move\s+activity\s+[\"'](.+?)[\"']\s+from\s+day\s+(\d+)\s+to\s+day\s+(\d+)",
+        instruction,
+        re.IGNORECASE,
+    )
+    if move_match:
+        return RefinementInstruction(
+            action=RefinementAction.MOVE_ACTIVITY,
+            day_number=int(move_match.group(2)),
+            target=move_match.group(1).strip(),
+            target_day_number=int(move_match.group(3)),
+            raw_instruction=instruction,
+        )
+
+    delete_match = re.search(
+        r"delete\s+activity\s+[\"'](.+?)[\"']\s+from\s+day\s+(\d+)",
+        instruction,
+        re.IGNORECASE,
+    )
+    if delete_match:
+        return RefinementInstruction(
+            action=RefinementAction.DELETE_ACTIVITY,
+            day_number=int(delete_match.group(2)),
+            target=delete_match.group(1).strip(),
+            raw_instruction=instruction,
+        )
+
+    duration_match = re.search(
+        r"set\s+duration\s+for\s+activity\s+[\"'](.+?)[\"']\s+on\s+day\s+(\d+)\s+to\s+(\d+)\s*(?:minutes?|mins?)?",
+        instruction,
+        re.IGNORECASE,
+    )
+    if duration_match:
+        return RefinementInstruction(
+            action=RefinementAction.EDIT_DURATION,
+            day_number=int(duration_match.group(2)),
+            target=duration_match.group(1).strip(),
+            duration_minutes=max(15, min(720, int(duration_match.group(3)))),
+            raw_instruction=instruction,
+        )
+
+    lock_match = re.search(
+        r"(unlock|lock)\s+activity\s+[\"'](.+?)[\"']\s+on\s+day\s+(\d+)",
+        instruction,
+        re.IGNORECASE,
+    )
+    if lock_match:
+        return RefinementInstruction(
+            action=RefinementAction.UNLOCK_ACTIVITY if lock_match.group(1).casefold() == "unlock" else RefinementAction.LOCK_ACTIVITY,
+            day_number=int(lock_match.group(3)),
+            target=lock_match.group(2).strip(),
+            raw_instruction=instruction,
+        )
+
+    custom_match = re.search(
+        r"add\s+custom\s+activity\s+[\"'](.+?)[\"']\s+to\s+day\s+(\d+)",
+        instruction,
+        re.IGNORECASE,
+    )
+    if custom_match:
+        return RefinementInstruction(
+            action=RefinementAction.ADD_CUSTOM_ACTIVITY,
+            day_number=int(custom_match.group(2)),
+            replacement=custom_match.group(1).strip(),
+            raw_instruction=instruction,
+        )
+
+    replace_activity_match = re.search(
+        r"replace\s+activity\s+[\"'](.+?)[\"']\s+on\s+day\s+(\d+)\s+with\s+[\"'](.+?)[\"']",
+        instruction,
+        re.IGNORECASE,
+    )
+    if replace_activity_match:
+        return RefinementInstruction(
+            action=RefinementAction.REPLACE_ACTIVITY,
+            day_number=int(replace_activity_match.group(2)),
+            target=replace_activity_match.group(1).strip(),
+            replacement=replace_activity_match.group(3).strip(),
+            raw_instruction=instruction,
+        )
+
+    regenerate_match = re.search(r"regenerate\s+day\s+(\d+)", instruction, re.IGNORECASE)
+    if regenerate_match:
+        return RefinementInstruction(
+            action=RefinementAction.REGENERATE_DAY,
+            day_number=int(regenerate_match.group(1)),
+            raw_instruction=instruction,
+        )
+
     transport_matches = re.findall(r"\b(flight|train|road)\b", text)
     transport_mode = transport_matches[-1] if transport_matches else None
     if transport_mode and any(token in text for token in ("change", "switch", "prefer", "take")):
@@ -840,10 +939,47 @@ def apply_scoped_refinement(
         for day in day_plans
         if isinstance(day, Mapping) and str(day.get("day_number", "")).isdigit()
     }
-    if refinement.day_number is not None:
+    if refinement.action == RefinementAction.MOVE_ACTIVITY:
+        target_days &= {refinement.day_number or 0, refinement.target_day_number or 0}
+    elif refinement.day_number is not None:
         target_days &= {refinement.day_number}
+    elif refinement.action in {RefinementAction.ADD_ACTIVITY, RefinementAction.ADD_CUSTOM_ACTIVITY}:
+        first_day = min(target_days, default=0)
+        target_days = {first_day} if first_day else set()
     changed_days: set[int] = set()
     if not target_days:
+        return updated, changed_days, False
+
+    if refinement.action == RefinementAction.MOVE_ACTIVITY:
+        source_day = next((day for day in day_plans if isinstance(day, dict) and int(day.get("day_number", 0) or 0) == refinement.day_number), None)
+        target_day = next((day for day in day_plans if isinstance(day, dict) and int(day.get("day_number", 0) or 0) == refinement.target_day_number), None)
+        if source_day is None or target_day is None or source_day is target_day:
+            return updated, changed_days, False
+        activities = source_day.get("activities", [])
+        if not isinstance(activities, list):
+            return updated, changed_days, False
+        target = _normalize(refinement.target)
+        activity_index = next(
+            (index for index, activity in enumerate(activities) if isinstance(activity, dict) and target in _normalize(activity.get("name"))),
+            None,
+        )
+        if activity_index is None:
+            return updated, changed_days, False
+        activity = activities[activity_index]
+        if activity.get("is_locked"):
+            return updated, changed_days, False
+        activities.pop(activity_index)
+        target_activities = target_day.get("activities", [])
+        if not isinstance(target_activities, list):
+            target_activities = []
+            target_day["activities"] = target_activities
+        target_activities.append(activity)
+        source_day["notes"] = f"Day {source_day.get('day_number')}: stop moved to day {target_day.get('day_number')}."
+        target_day["notes"] = f"Day {target_day.get('day_number')}: added {activity.get('name', 'a stop')}."
+        changed_days.update({int(source_day.get("day_number")), int(target_day.get("day_number"))})
+        return updated, changed_days, True
+
+    if refinement.action == RefinementAction.REGENERATE_DAY:
         return updated, changed_days, False
 
     for day in day_plans:
@@ -858,7 +994,45 @@ def apply_scoped_refinement(
         if not isinstance(backups, list):
             backups = []
             day["backup_activities"] = backups
-        if refinement.action == RefinementAction.REDUCE_LOAD and len(activities) > 1:
+        if refinement.action in {RefinementAction.DELETE_ACTIVITY, RefinementAction.EDIT_DURATION, RefinementAction.LOCK_ACTIVITY, RefinementAction.UNLOCK_ACTIVITY}:
+            target = _normalize(refinement.target)
+            target_index = next(
+                (index for index, activity in enumerate(activities) if isinstance(activity, dict) and target in _normalize(activity.get("name"))),
+                None,
+            )
+            if target_index is None:
+                continue
+            target_activity = activities[target_index]
+            if refinement.action == RefinementAction.DELETE_ACTIVITY:
+                if target_activity.get("is_locked"):
+                    continue
+                activities.pop(target_index)
+                changed_days.add(day_number)
+            elif refinement.action == RefinementAction.EDIT_DURATION:
+                if target_activity.get("is_locked") or not refinement.duration_minutes:
+                    continue
+                start = _parse_minutes(target_activity.get("start_time")) or DAY_START_MINUTES
+                target_activity["duration_minutes"] = refinement.duration_minutes
+                target_activity["start_time"] = _format_minutes(start)
+                target_activity["end_time"] = _format_minutes(start + refinement.duration_minutes)
+                changed_days.add(day_number)
+            else:
+                target_activity["is_locked"] = refinement.action == RefinementAction.LOCK_ACTIVITY
+                changed_days.add(day_number)
+        elif refinement.action in {RefinementAction.ADD_CUSTOM_ACTIVITY, RefinementAction.ADD_ACTIVITY}:
+            replacement = (refinement.replacement or "custom activity").strip()
+            activities.append({
+                "name": replacement,
+                "category": "custom activity",
+                "start_time": None,
+                "end_time": None,
+                "estimated_cost": 0,
+                "notes": "Added by traveller; verify details before visiting.",
+                "is_backup": False,
+                "is_locked": False,
+            })
+            changed_days.add(day_number)
+        elif refinement.action == RefinementAction.REDUCE_LOAD and len(activities) > 1:
             removed = activities.pop()
             backups.append({**removed, "is_backup": True})
             day["notes"] = f"Day {day_number}: a lighter schedule after your refinement."
@@ -880,7 +1054,7 @@ def apply_scoped_refinement(
                     changed_days.add(day_number)
             if day_number in changed_days:
                 day["notes"] = f"Day {day_number}: morning travel begins later as requested."
-        elif refinement.action in {RefinementAction.ADD_ACTIVITY, RefinementAction.REPLACE_ACTIVITY}:
+        elif refinement.action == RefinementAction.REPLACE_ACTIVITY:
             replacement = _normalize(refinement.replacement)
             backup_index = next(
                 (
@@ -897,11 +1071,30 @@ def apply_scoped_refinement(
                         (index for index, activity in enumerate(activities) if target in _normalize(f"{activity.get('name', '')} {activity.get('category', '')}")),
                         None,
                     )
-                    if target_index is not None:
+                    if target_index is not None and not activities[target_index].get("is_locked"):
                         replaced = activities.pop(target_index)
                         backups.append({**replaced, "is_backup": True})
                 activities.append({**candidate, "is_backup": False})
                 changed_days.add(day_number)
+            elif refinement.target and refinement.replacement:
+                target = _normalize(refinement.target)
+                target_index = next(
+                    (index for index, activity in enumerate(activities) if target in _normalize(activity.get("name"))),
+                    None,
+                )
+                if target_index is not None and not activities[target_index].get("is_locked"):
+                    activities.pop(target_index)
+                    activities.append({
+                        "name": refinement.replacement.strip(),
+                        "category": "custom activity",
+                        "start_time": None,
+                        "end_time": None,
+                        "estimated_cost": 0,
+                        "notes": "Replacement requested by traveller; verify details before visiting.",
+                        "is_backup": False,
+                        "is_locked": False,
+                    })
+                    changed_days.add(day_number)
     return updated, changed_days, bool(changed_days)
 
 

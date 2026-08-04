@@ -354,6 +354,7 @@ class Activity(BaseModel):
     estimated_cost: int = 0
     notes: Optional[str] = None
     is_backup: bool = Field(False, description="True if this is a weather-backup activity")
+    is_locked: bool = Field(False, description="True when the traveller wants this stop protected from edits")
 
 
 class MealRecommendation(BaseModel):

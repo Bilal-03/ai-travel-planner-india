@@ -24,7 +24,7 @@ from app.services.gemini_planner import (
     refine_itinerary,
     select_transport_for_itinerary,
 )
-from app.services.trip_storage import get_trip, get_trip_owner_token_hash, save_trip, update_trip
+from app.services.trip_storage import get_trip, get_trip_owner_token_hash, save_trip, undo_trip, update_trip
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/trips", tags=["trips"])
@@ -256,6 +256,18 @@ async def refine_trip(
     refined = await refine_itinerary(itinerary, request.instruction)
     await update_trip(refined)
     return refined
+
+
+@router.post("/{trip_id}/undo", response_model=Itinerary)
+async def undo_trip_change(
+    trip_id: str,
+    _: None = Depends(require_trip_owner),
+):
+    """Restore the previous server-validated itinerary revision."""
+    restored = await undo_trip(trip_id)
+    if not restored:
+        raise HTTPException(status_code=409, detail="There is no previous trip version to restore.")
+    return restored
 
 
 @router.post("/{trip_id}/packing-list", response_model=list[PackingItem])

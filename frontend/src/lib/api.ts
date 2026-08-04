@@ -144,6 +144,7 @@ export interface Activity {
   estimated_cost: number;
   notes: string | null;
   is_backup: boolean;
+  is_locked?: boolean;
 }
 
 export interface MealRecommendation {
@@ -494,6 +495,12 @@ export const api = {
     request<Itinerary>(`/api/trips/${tripId}/refine`, {
       method: "POST",
       body: JSON.stringify({ instruction }),
+      headers: editHeaders(tripId),
+    }),
+
+  undoTrip: (tripId: string) =>
+    request<Itinerary>(`/api/trips/${tripId}/undo`, {
+      method: "POST",
       headers: editHeaders(tripId),
     }),
 

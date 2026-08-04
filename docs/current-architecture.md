@@ -1,9 +1,9 @@
 # YatraAI current architecture
 
 Audit date: 2026-08-04
-Repository branch: `codex/phase-3-constraint-planner`
+Repository branch: `codex/phase-4-trip-workspace`
 
-This document records the implementation that exists at the Phase 3 boundary.
+This document records the implementation that exists at the Phase 4 boundary.
 It describes behavior and ownership as implemented; it is not a proposal for
 the next architecture.
 
@@ -36,7 +36,7 @@ itineraries are saved through the PostgreSQL-compatible trip store.
 
 | Route | Implementation | Responsibility |
 | --- | --- | --- |
-| `/` | `frontend/src/app/page.tsx` | Client-side planning form, generation state, live progress subscription, itinerary result, transport selection, refinement, packing list, map, and sharing controls. |
+| `/` | `frontend/src/app/page.tsx` | Client-side planning flow, quick natural-language brief, detailed review form, durable generation state, responsive trip workspace, transport selection, server-validated refinement, packing list, map, and sharing controls. |
 | `/trip/[id]` | `frontend/src/app/trip/[id]/page.tsx` | Fetches and renders a saved itinerary as a read-only shared trip. |
 | `/trip/[id]` metadata | `frontend/src/app/trip/[id]/layout.tsx` | Server-side metadata fetch for title, description, and Open Graph data when the backend URL is configured. |
 
@@ -51,8 +51,9 @@ rendering.
 
 Leaflet is dynamically imported in `TripMap.tsx` and is not part of the
 initial server render. The rest of the itinerary UI is composed from focused
-components such as `TripForm`, `ItineraryTimeline`, `TransportCard`,
-`BudgetBreakdown`, `WeatherBadge`, `ShareTrip`, and `TripEnhancements`.
+components such as `QuickPlanner`, `TripForm`, `TripWorkspace`,
+`TripConversation`, `ItineraryTimeline`, `TransportCard`, `BudgetBreakdown`,
+`WeatherBadge`, `ShareTrip`, and `TripEnhancements`.
 
 ## FastAPI routes
 
@@ -73,6 +74,7 @@ The route modules are mounted by `backend/main.py`:
 | `POST` | `/api/trips/{trip_id}/share` | Returns a frontend share URL for an existing trip. |
 | `POST` | `/api/trips/{trip_id}/transport` | Selects one existing option, recalculates the budget, and updates the trip. Requires the creator edit token. |
 | `POST` | `/api/trips/{trip_id}/refine` | Parses common edits into scoped deterministic changes where possible; otherwise constrains Gemini to affected days, then validates and updates the trip. Requires the creator edit token. |
+| `POST` | `/api/trips/{trip_id}/undo` | Restores the previous server-saved itinerary revision and swaps the current version into the revision slot. Requires the creator edit token. |
 | `POST` | `/api/trips/{trip_id}/packing-list` | Generates a packing list and updates the trip. Requires the creator edit token. |
 | `GET` | `/api/search/cities` | Local Indian-city index first, Nominatim fallback. |
 | `GET` | `/api/search/pois` | Overpass POI discovery around coordinates. |
@@ -138,20 +140,23 @@ The supporting service boundaries are:
 
 `constraint_engine.py` also owns `parse_refinement_instruction` and
 `apply_scoped_refinement`. Edits such as “make day two less crowded”, “reduce
-the budget”, “avoid early morning travel”, and transport switches are handled
-deterministically when the current itinerary contains enough candidates. Other
-edits are sent to Gemini with an affected-day merge that preserves unrelated
-days before server-side validation.
+the budget”, “avoid early morning travel”, transport switches, activity moves,
+deletions, custom additions, duration changes, locks, and day regeneration are
+represented as structured commands. Deterministic edits are reflowed and
+validated before persistence; other edits are sent to Gemini with an
+affected-day merge that preserves unrelated days before server-side validation.
 
 ## Persistence and caching
 
 `trip_storage.py` creates one `trips` table at runtime when `DATABASE_URL` is
-configured. It stores the complete itinerary JSON in a JSONB column with a
-stable short ID and a SHA-256 hash of the creator edit token. Phase 1 also
+configured. It stores the complete itinerary JSON in a JSONB column plus one
+previous itinerary revision, with a stable short ID and a SHA-256 hash of the
+creator edit token. Phase 1 also
 includes the external migration `backend/migrations/001_phase1_travel_facts.sql`
-for durable fact-level provenance/freshness storage, and Phase 2 includes
+for durable fact-level provenance/freshness storage, Phase 2 includes
 `backend/migrations/002_phase2_trip_jobs.sql` for the operational job snapshot
-schema. Those migrations are intentionally not executed by the application at
+schema, and Phase 4 includes `backend/migrations/003_phase4_trip_revisions.sql`
+for one-step workspace undo. Those migrations are intentionally not executed by the application at
 runtime. The active Phase 2 queue/snapshot/event transport is Redis-first; if
 setup or a write fails, trip storage falls back to a process-local dictionary.
 
@@ -205,3 +210,8 @@ order, timing, meals, and notes.
 The Phase 0 baseline corpus added on the Phase 0 branch is documented in
 `backend/tests/fixtures/` and exercised by
 `backend/tests/test_baseline_fixtures.py`.
+
+Phase 4 adds focused command parsing/scoping coverage for workspace activity
+edits and extends the mocked Playwright journey to exercise the workspace,
+mobile tabs, and conversation surface. Backend test execution still requires
+the repository's Python test dependencies to be installed in the environment.

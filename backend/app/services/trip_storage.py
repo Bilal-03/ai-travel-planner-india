@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS trips (
     end_date DATE NOT NULL,
     budget INTEGER NOT NULL,
     owner_token_hash TEXT,
+    previous_itinerary_json JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )
 """
@@ -52,6 +53,7 @@ def _ensure_schema_sync() -> bool:
                     # Existing installations predate edit-token protection.
                     # Keep this migration additive so shared links remain readable.
                     cursor.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS owner_token_hash TEXT")
+                    cursor.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS previous_itinerary_json JSONB")
             _schema_ready = True
             logger.info("Connected to Neon PostgreSQL; trips table is ready")
             return True
@@ -76,8 +78,8 @@ async def save_trip(itinerary: Itinerary, owner_token_hash: str | None = None) -
                 with _connect() as connection:
                     with connection.cursor() as cursor:
                         cursor.execute(
-                            """INSERT INTO trips (id, itinerary_json, origin, destination, start_date, end_date, budget, owner_token_hash, created_at)
-                            VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)""",
+                            """INSERT INTO trips (id, itinerary_json, origin, destination, start_date, end_date, budget, owner_token_hash, previous_itinerary_json, created_at)
+                            VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, NULL, %s)""",
                             (trip_id, data, itinerary.origin.name, itinerary.destination.name,
                              itinerary.start_date, itinerary.end_date, itinerary.budget.total_estimated,
                              owner_token_hash, created_at),
@@ -88,6 +90,7 @@ async def save_trip(itinerary: Itinerary, owner_token_hash: str | None = None) -
             logger.error("Neon save failed; using memory: %s", error)
     _memory_store[trip_id] = {
         "itinerary": data,
+        "previous_itinerary": None,
         "owner_token_hash": owner_token_hash,
         "created_at": created_at,
     }
@@ -138,7 +141,7 @@ async def update_trip(itinerary: Itinerary) -> None:
             def update() -> None:
                 with _connect() as connection:
                     with connection.cursor() as cursor:
-                        cursor.execute("UPDATE trips SET itinerary_json = %s::jsonb, budget = %s WHERE id = %s", (data, itinerary.budget.total_estimated, itinerary.id))
+                        cursor.execute("UPDATE trips SET previous_itinerary_json = itinerary_json, itinerary_json = %s::jsonb, budget = %s WHERE id = %s", (data, itinerary.budget.total_estimated, itinerary.id))
             await asyncio.to_thread(update)
             return
         except Exception as error:
@@ -146,6 +149,36 @@ async def update_trip(itinerary: Itinerary) -> None:
     existing = _memory_store.get(itinerary.id, {})
     _memory_store[itinerary.id] = {
         "itinerary": data,
+        "previous_itinerary": existing.get("itinerary"),
         "owner_token_hash": existing.get("owner_token_hash"),
         "created_at": datetime.utcnow().isoformat(),
     }
+
+
+async def undo_trip(trip_id: str) -> Optional[Itinerary]:
+    """Restore the last server-saved version of a trip, if one exists."""
+    if await _ensure_schema():
+        try:
+            def swap() -> bool:
+                with _connect() as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            """UPDATE trips
+                            SET itinerary_json = previous_itinerary_json,
+                                previous_itinerary_json = itinerary_json
+                            WHERE id = %s AND previous_itinerary_json IS NOT NULL""",
+                            (trip_id,),
+                        )
+                        return cursor.rowcount > 0
+            if await asyncio.to_thread(swap):
+                return await get_trip(trip_id)
+        except Exception as error:
+            logger.error("Neon undo failed; using memory: %s", error)
+
+    existing = _memory_store.get(trip_id)
+    if not existing or not existing.get("previous_itinerary"):
+        return None
+    current = existing["itinerary"]
+    existing["itinerary"] = existing["previous_itinerary"]
+    existing["previous_itinerary"] = current
+    return Itinerary.model_validate_json(existing["itinerary"])
