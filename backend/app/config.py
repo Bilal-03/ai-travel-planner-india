@@ -57,10 +57,6 @@ class Settings(BaseSettings):
         le=10_000_000,
         validation_alias="MAX_REQUEST_BODY_BYTES",
     )
-    bot_protection_token: Optional[str] = Field(default=None, validation_alias="BOT_PROTECTION_TOKEN")
-    sentry_dsn: Optional[str] = Field(default=None, validation_alias="SENTRY_DSN")
-    otel_exporter_endpoint: Optional[str] = Field(default=None, validation_alias="OTEL_EXPORTER_OTLP_ENDPOINT")
-    analytics_admin_token: Optional[str] = Field(default=None, validation_alias="ANALYTICS_ADMIN_TOKEN")
     analytics_hash_salt: str = Field(default="yatraai-local-analytics-salt", validation_alias="ANALYTICS_HASH_SALT")
 
     # --- App ---

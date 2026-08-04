@@ -1,16 +1,15 @@
-"""Privacy-safe product analytics ingestion and protected operational summary."""
+"""Privacy-safe product analytics ingestion."""
 
 from __future__ import annotations
 
 import hashlib
-import hmac
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from app.cache.redis_cache import get_cache
 from app.config import settings
 from app.models.collaboration import AnalyticsEventRequest
-from app.services.collaboration_service import analytics_summary, record_analytics
+from app.services.collaboration_service import record_analytics
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -38,10 +37,3 @@ async def ingest_event(event: AnalyticsEventRequest, request: Request):
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {"accepted": True}
-
-
-@router.get("/summary")
-async def get_summary(admin_token: str | None = Header(None, alias="X-Analytics-Admin-Token")):
-    if not settings.analytics_admin_token or not admin_token or not hmac.compare_digest(admin_token, settings.analytics_admin_token):
-        raise HTTPException(status_code=404, detail="Not found")
-    return await analytics_summary()

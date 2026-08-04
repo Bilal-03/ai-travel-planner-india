@@ -3,7 +3,6 @@ AI Travel Itinerary Planner — FastAPI Backend
 Domestic India travel planning powered by Gemini AI, OSM, and free-tier APIs.
 """
 
-import hmac
 import logging
 import re
 import uuid
@@ -19,7 +18,6 @@ from app.providers.gateway import get_provider_gateway
 from app.services.collaboration_service import ensure_collaboration_storage_ready
 from app.services.observability import (
     configure_observability,
-    request_span,
     reset_request_context,
     set_request_context,
 )
@@ -68,7 +66,7 @@ def _job_id_from_path(path: str) -> str:
 
 @app.middleware("http")
 async def production_boundary(request: Request, call_next):
-    """Attach correlation IDs and enforce request-size/bot guardrails."""
+    """Attach correlation IDs and enforce request-size guardrails."""
 
     request_id = request.headers.get("X-Request-ID", "")
     if not re.fullmatch(r"[A-Za-z0-9._:-]{8,80}", request_id):
@@ -96,18 +94,7 @@ async def production_boundary(request: Request, call_next):
                     headers={"X-Request-ID": request_id},
                 )
 
-        protected_path = not request.url.path.startswith(("/health", "/docs", "/openapi.json", "/api/analytics/events"))
-        if settings.bot_protection_token and mutating and protected_path:
-            supplied = request.headers.get("X-Yatra-Bot-Token", "")
-            if not hmac.compare_digest(supplied, settings.bot_protection_token):
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "Bot protection verification failed."},
-                    headers={"X-Request-ID": request_id},
-                )
-
-        with request_span(f"{request.method} {request.url.path}"):
-            response = await call_next(request)
+        response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         if job_id != "-":
             response.headers["X-Trip-Job-ID"] = job_id
@@ -134,7 +121,6 @@ app.add_middleware(
         "X-Request-ID",
         "X-Trip-Edit-Token",
         "X-Trip-Share-Token",
-        "X-Yatra-Bot-Token",
     ],
     expose_headers=["X-Request-ID", "X-Trip-Job-ID", "X-Trip-Edit-Token", "ETag"],
 )

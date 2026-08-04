@@ -1,9 +1,4 @@
-"""Request-scoped observability primitives used by the production boundary.
-
-The application keeps the default implementation dependency-free. Sentry and
-OpenTelemetry are optional integrations that activate only when their
-corresponding deployment settings and packages are present.
-"""
+"""Request-scoped structured logging primitives used by the production boundary."""
 
 from __future__ import annotations
 
@@ -11,17 +6,10 @@ import json
 import logging
 import re
 import time
-from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Iterator
-
-from app.config import settings
 
 request_id_context: ContextVar[str] = ContextVar("request_id", default="-")
 trip_job_id_context: ContextVar[str] = ContextVar("trip_job_id", default="-")
-
-_tracer = None
-_sentry = None
 
 
 class StructuredFormatter(logging.Formatter):
@@ -45,9 +33,8 @@ class StructuredFormatter(logging.Formatter):
 
 
 def configure_observability() -> None:
-    """Initialise optional telemetry integrations once during app startup."""
+    """Configure structured application logging once during app startup."""
 
-    global _tracer, _sentry
     root = logging.getLogger()
     if not root.handlers:
         stream_handler = logging.StreamHandler()
@@ -58,42 +45,6 @@ def configure_observability() -> None:
             existing_handler.setFormatter(StructuredFormatter())
     root.setLevel(logging.INFO)
 
-    if settings.sentry_dsn:
-        try:
-            import sentry_sdk
-
-            sentry_sdk.init(
-                dsn=settings.sentry_dsn,
-                environment=settings.environment,
-                traces_sample_rate=0.1,
-                send_default_pii=False,
-            )
-            _sentry = sentry_sdk
-        except ImportError:
-            logging.getLogger(__name__).warning("SENTRY_DSN is set but sentry-sdk is not installed")
-        except Exception:
-            logging.getLogger(__name__).exception("Sentry initialisation failed")
-
-    try:
-        from opentelemetry import trace
-
-        if settings.otel_exporter_endpoint:
-            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-            from opentelemetry.sdk.resources import Resource
-            from opentelemetry.sdk.trace import TracerProvider
-            from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
-            provider = TracerProvider(resource=Resource.create({"service.name": "yatraai-backend", "deployment.environment": settings.environment}))
-            provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=settings.otel_exporter_endpoint)))
-            trace.set_tracer_provider(provider)
-
-        _tracer = trace.get_tracer("yatraai.backend")
-    except ImportError:
-        _tracer = None
-    except Exception:
-        logging.getLogger(__name__).exception("OpenTelemetry initialisation failed")
-        _tracer = None
-
 
 def set_request_context(request_id: str, trip_job_id: str = "-") -> tuple[Token[str], Token[str]]:
     return request_id_context.set(request_id), trip_job_id_context.set(trip_job_id)
@@ -102,21 +53,6 @@ def set_request_context(request_id: str, trip_job_id: str = "-") -> tuple[Token[
 def reset_request_context(tokens: tuple[Token[str], Token[str]]) -> None:
     request_id_context.reset(tokens[0])
     trip_job_id_context.reset(tokens[1])
-
-
-@contextmanager
-def request_span(name: str) -> Iterator[object]:
-    """Create an OpenTelemetry span when the SDK is installed, otherwise noop."""
-
-    if _tracer is None:
-        yield None
-        return
-    with _tracer.start_as_current_span(name) as span:
-        span.set_attribute("yatraai.request_id", request_id_context.get())
-        job_id = trip_job_id_context.get()
-        if job_id != "-":
-            span.set_attribute("yatraai.trip_job_id", job_id)
-        yield span
 
 
 def record_metric(name: str, **fields: object) -> None:
@@ -155,15 +91,11 @@ def record_llm_usage(model: str, duration_ms: float, response: object | None = N
 
 
 def capture_exception(error: BaseException, *, context: dict[str, object] | None = None) -> None:
-    if _sentry is None:
-        return
-    try:
-        with _sentry.push_scope() as scope:
-            for key, value in (context or {}).items():
-                scope.set_extra(key, value)
-            _sentry.capture_exception(error)
-    except Exception:
-        logging.getLogger(__name__).debug("Could not report exception to Sentry", exc_info=True)
+    logging.getLogger("yatraai.errors").error(
+        "Unhandled application exception",
+        exc_info=(type(error), error, error.__traceback__),
+        extra={"error_context": context or {}},
+    )
 
 
 _SECRET_PATTERNS = (

@@ -39,8 +39,7 @@ changing the provider-neutral itinerary contract.
   acceptance, sharing, export, estimated-data use, freshness, invalid output,
   and estimated cost per completed trip.
 - Added request and trip-job correlation IDs, JSON structured logs, provider
-  latency metrics, LLM usage metrics, optional Sentry reporting, and optional
-  OpenTelemetry spans/export.
+  latency metrics, and LLM usage metrics.
 - Health output now reports readiness, Redis mode, database mode, and pending
   job depth.
 
@@ -83,15 +82,10 @@ Before deployment:
 2. Set `APP_ENV=production`, `REQUIRE_DURABLE_STORAGE=true`, and
    `REQUIRE_REDIS=true`.
 3. Configure `DATABASE_URL`, both Upstash Redis variables, a long random
-   `TRIP_JOB_SECRET`, `ANALYTICS_ADMIN_TOKEN`, and a random
-   `ANALYTICS_HASH_SALT`.
+   `TRIP_JOB_SECRET`, and a random `ANALYTICS_HASH_SALT`.
 4. Set the exact deployed frontend origin in `FRONTEND_URL`; do not use a
    wildcard CORS origin.
-5. Configure `SENTRY_DSN` and/or `OTEL_EXPORTER_OTLP_ENDPOINT`, and configure
-   log-based alerts for generation failures, provider latency, and queue depth.
-6. If a gateway or Turnstile integration is available, configure
-   `BOT_PROTECTION_TOKEN` and the matching public frontend token.
-7. Deploy only after `/health` reports `ready: true` and `database: neon`,
+5. Deploy only after `/health` reports `ready: true` and `database: neon`,
    `redis: redis`.
 
 ## CI/CD
@@ -128,8 +122,6 @@ errors in older planner modules.
   require connectivity and independent verification.
 - The service worker never caches cross-origin map tiles or backend responses;
   the localStorage snapshot is the offline source of truth for the trip page.
-- Sentry, OpenTelemetry export, bot verification, and alert delivery are
-  opt-in integrations and require deployment credentials/configuration.
 - Share-link listings cannot reconstruct a raw token after creation because
   only hashes are persisted; the creation response is the copyable link.
 - Local in-memory fallbacks remain available for development only. Production

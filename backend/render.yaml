@@ -32,15 +32,7 @@ services:
         value: "true"
       - key: MAX_REQUEST_BODY_BYTES
         value: "1000000"
-      - key: BOT_PROTECTION_TOKEN
-        sync: false
       - key: TRIP_JOB_SECRET
-        sync: false
-      - key: SENTRY_DSN
-        sync: false
-      - key: OTEL_EXPORTER_OTLP_ENDPOINT
-        sync: false
-      - key: ANALYTICS_ADMIN_TOKEN
         sync: false
       - key: ANALYTICS_HASH_SALT
         sync: false

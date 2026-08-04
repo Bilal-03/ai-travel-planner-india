@@ -119,8 +119,6 @@ Copy the included root [`.env.example`](.env.example) to `.env` for the backend,
 | `UPSTASH_REDIS_REST_TOKEN` | ⚪ Local / ✅ production | Redis authentication token | Same as above |
 | `REQUIRE_DURABLE_STORAGE` | ⚪ Optional | Set `true` in production to reject memory persistence fallback | — |
 | `REQUIRE_REDIS` | ⚪ Optional | Set `true` in production for distributed rate limits and queue readiness | — |
-| `SENTRY_DSN` / `OTEL_EXPORTER_OTLP_ENDPOINT` | ⚪ Optional | Error reporting and trace export | Sentry / OTel provider |
-| `ANALYTICS_ADMIN_TOKEN` | ⚪ Optional | Protects the analytics summary endpoint | Generate a random secret |
 | `FRONTEND_URL` | ✅ Yes | Frontend URL for CORS | Your Vercel URL in production |
 
 > **Note:** The app works without optional keys — it degrades gracefully. Only `GEMINI_API_KEY` is required.

@@ -6,7 +6,6 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const EDIT_TOKEN_HEADER = "X-Trip-Edit-Token";
 const SHARE_TOKEN_HEADER = "X-Trip-Share-Token";
-const BOT_PROTECTION_TOKEN = process.env.NEXT_PUBLIC_BOT_PROTECTION_TOKEN;
 
 export type CollaborationRole = "owner" | "editor" | "viewer";
 export type TripKind = "single" | "multi_city";
@@ -555,7 +554,6 @@ async function request<T>(
         signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
-          ...(BOT_PROTECTION_TOKEN ? { "X-Yatra-Bot-Token": BOT_PROTECTION_TOKEN } : {}),
           ...fetchOptions.headers,
         },
       });
