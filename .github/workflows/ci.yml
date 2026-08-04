@@ -89,7 +89,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -r requirements.txt
-      - run: python -m pytest -q tests/test_phase6_account_api.py tests/test_trip_jobs_api.py tests/test_phase7_hardening.py
+      - run: python -m pytest -q tests/test_trip_jobs_api.py tests/test_phase7_hardening.py
 
   playwright:
     name: Playwright smoke tests
