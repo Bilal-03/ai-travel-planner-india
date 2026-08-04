@@ -30,31 +30,7 @@ services:
         value: production
       - key: REQUIRE_DURABLE_STORAGE
         value: "true"
-      - key: MAX_REQUEST_BODY_BYTES
-        value: "1000000"
       - key: TRIP_JOB_SECRET
-        sync: false
-      - key: ANALYTICS_HASH_SALT
         sync: false
       - key: FRONTEND_URL
         sync: false
-      - key: FLIGHT_PROVIDER
-        value: legacy
-      - key: PLACES_PROVIDER
-        value: overpass
-      - key: ROUTES_PROVIDER
-        value: osrm
-      - key: RAIL_PROVIDER
-        value: legacy
-      - key: WEATHER_PROVIDER
-        value: openweather
-      - key: PROVIDER_TIMEOUT_SECONDS
-        value: "20"
-      - key: PROVIDER_MAX_RETRIES
-        value: "1"
-      - key: PROVIDER_RETRY_BACKOFF_SECONDS
-        value: "0.25"
-      - key: PROVIDER_CIRCUIT_FAILURE_THRESHOLD
-        value: "3"
-      - key: PROVIDER_CIRCUIT_COOLDOWN_SECONDS
-        value: "30"

@@ -81,8 +81,8 @@ Before deployment:
    apply them to production.
 2. Set `APP_ENV=production`, `REQUIRE_DURABLE_STORAGE=true`, and
    `REQUIRE_REDIS=true`.
-3. Configure `DATABASE_URL`, both Upstash Redis variables, a long random
-   `TRIP_JOB_SECRET`, and a random `ANALYTICS_HASH_SALT`.
+3. Configure `DATABASE_URL`, both Upstash Redis variables, and a long random
+   `TRIP_JOB_SECRET`.
 4. Set the exact deployed frontend origin in `FRONTEND_URL`; do not use a
    wildcard CORS origin.
 5. Deploy only after `/health` reports `ready: true` and `database: neon`,

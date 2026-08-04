@@ -10,9 +10,8 @@ fallback behavior preserved.
 
 - Added provider-neutral request/result contracts and protocols for flights, rail
   schedules/availability, places, routes, and weather.
-- Added `ProviderGateway` with the required `FLIGHT_PROVIDER`,
-  `PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`, and
-  `WEATHER_PROVIDER` switches.
+- Added `ProviderGateway` with built-in provider defaults and safe fallback
+  behavior.
 - Routed the current Skyscanner, RailRadar, Overpass, OSRM, and OpenWeather
   adapters through normalized callback providers. Provider payloads do not cross
   into itinerary or UI models.

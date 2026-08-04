@@ -22,24 +22,12 @@ lowercase `Settings` fields. Never commit actual `.env` or `.env.local` files.
 | `UPSTASH_REDIS_REST_TOKEN` | Strongly recommended for production | `redis_cache.py`, `services/trip_jobs.py` | Credential for the Upstash Redis client. |
 | `TRIP_JOB_SECRET` | Strongly recommended for production | `config.py`, `services/trip_jobs.py` | Secret used to derive the edit token returned for completed asynchronous jobs. A development fallback exists, but production deployments must set this explicitly. |
 | `FRONTEND_URL` | Yes in deployment | `main.py`, `api/trips.py` | CORS origin and base used when constructing a server-side share URL. |
-| `BACKEND_PORT` | No | `config.py` | Default local port setting; Render uses its injected `PORT` in the start command. |
 | `NOMINATIM_RPS` | No | `config.py` | Configured setting exists, but the current geocoder uses its own one-request-per-second limiter. |
 | `OVERPASS_RPS` | No | `config.py` | Configured setting exists, but the current POI service uses its own limiter. |
 | `OSRM_RPS` | No | `config.py` | Configured setting exists, but the current routing service uses its own limiter. |
-| `FLIGHT_PROVIDER` | No | `providers/gateway.py` | Defaults to `legacy` (Skyscanner adapter); unsupported values fail closed to labelled fallback. |
-| `PLACES_PROVIDER` | No | `providers/gateway.py` | Defaults to `overpass`; unsupported values fall back to the reviewed catalogue. |
-| `ROUTES_PROVIDER` | No | `providers/gateway.py` | Defaults to `osrm`; unsupported values let feasibility use its deterministic estimate. |
-| `RAIL_PROVIDER` | No | `providers/gateway.py` | Defaults to `legacy` (RailRadar schedule adapter); fares and seats remain unverified. |
-| `WEATHER_PROVIDER` | No | `providers/gateway.py` | Defaults to `openweather`; unsupported values leave weather unavailable. |
-| `PROVIDER_TIMEOUT_SECONDS` | No | `providers/resilience.py` | Gateway timeout per attempt; default `20`. Provider HTTP clients retain their own shorter timeouts. |
-| `PROVIDER_MAX_RETRIES` | No | `providers/resilience.py` | Number of bounded retries after the first attempt; default `1`. |
-| `PROVIDER_RETRY_BACKOFF_SECONDS` | No | `providers/resilience.py` | Exponential retry backoff base; default `0.25`. |
-| `PROVIDER_CIRCUIT_FAILURE_THRESHOLD` | No | `providers/resilience.py` | Consecutive failed calls before opening a domain circuit; default `3`. |
-| `PROVIDER_CIRCUIT_COOLDOWN_SECONDS` | No | `providers/resilience.py` | Time before a half-open probe; default `30`. |
 
-The current Render configuration declares the provider/database/cache keys,
-provider selections/resilience defaults, and `FRONTEND_URL`; the rate settings
-and `GEMINI_MODEL` can still be supplied as environment variables by the host.
+The current Render configuration declares the provider database/cache keys and
+`FRONTEND_URL`; provider selection and resilience use application defaults.
 
 ## Frontend variables
 

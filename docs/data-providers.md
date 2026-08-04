@@ -65,15 +65,15 @@ Current provider credentials are optional except Gemini at product level:
 Phase 5 adds `backend/app/providers/contracts.py` and
 `backend/app/providers/gateway.py`. Services now pass external results through
 provider-neutral contracts before returning them to the planner or API. The
-following feature flags select the adapter family:
+gateway defaults select the adapter family:
 
-| Flag | Default | Current adapter | Safe behavior for an unsupported value |
+| Domain | Default adapter | Current adapter | Safe fallback |
 | --- | --- | --- | --- |
-| `FLIGHT_PROVIDER` | `legacy` | Existing Skyscanner adapter, then labelled fare fallback | No upstream call; labelled fallback |
-| `PLACES_PROVIDER` | `overpass` | Reviewed catalogue plus Overpass adapter | Reviewed catalogue fallback |
-| `ROUTES_PROVIDER` | `osrm` | OSRM driving adapter | Deterministic route estimate in feasibility |
-| `RAIL_PROVIDER` | `legacy` | Existing RailRadar schedule adapter | Static schedule/estimated fare fallback |
-| `WEATHER_PROVIDER` | `openweather` | Existing OpenWeather forecast adapter | Weather unavailable; planning continues |
+| Flight | Skyscanner adapter | Existing Skyscanner adapter | Labelled fare fallback |
+| Places | Overpass | Reviewed catalogue plus Overpass adapter | Reviewed catalogue fallback |
+| Routes | OSRM | OSRM driving adapter | Deterministic route estimate in feasibility |
+| Rail | RailRadar adapter | Existing RailRadar schedule adapter | Static schedule/estimated fare fallback |
+| Weather | OpenWeather | Existing OpenWeather forecast adapter | Weather unavailable; planning continues |
 
 The legacy choices are compatibility adapters, not a booking guarantee. Rail
 remains schedule-only, while flight search results do not confirm seats or a

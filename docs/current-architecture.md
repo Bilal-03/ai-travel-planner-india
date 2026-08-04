@@ -217,10 +217,8 @@ the frontend uses the new job endpoints.
   access to a persisted itinerary.
 - External services: Gemini, Skyscanner RapidAPI, RailRadar, OpenWeatherMap,
   Nominatim, Overpass, OSRM, and Unsplash as configured.
-- Provider replacement is controlled by `FLIGHT_PROVIDER`,
-  `PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`, and
-  `WEATHER_PROVIDER`; unsupported selections degrade to the existing labelled
-  fallback or unavailable state.
+- Provider selection and resilience use built-in defaults; unsupported or
+  unavailable upstream data degrades to the existing labelled fallback state.
 
 Environment loading is implemented by `pydantic-settings` in
 `backend/app/config.py` with `.env` and `../.env` lookup. The complete audit
