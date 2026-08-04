@@ -1,9 +1,9 @@
 # YatraAI current architecture
 
 Audit date: 2026-08-04
-Repository branch: `codex/phase-4-trip-workspace`
+Repository branch: `codex/phase-5-provider-gateway`
 
-This document records the implementation that exists at the Phase 4 boundary.
+This document records the implementation that exists at the Phase 5 boundary.
 It describes behavior and ownership as implemented; it is not a proposal for
 the next architecture.
 
@@ -62,7 +62,7 @@ The route modules are mounted by `backend/main.py`:
 | Method | Path | Current behavior |
 | --- | --- | --- |
 | `GET` | `/` | Service identity and docs link. |
-| `GET` | `/health` | Configuration-state health response; it does not verify every upstream dependency. |
+| `GET` | `/health` | Configuration-state health response, including selected provider flags; it does not verify every upstream dependency. |
 | `POST` | `/api/trips/generate` | Legacy compatibility route that performs full generation inside the request, saves a trip, and returns an `Itinerary`. Accepts `X-Progress-Token`; the frontend uses `/api/trip-jobs`. |
 | `GET` | `/api/trips/progress/{token}` | Streams process-local progress messages as Server-Sent Events. |
 | `POST` | `/api/trip-jobs` | Accepts a generation request, applies the generation rate limit, reserves `Idempotency-Key`, and returns a job snapshot with HTTP 202. |
@@ -130,10 +130,16 @@ The supporting service boundaries are:
   train references, fare estimates, and road estimates.
 - `poi_discovery.py` and `data/landmark_catalogue.py`: curated reviewed
   landmarks plus Overpass discovery filtered by vibe.
-- `weather.py`: OpenWeatherMap five-day/three-hour forecast aggregation and
-  weather severity classification.
+- `weather.py`: OpenWeatherMap five-day/three-hour forecast aggregation,
+  normalized timestamps, derived rain/heat advisories, and weather severity
+  classification consumed by the deterministic constraint engine.
 - `routing.py`: OSRM driving routes, route geometry, and deterministic
   fallback segments used in feasibility and local-transport budgeting.
+- `providers/contracts.py`: provider-neutral request/result models and adapter
+  protocols for flights, hotels, rail, buses, places, routes, and weather.
+- `providers/gateway.py` and `providers/resilience.py`: feature-flagged adapter
+  selection, bounded timeout/retry execution, circuit breakers, and empty
+  fail-closed adapters for uncontracted hotel/bus providers.
 - `photos.py`: optional Unsplash destination imagery.
 - `festivals.py`: static festival data exists, but the generation flow
   currently intentionally leaves festival facts empty.
@@ -182,6 +188,10 @@ the frontend uses the new job endpoints.
 - Data services: optional Neon PostgreSQL and Upstash Redis.
 - External services: Gemini, Skyscanner RapidAPI, RailRadar, OpenWeatherMap,
   Nominatim, Overpass, OSRM, and Unsplash as configured.
+- Provider replacement is controlled by `FLIGHT_PROVIDER`,
+  `HOTEL_PROVIDER`, `PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`,
+  `BUS_PROVIDER`, and `WEATHER_PROVIDER`; unsupported selections degrade to
+  the existing labelled fallback or unavailable state.
 
 Environment loading is implemented by `pydantic-settings` in
 `backend/app/config.py` with `.env` and `../.env` lookup. The complete audit
@@ -215,3 +225,8 @@ Phase 4 adds focused command parsing/scoping coverage for workspace activity
 edits and extends the mocked Playwright journey to exercise the workspace,
 mobile tabs, and conversation surface. Backend test execution still requires
 the repository's Python test dependencies to be installed in the environment.
+
+Phase 5 adds adapter normalization and provider-gateway contract tests for
+timeouts, bounded retries, circuit opening, schedule-only rail behavior, and
+fail-closed unsupported hotel/bus choices. The live legacy providers remain
+behind the gateway and preserve their existing provenance/fallback contracts.

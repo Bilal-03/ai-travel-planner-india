@@ -13,6 +13,8 @@ import httpx
 
 from app.cache.redis_cache import cached
 from app.models.trip import DataProvenance, DataStatus, GeoPoint, RouteSegment
+from app.providers.contracts import RouteRequest
+from app.providers.gateway import get_provider_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +35,7 @@ async def _rate_limit():
         _last_request_time = asyncio.get_event_loop().time()
 
 
-@cached("route", ttl_seconds=86400 * 7)  # Cache for 7 days
-async def get_route(
+async def _get_route_legacy(
     from_lat: float,
     from_lng: float,
     to_lat: float,
@@ -60,7 +61,7 @@ async def get_route(
             data = resp.json()
     except Exception as e:
         logger.error(f"OSRM route request failed: {e}")
-        return None
+        raise
 
     if data.get("code") != "Ok" or not data.get("routes"):
         return None
@@ -85,6 +86,37 @@ async def get_route(
             disclaimer="Route distance and duration are traffic-independent planning values; regenerate after reordering stops and recheck travel time on the day.",
         ).model_dump(mode="json"),
     }
+
+
+@cached("route", ttl_seconds=86400 * 7)  # Cache for 7 days
+async def get_route(
+    from_lat: float,
+    from_lng: float,
+    to_lat: float,
+    to_lng: float,
+) -> Optional[dict]:
+    """Get a normalized route through the configured routing provider."""
+
+    request = RouteRequest(
+        from_point=GeoPoint(lat=from_lat, lng=from_lng),
+        to_point=GeoPoint(lat=to_lat, lng=to_lng),
+    )
+
+    async def legacy_route(provider_request: RouteRequest) -> dict | None:
+        return await _get_route_legacy(
+            provider_request.from_point.lat,
+            provider_request.from_point.lng,
+            provider_request.to_point.lat,
+            provider_request.to_point.lng,
+        )
+
+    try:
+        provider = get_provider_gateway().routes_provider(legacy_route)
+        route = await provider.route(request)
+        return route.model_dump(mode="json") if route else None
+    except Exception as e:  # noqa: BLE001 - feasibility owns the route fallback
+        logger.warning(f"Configured routing provider unavailable; using estimate: {e}")
+        return None
 
 
 async def get_route_segment(from_point: GeoPoint, to_point: GeoPoint) -> Optional[RouteSegment]:

@@ -14,6 +14,8 @@ import httpx
 from app.cache.redis_cache import cached
 from app.data.landmark_catalogue import LANDMARK_CATALOGUE
 from app.models.trip import DataProvenance, DataStatus, GeoPoint, POI, TravelVibe
+from app.providers.contracts import PlaceSearchRequest
+from app.providers.gateway import get_provider_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -221,8 +223,7 @@ def _priority_landmarks(city: Optional[str]) -> list[dict]:
     return priority_pois
 
 
-@cached("pois", ttl_seconds=86400 * 7)  # Cache for 7 days
-async def discover_pois(
+async def _discover_pois_legacy(
     lat: float,
     lng: float,
     vibes: list[str],
@@ -271,7 +272,7 @@ async def discover_pois(
             data = resp.json()
     except Exception as e:
         logger.error(f"Overpass API error: {e}")
-        return priority_pois
+        raise
 
     pois = priority_pois
     seen_names = {poi["name"].casefold() for poi in priority_pois}
@@ -363,3 +364,43 @@ async def discover_pois(
 
     logger.info(f"Discovered {len(pois)} POIs for vibes={vibes} at ({lat}, {lng})")
     return pois
+
+
+@cached("pois", ttl_seconds=86400 * 7)  # Cache for 7 days
+async def discover_pois(
+    lat: float,
+    lng: float,
+    vibes: list[str],
+    radius: int = 10000,
+    limit: int = 30,
+    city: Optional[str] = None,
+) -> list[dict]:
+    """Discover places through the configured places provider or catalogue fallback."""
+
+    request = PlaceSearchRequest(
+        coordinates=GeoPoint(lat=lat, lng=lng),
+        vibes=vibes,
+        radius=radius,
+        limit=limit,
+        city=city,
+    )
+
+    async def legacy_search(provider_request: PlaceSearchRequest) -> list[dict]:
+        return await _discover_pois_legacy(
+            provider_request.coordinates.lat,
+            provider_request.coordinates.lng,
+            provider_request.vibes,
+            provider_request.radius,
+            provider_request.limit,
+            provider_request.city,
+        )
+
+    try:
+        provider = get_provider_gateway().places_provider(legacy_search)
+        places = await provider.search(request)
+        if places:
+            return [place.model_dump(mode="json") for place in places]
+    except Exception as e:  # noqa: BLE001 - POI failure must preserve reviewed landmarks
+        logger.warning(f"Configured places provider unavailable; using catalogue: {e}")
+
+    return _priority_landmarks(city)

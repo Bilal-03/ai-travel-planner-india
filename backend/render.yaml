@@ -28,3 +28,27 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      - key: FLIGHT_PROVIDER
+        value: legacy
+      - key: HOTEL_PROVIDER
+        value: none
+      - key: PLACES_PROVIDER
+        value: overpass
+      - key: ROUTES_PROVIDER
+        value: osrm
+      - key: RAIL_PROVIDER
+        value: legacy
+      - key: BUS_PROVIDER
+        value: none
+      - key: WEATHER_PROVIDER
+        value: openweather
+      - key: PROVIDER_TIMEOUT_SECONDS
+        value: "20"
+      - key: PROVIDER_MAX_RETRIES
+        value: "1"
+      - key: PROVIDER_RETRY_BACKOFF_SECONDS
+        value: "0.25"
+      - key: PROVIDER_CIRCUIT_FAILURE_THRESHOLD
+        value: "3"
+      - key: PROVIDER_CIRCUIT_COOLDOWN_SECONDS
+        value: "30"

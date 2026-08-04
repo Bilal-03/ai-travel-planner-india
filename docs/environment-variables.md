@@ -26,11 +26,22 @@ lowercase `Settings` fields. Never commit actual `.env` or `.env.local` files.
 | `NOMINATIM_RPS` | No | `config.py` | Configured setting exists, but the current geocoder uses its own one-request-per-second limiter. |
 | `OVERPASS_RPS` | No | `config.py` | Configured setting exists, but the current POI service uses its own limiter. |
 | `OSRM_RPS` | No | `config.py` | Configured setting exists, but the current routing service uses its own limiter. |
+| `FLIGHT_PROVIDER` | No | `providers/gateway.py` | Defaults to `legacy` (Skyscanner adapter); unsupported values fail closed to labelled fallback. |
+| `HOTEL_PROVIDER` | No | `providers/gateway.py` | Defaults to `none`; no hotel inventory is shown until a contracted adapter is enabled. |
+| `PLACES_PROVIDER` | No | `providers/gateway.py` | Defaults to `overpass`; unsupported values fall back to the reviewed catalogue. |
+| `ROUTES_PROVIDER` | No | `providers/gateway.py` | Defaults to `osrm`; unsupported values let feasibility use its deterministic estimate. |
+| `RAIL_PROVIDER` | No | `providers/gateway.py` | Defaults to `legacy` (RailRadar schedule adapter); fares and seats remain unverified. |
+| `BUS_PROVIDER` | No | `providers/gateway.py` | Defaults to `none`; operators and schedules are never invented. |
+| `WEATHER_PROVIDER` | No | `providers/gateway.py` | Defaults to `openweather`; unsupported values leave weather unavailable. |
+| `PROVIDER_TIMEOUT_SECONDS` | No | `providers/resilience.py` | Gateway timeout per attempt; default `20`. Provider HTTP clients retain their own shorter timeouts. |
+| `PROVIDER_MAX_RETRIES` | No | `providers/resilience.py` | Number of bounded retries after the first attempt; default `1`. |
+| `PROVIDER_RETRY_BACKOFF_SECONDS` | No | `providers/resilience.py` | Exponential retry backoff base; default `0.25`. |
+| `PROVIDER_CIRCUIT_FAILURE_THRESHOLD` | No | `providers/resilience.py` | Consecutive failed calls before opening a domain circuit; default `3`. |
+| `PROVIDER_CIRCUIT_COOLDOWN_SECONDS` | No | `providers/resilience.py` | Time before a half-open probe; default `30`. |
 
-The current Render configuration declares the provider/database/cache keys
-and `FRONTEND_URL`; the rate settings and `GEMINI_MODEL` are not explicitly
-listed in `backend/render.yaml` but can still be supplied as environment
-variables by the host.
+The current Render configuration declares the provider/database/cache keys,
+provider selections/resilience defaults, and `FRONTEND_URL`; the rate settings
+and `GEMINI_MODEL` can still be supplied as environment variables by the host.
 
 ## Frontend variables
 
@@ -52,14 +63,7 @@ build/runtime according to the Vercel environment configuration.
 | `OPENWEATHERMAP_API_KEY` | No forecast and an itinerary note | Weather-sensitive planning is less informed. |
 | `UNSPLASH_ACCESS_KEY` | No destination photos | Cosmetic degradation only. |
 | `DATABASE_URL` | Process-local trips | Trips disappear on restart and are not shared across instances. |
-| Redis URL/token | Process-local cache, jobs, progress, and rate limits | No cross-instance coordination; jobs and replay history are not restart-durable and duplicate work is possible. |
-
-## Variables not yet implemented
-
-The Phase 5 provider-gateway plan calls for `FLIGHT_PROVIDER`,
-`HOTEL_PROVIDER`, `PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`,
-`BUS_PROVIDER`, and `WEATHER_PROVIDER`. They are intentionally not added in
-Phase 0 because no provider abstraction is being introduced.
+| Redis URL/token | Process-local cache, jobs, progress, rate limits, and provider caches | No cross-instance coordination; jobs and replay history are not restart-durable and duplicate work is possible. Provider circuit state is process-local by design in Phase 5. |
 
 Phase 2 adds `TRIP_JOB_SECRET` and makes Redis strongly recommended for durable
 multi-instance job processing. No new frontend variables are required.

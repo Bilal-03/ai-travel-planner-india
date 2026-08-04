@@ -52,6 +52,11 @@ export default function WeatherBadge({ weather, compact = false }: WeatherBadgeP
           {Math.round(weather.temp_min)}° – {Math.round(weather.temp_max)}°C
         </div>
         <div className="text-xs opacity-80">{weather.summary}</div>
+        {weather.alerts.length > 0 && (
+          <div className="mt-1 text-xs font-medium opacity-90">
+            ⚠️ {weather.alerts[0]}
+          </div>
+        )}
       </div>
       {weather.rain_probability > 0.2 && (
         <div className="ml-auto text-xs opacity-70">

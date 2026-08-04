@@ -12,6 +12,8 @@ import httpx
 from app.cache.redis_cache import cached
 from app.config import settings
 from app.models.trip import DataProvenance, DataStatus, DayWeather, WeatherSeverity
+from app.providers.contracts import WeatherRequest
+from app.providers.gateway import get_provider_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +41,20 @@ def _severity_to_summary(severity: WeatherSeverity, condition: str, temp_max: fl
     return f"☀️ {condition} — perfect for outdoor activities"
 
 
-@cached("weather", ttl_seconds=3600 * 6)  # Cache for 6 hours
-async def get_forecast(
+def _weather_alerts(condition: str, rain_prob: float, temp_max: float) -> list[str]:
+    """Create transparent planning advisories from the normalized forecast."""
+
+    alerts: list[str] = []
+    if any(token in condition.lower() for token in ("thunderstorm", "tornado", "squall")):
+        alerts.append("Severe weather signal — keep the day flexible and prefer indoor plans.")
+    elif rain_prob > 0.6 or any(token in condition.lower() for token in ("rain", "drizzle", "snow")):
+        alerts.append("Wet-weather risk — keep an indoor backup and recheck near departure.")
+    if temp_max >= 38:
+        alerts.append("Heat advisory — plan outdoor time for morning or evening and carry water.")
+    return alerts
+
+
+async def _get_forecast_legacy(
     lat: float,
     lng: float,
     start_date: str,
@@ -70,7 +84,7 @@ async def get_forecast(
             data = resp.json()
     except Exception as e:
         logger.error(f"OpenWeatherMap API error: {e}")
-        return []
+        raise
 
     retrieved_at = datetime.now(timezone.utc)
     expires_at = retrieved_at + timedelta(hours=6)
@@ -127,6 +141,7 @@ async def get_forecast(
             "rain_probability": round(avg_rain, 2),
             "severity": severity.value,
             "summary": _severity_to_summary(severity, main_condition, temp_max),
+            "alerts": _weather_alerts(main_condition, avg_rain, temp_max),
             "provenance": DataProvenance(
                 provider="OpenWeatherMap",
                 status=DataStatus.RECENTLY_VERIFIED,
@@ -139,3 +154,35 @@ async def get_forecast(
         })
 
     return forecasts
+
+
+@cached("weather", ttl_seconds=3600 * 6)  # Cache for 6 hours
+async def get_forecast(
+    lat: float,
+    lng: float,
+    start_date: str,
+    end_date: str,
+) -> list[dict]:
+    """Get normalized weather facts through the configured provider."""
+
+    request = WeatherRequest(
+        coordinates={"lat": lat, "lng": lng},
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    async def legacy_forecast(provider_request: WeatherRequest) -> list[dict]:
+        return await _get_forecast_legacy(
+            provider_request.coordinates.lat,
+            provider_request.coordinates.lng,
+            provider_request.start_date,
+            provider_request.end_date,
+        )
+
+    try:
+        provider = get_provider_gateway().weather_provider(legacy_forecast)
+        forecasts = await provider.forecast(request)
+        return [forecast.model_dump(mode="json") for forecast in forecasts]
+    except Exception as e:  # noqa: BLE001 - weather is advisory and must not fail planning
+        logger.warning(f"Configured weather provider unavailable: {e}")
+        return []

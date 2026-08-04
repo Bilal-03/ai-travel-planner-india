@@ -118,6 +118,14 @@ Copy the included root [`.env.example`](.env.example) to `.env` for the backend,
 
 > **Note:** The app works without optional keys — it degrades gracefully. Only `GEMINI_API_KEY` is required.
 
+Provider selections are controlled through `FLIGHT_PROVIDER`,
+`HOTEL_PROVIDER`, `PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`,
+`BUS_PROVIDER`, and `WEATHER_PROVIDER`. The checked-in defaults preserve the
+current Skyscanner, RailRadar, Overpass, OSRM, and OpenWeather paths; hotels
+and buses remain unavailable until a contracted adapter is configured. Gateway
+timeouts, retries, and circuit-breaker thresholds are also configurable in the
+root `.env.example`.
+
 ---
 
 ## ☁️ Deployment

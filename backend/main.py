@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.providers.gateway import get_provider_gateway
 from app.services.trip_jobs import ensure_worker_started, stop_worker
 
 # Configure logging
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"   Skyscanner API: {'✅ configured' if settings.skyscanner_rapidapi_key else '❌ not set'}")
     logger.info(f"   OpenWeatherMap: {'✅ configured' if settings.openweathermap_api_key else '❌ not set'}")
     logger.info(f"   RailRadar API: {'✅ configured' if settings.railradar_api_key else '❌ not set'}")
+    logger.info(f"   Provider gateway: {get_provider_gateway().selected_providers()}")
     logger.info(f"   Neon PostgreSQL: {'✅ configured' if settings.database_url else '❌ not set (using in-memory)'}")
     logger.info(f"   Redis: {'✅ configured' if settings.upstash_redis_url else '❌ not set (using in-memory)'}")
     await ensure_worker_started()
@@ -89,6 +91,7 @@ async def health():
             "skyscanner": "configured" if settings.skyscanner_rapidapi_key else "not_configured",
             "weather": "configured" if settings.openweathermap_api_key else "not_configured",
             "railradar": "configured" if settings.railradar_api_key else "not_configured",
+            "provider_selection": get_provider_gateway().selected_providers(),
             "database": "neon" if settings.database_url else "in_memory",
             "redis": "configured" if settings.upstash_redis_url else "in_memory",
         },

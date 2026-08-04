@@ -342,6 +342,7 @@ class DayWeather(BaseModel):
     rain_probability: float = 0.0
     severity: WeatherSeverity = WeatherSeverity.GREAT
     summary: str = ""
+    alerts: list[str] = Field(default_factory=list, max_length=8)
     provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
 
 

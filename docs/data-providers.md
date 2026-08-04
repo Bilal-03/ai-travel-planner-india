@@ -16,7 +16,7 @@ family while retaining the existing transport labels for compatibility.
 | Road | `services/transport.py` | Deterministic distance/cost formula | `estimated`, never a live quote | Included in the request result with a one-day estimate window | It is a planning estimate, not cab availability or a booking quote. |
 | Places / POIs | `services/poi_discovery.py` and `data/landmark_catalogue.py` | Reviewed catalogue plus Overpass | Catalogue is `static_reference`; OSM records are `recently_verified`; costs/durations are `estimated` | POI discovery cached seven days; catalogue has review dates | Opening hours, prices, closures, and accessibility still need direct verification. |
 | Routes | `services/routing.py` | OSRM driving route | OSRM is `recently_verified`; fallback is `estimated` | Route cache and provenance window seven days | Fallback duration is conservative but not a live route; route mode is always driving. |
-| Weather | `services/weather.py` | OpenWeatherMap forecast | Forecast facts are `recently_verified` for a six-hour window; absent data is unavailable | Six-hour cache and expiry | Forecast window is limited by the upstream five-day endpoint and should be rechecked near travel. |
+| Weather | `services/weather.py` | OpenWeatherMap forecast | Forecast facts are `recently_verified` for a six-hour window; derived rain/heat advisories are surfaced; absent data is unavailable | Six-hour cache and expiry | Forecast window is limited by the upstream five-day endpoint and should be rechecked near travel. |
 | Destination photos | `services/photos.py` | Unsplash search | Returned images are `recently_verified` for attribution purposes; absent list stays empty | Seven-day cache | Images are illustrative and do not verify the exact venue or conditions. |
 | Festivals | `services/festivals.py` | Static catalogue | Generation currently sends an empty festival list | No generation-time freshness contract | Static event dates must not be presented as current facts without review. |
 
@@ -52,7 +52,7 @@ explicitly `estimated` or `static_reference`; absent provider data is
 presented as live claims. Non-live values carry a verify-before-booking or
 verify-before-visiting disclaimer.
 
-## Provider configuration
+## Provider gateway and configuration
 
 Current provider credentials are optional except Gemini at product level:
 
@@ -62,15 +62,47 @@ Current provider credentials are optional except Gemini at product level:
 - `UNSPLASH_ACCESS_KEY` controls destination photos.
 - Nominatim, Overpass, and OSRM use public endpoints without configured keys.
 
-There are currently no `FLIGHT_PROVIDER`, `HOTEL_PROVIDER`,
-`PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`, `BUS_PROVIDER`, or
-`WEATHER_PROVIDER` feature flags. Hotels and buses have no provider adapter in
-the current app.
+Phase 5 adds `backend/app/providers/contracts.py` and
+`backend/app/providers/gateway.py`. Services now pass external results through
+provider-neutral contracts before returning them to the planner or API. The
+following feature flags select the adapter family:
+
+| Flag | Default | Current adapter | Safe behavior for an unsupported value |
+| --- | --- | --- | --- |
+| `FLIGHT_PROVIDER` | `legacy` | Existing Skyscanner adapter, then labelled fare fallback | No upstream call; labelled fallback |
+| `HOTEL_PROVIDER` | `none` | Explicit unavailable adapter; no hotel inventory is fabricated | Empty results |
+| `PLACES_PROVIDER` | `overpass` | Reviewed catalogue plus Overpass adapter | Reviewed catalogue fallback |
+| `ROUTES_PROVIDER` | `osrm` | OSRM driving adapter | Deterministic route estimate in feasibility |
+| `RAIL_PROVIDER` | `legacy` | Existing RailRadar schedule adapter | Static schedule/estimated fare fallback |
+| `BUS_PROVIDER` | `none` | Explicit unavailable adapter; no operators or schedules are invented | Empty results |
+| `WEATHER_PROVIDER` | `openweather` | Existing OpenWeather forecast adapter | Weather unavailable; planning continues |
+
+The legacy choices are compatibility adapters, not a booking guarantee. Rail
+remains schedule-only, while flight search results do not confirm seats or a
+final fare. A future Amadeus or Duffel flight/hotel adapter, contracted bus
+source, and authorised rail source can be added behind the same contracts.
+
+Every callback adapter is wrapped by a bounded timeout, configurable retry
+policy, and a per-domain in-process circuit breaker. The current HTTP clients
+also retain their provider-specific request timeout. A circuit is deliberately
+process-local in this phase; shared breaker state can move to Redis during
+production hardening.
 
 ## Target provider boundary
 
-Phase 5 should introduce interfaces for flights, hotels, rail, buses, places,
-routes, and weather, normalize responses before they reach the itinerary
-model, and extend the Phase 1 provenance object to every newly added provider.
-It should preserve the current providers until replacements pass contract and
-fallback tests.
+The gateway now exposes interfaces for flights, hotels, rail, buses, places,
+routes, and weather. Responses are normalized into `TransportOption`, `POI`,
+`RouteSegment`, and `DayWeather` (or the new provider-neutral hotel/bus/rail
+contracts) before crossing the service boundary. Provider failures never
+escape into trip generation; existing provenance and fallback labels remain the
+source of truth for freshness and booking limitations.
+
+Provider evaluation notes: [Amadeus Flight Offers](https://developers.amadeus.com/self-service/apis-docs/guides/developer-guides/resources/flights/)
+provides search and a separate price/confirmation step; [Duffel offer
+requests](https://duffel.com/docs/api/v2/offer-requests) also distinguish search
+offers from refreshing an offer before purchase. [Google Places](https://developers.google.com/maps/documentation/places/web-service/reference/rest/v1/places)
+and [Google Routes](https://developers.google.com/maps/documentation/routes/reference/rest)
+are viable production candidates, but their field masks, billing, and
+attribution requirements need an explicit commercial integration review before
+enabling them. The current phase therefore establishes the replaceable seam
+without enabling an uncontracted provider by default.

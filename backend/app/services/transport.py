@@ -14,6 +14,8 @@ import httpx
 from app.cache.redis_cache import cached
 from app.config import settings
 from app.models.trip import DataProvenance, DataStatus, TransportMode, TransportOption
+from app.providers.contracts import FlightSearchRequest, RailSearchRequest
+from app.providers.gateway import get_provider_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -406,8 +408,7 @@ def _get_fallback_flights(
 
 # ── Skyscanner Flight Search ──────────────────────────────────────────
 
-@cached("flights", ttl_seconds=3600)  # Cache for 1 hour
-async def search_flights(
+async def _search_flights_legacy(
     origin: str,
     destination: str,
     departure_date: str,
@@ -419,12 +420,12 @@ async def search_flights(
     dest_iata = get_iata_code(destination)
 
     if not origin_iata or not dest_iata:
-        logger.warning(f"No IATA code for {origin} or {destination}, using fallback")
-        return _get_fallback_flights(origin, destination, distance_km)
+        logger.warning(f"No IATA code for {origin} or {destination}")
+        return []
 
     if not settings.skyscanner_rapidapi_key:
-        logger.warning("No Skyscanner API key — using fallback flights")
-        return _get_fallback_flights(origin, destination, distance_km)
+        logger.warning("No Skyscanner API key")
+        return []
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -519,22 +520,18 @@ async def search_flights(
                     continue
             
             flights = _best_flights_per_airline(flights)
-            if not flights:
-                return _get_fallback_flights(origin, destination, distance_km)
-                
             return flights
 
     except Exception as e:
         logger.error(f"Skyscanner flight search failed: {e}")
-        return _get_fallback_flights(origin, destination, distance_km)
+        raise
 
 
 
 
 # ── RailRadar Train Search ──────────────────────────────────────────────
 
-@cached("trains", ttl_seconds=86400 * 30)  # Cache for 30 days
-async def search_trains(
+async def _search_trains_legacy(
     origin: str,
     destination: str,
     date: Optional[str] = None,
@@ -542,7 +539,7 @@ async def search_trains(
 ) -> list[dict]:
     """
     Search trains via RailRadar native API.
-    Falls back to static data when API fails or no trains found.
+    The public gateway wrapper owns fallback behavior.
     """
     origin_code = get_station_code(origin)
     dest_code = get_station_code(destination)
@@ -554,14 +551,12 @@ async def search_trains(
         origin_code = "MMCT"
 
     if not origin_code or not dest_code:
-        logger.info(f"No station code for {origin} or {destination}, using fallback")
-        fallbacks = _get_fallback_trains(origin, destination, distance_km)
-        return [f.model_dump() for f in fallbacks]
+        logger.info(f"No station code for {origin} or {destination}")
+        return []
 
     if not settings.railradar_api_key:
-        logger.info("No RailRadar API key — using fallback train data")
-        fallbacks = _get_fallback_trains(origin, destination, distance_km)
-        return [f.model_dump() for f in fallbacks]
+        logger.info("No RailRadar API key")
+        return []
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -575,9 +570,8 @@ async def search_trains(
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
-        logger.warning(f"RailRadar API failed, using fallback: {e}")
-        fallbacks = _get_fallback_trains(origin, destination, distance_km)
-        return [f.model_dump() for f in fallbacks]
+        logger.warning(f"RailRadar API failed: {e}")
+        raise
 
     checked_at = datetime.now(timezone.utc)
     trains = []
@@ -640,11 +634,80 @@ async def search_trains(
             logger.warning(f"Failed to parse train data: {e}")
             continue
 
-    if not trains:
-        fallbacks = _get_fallback_trains(origin, destination, distance_km)
-        return [f.model_dump() for f in fallbacks]
-
     return trains
+
+
+@cached("flights", ttl_seconds=3600)  # Cache for 1 hour
+async def search_flights(
+    origin: str,
+    destination: str,
+    departure_date: str,
+    max_price: Optional[int] = None,
+    distance_km: float | None = None,
+) -> list[dict]:
+    """Search through the configured flight provider and keep fallback local."""
+
+    request = FlightSearchRequest(
+        origin=origin,
+        destination=destination,
+        departure_date=departure_date,
+        max_price=max_price,
+        distance_km=distance_km,
+    )
+
+    async def legacy_search(provider_request: FlightSearchRequest) -> list[dict]:
+        return await _search_flights_legacy(
+            provider_request.origin,
+            provider_request.destination,
+            provider_request.departure_date,
+            provider_request.max_price,
+            provider_request.distance_km,
+        )
+
+    try:
+        provider = get_provider_gateway().flight_provider(legacy_search)
+        offers = await provider.search(request)
+        if offers:
+            return [offer.model_dump(mode="json") for offer in offers]
+    except Exception as e:  # noqa: BLE001 - a failed provider must not fail planning
+        logger.warning(f"Configured flight provider unavailable; using fallback: {e}")
+
+    return _get_fallback_flights(origin, destination, distance_km)
+
+
+@cached("trains", ttl_seconds=86400 * 30)  # Cache for 30 days
+async def search_trains(
+    origin: str,
+    destination: str,
+    date: Optional[str] = None,
+    distance_km: float | None = None,
+) -> list[dict]:
+    """Search schedule data through the configured rail provider."""
+
+    request = RailSearchRequest(
+        origin=origin,
+        destination=destination,
+        travel_date=date,
+        distance_km=distance_km,
+    )
+
+    async def legacy_search(provider_request: RailSearchRequest) -> list[dict]:
+        return await _search_trains_legacy(
+            provider_request.origin,
+            provider_request.destination,
+            provider_request.travel_date,
+            provider_request.distance_km,
+        )
+
+    try:
+        provider = get_provider_gateway().rail_provider(legacy_search)
+        options = await provider.search_schedules(request)
+        if options:
+            return [option.model_dump(mode="json") for option in options]
+    except Exception as e:  # noqa: BLE001 - a failed provider must not fail planning
+        logger.warning(f"Configured rail provider unavailable; using fallback: {e}")
+
+    return [option.model_dump(mode="json") for option in _get_fallback_trains(origin, destination, distance_km)]
 
 
 def _road_option(origin: str, destination: str, distance_km: float) -> TransportOption:

@@ -166,6 +166,7 @@ export interface DayWeather {
   rain_probability: number;
   severity: "great" | "okay" | "indoor";
   summary: string;
+  alerts: string[];
   provenance?: DataProvenance;
 }
 
