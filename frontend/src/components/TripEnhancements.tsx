@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Itinerary } from "@/lib/api";
+import { track } from "@/lib/analytics";
 
 interface TripUpdateProps {
   itinerary: Itinerary;
@@ -55,8 +56,8 @@ export function StaySuggestions({ itinerary }: Pick<TripUpdateProps, "itinerary"
       <h3 className="font-semibold text-foreground">🏨 Stay suggestions</h3>
       <p className="mt-1 text-xs text-foreground-muted">Compare accommodation for your dates and chosen hotel level.</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <a href={hotelSearch} target="_blank" rel="noreferrer" className="rounded-lg border border-primary/50 px-3 py-2 text-xs font-medium text-primary">Google Hotels ↗</a>
-        <a href={bookingSearch} target="_blank" rel="noreferrer" className="rounded-lg border border-primary/50 px-3 py-2 text-xs font-medium text-primary">Booking.com ↗</a>
+        <a href={hotelSearch} target="_blank" rel="noreferrer" onClick={() => track("provider_link_clicked", { tripId: itinerary.id, kind: "single", metadata: { provider: "google_hotels" } })} className="rounded-lg border border-primary/50 px-3 py-2 text-xs font-medium text-primary">Google Hotels ↗</a>
+        <a href={bookingSearch} target="_blank" rel="noreferrer" onClick={() => track("provider_link_clicked", { tripId: itinerary.id, kind: "single", metadata: { provider: "booking" } })} className="rounded-lg border border-primary/50 px-3 py-2 text-xs font-medium text-primary">Booking.com ↗</a>
       </div>
       {itinerary.destination_photos[0] && (
         <figure className="destination-frame relative mt-4 h-44 overflow-hidden rounded-xl bg-surface">
@@ -96,7 +97,7 @@ export function PackingAndPrint({ itinerary, onUpdate }: TripUpdateProps) {
         <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold text-foreground">🧳 Packing list</h3><p className="text-xs text-foreground-muted">Built from your dates, weather, and trip vibe.</p></div><button onClick={createPackingList} disabled={isPacking} className="rounded-lg border border-primary/50 px-3 py-2 text-sm font-medium text-primary disabled:opacity-50">{isPacking ? "Creating…" : itinerary.packing_list.length ? "Refresh" : "Generate"}</button></div>
         {itinerary.packing_list.length > 0 && <ul className="mt-3 space-y-2">{itinerary.packing_list.map((item) => <li key={`${item.category}-${item.item}`} className="text-sm text-foreground-secondary"><span className="mr-2 text-accent">✓</span><strong className="text-foreground">{item.item}</strong><span className="text-foreground-muted"> — {item.reason}</span></li>)}</ul>}
       </section>
-      <button onClick={() => window.print()} className="w-full rounded-xl border border-glass-border py-3 text-sm font-medium text-foreground hover:bg-glass-highlight">🖨️ Print or save as PDF</button>
+      <button onClick={() => { track("trip_exported", { tripId: itinerary.id, kind: "single", metadata: { source: "print" } }); window.print(); }} className="w-full rounded-xl border border-glass-border py-3 text-sm font-medium text-foreground hover:bg-glass-highlight">🖨️ Print or save as PDF</button>
       {error && <p className="text-sm text-error">{error}</p>}
     </div>
   );

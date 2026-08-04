@@ -24,6 +24,7 @@ from app.services.account_service import (
     register_account,
     update_preferences,
 )
+from app.services.collaboration_service import record_audit
 from app.services.trip_storage import (
     claim_multi_city_trip,
     claim_trip,
@@ -113,6 +114,7 @@ async def claim_anonymous_trip(
         claimed = await claim_multi_city_trip(request.trip_id, token_hash, account.id)
     if not claimed:
         raise HTTPException(status_code=403, detail="Trip not found or the edit token is invalid.")
+    await record_audit("trip_claimed", request.trip_id, account.id)
     return {"claimed": True, "trip_id": request.trip_id, "account_id": account.id}
 
 
@@ -141,7 +143,9 @@ async def save_preference_memory(
     authorization: str | None = Header(None, alias="Authorization"),
 ):
     account = await _require_account(account_token, authorization)
-    return await update_preferences(account.id, update)
+    result = await update_preferences(account.id, update)
+    await record_audit("preferences_updated", None, account.id)
+    return result
 
 
 @router.post("/preferences/disable", response_model=PreferenceMemory)
@@ -150,7 +154,9 @@ async def disable_preference_memory(
     authorization: str | None = Header(None, alias="Authorization"),
 ):
     account = await _require_account(account_token, authorization)
-    return await update_preferences(account.id, PreferenceMemoryUpdate(memory_enabled=False))
+    result = await update_preferences(account.id, PreferenceMemoryUpdate(memory_enabled=False))
+    await record_audit("preference_memory_disabled", None, account.id)
+    return result
 
 
 @router.delete("/preferences", response_model=PreferenceMemory)
@@ -159,7 +165,9 @@ async def delete_preference_memory(
     authorization: str | None = Header(None, alias="Authorization"),
 ):
     account = await _require_account(account_token, authorization)
-    return await delete_preferences(account.id)
+    result = await delete_preferences(account.id)
+    await record_audit("preference_memory_deleted", None, account.id)
+    return result
 
 
 @router.delete("/me")
@@ -171,6 +179,6 @@ async def delete_current_account(
     account = await _require_account(account_token, authorization)
     await delete_saved_trips(account.id)
     await delete_account(account.id)
+    await record_audit("account_deleted", None, account.id)
     response.delete_cookie("yatraai-account")
     return {"deleted": True}
-

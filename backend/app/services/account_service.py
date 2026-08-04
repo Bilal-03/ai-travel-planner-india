@@ -30,6 +30,13 @@ _memory_preferences: dict[str, PreferenceMemory] = {}
 _schema_ready = False
 _schema_lock = threading.Lock()
 
+
+def _fallback_or_raise(operation: str) -> None:
+    """Production must fail closed instead of serving process-local accounts."""
+
+    if settings.require_durable_storage:
+        raise RuntimeError(f"Durable account storage is unavailable during {operation}")
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS yatra_accounts (
     id VARCHAR(36) PRIMARY KEY,
@@ -83,6 +90,8 @@ def _ensure_schema_sync() -> bool:
             _schema_ready = True
             return True
         except Exception as error:
+            if settings.require_durable_storage:
+                raise RuntimeError("Durable account storage could not be initialised") from error
             logger.warning("Account database setup failed; using in-memory accounts: %s", error)
             return False
 
@@ -90,7 +99,11 @@ def _ensure_schema_sync() -> bool:
 async def _ensure_schema() -> bool:
     import asyncio
 
-    return bool(settings.database_url) and await asyncio.to_thread(_ensure_schema_sync)
+    if not settings.database_url:
+        if settings.require_durable_storage:
+            raise RuntimeError("DATABASE_URL is required when durable account storage is enabled")
+        return False
+    return await asyncio.to_thread(_ensure_schema_sync)
 
 
 def _now() -> datetime:
@@ -188,6 +201,7 @@ async def _persist_account(account: Account) -> None:
                         )
             await asyncio.to_thread(persist)
         except Exception as error:
+            _fallback_or_raise("account persistence")
             logger.error("Account persistence failed; keeping memory copy: %s", error)
     _memory_accounts[account.id] = account
 
@@ -208,6 +222,7 @@ async def _persist_session(token: str, account_id: str, expires_at: datetime) ->
                         )
             await asyncio.to_thread(persist)
         except Exception as error:
+            _fallback_or_raise("account session persistence")
             logger.error("Account session persistence failed; keeping memory copy: %s", error)
 
 
@@ -236,6 +251,7 @@ async def _load_account(account_id: str) -> Account | None:
                 _memory_accounts[account.id] = account
                 return account
         except Exception as error:
+            _fallback_or_raise("account lookup")
             logger.error("Account lookup failed: %s", error)
     return None
 
@@ -263,6 +279,7 @@ async def _find_account_by_email(email: str) -> Account | None:
                 _memory_accounts[account.id] = account
                 return account
         except Exception as error:
+            _fallback_or_raise("account email lookup")
             logger.error("Account email lookup failed: %s", error)
     return None
 
@@ -319,6 +336,7 @@ async def get_account_for_token(token: str | None) -> Account | None:
                 if not row or row[1] <= _now():
                     return None
             except Exception as error:
+                _fallback_or_raise("account session lookup")
                 logger.error("Account session lookup failed: %s", error)
                 return None
         return await _load_account(account_id)
@@ -367,6 +385,7 @@ async def get_preferences(account_id: str) -> PreferenceMemory:
                 _memory_preferences[account_id] = value
                 return value
         except Exception as error:
+            _fallback_or_raise("preference lookup")
             logger.error("Preference lookup failed: %s", error)
     return PreferenceMemory(memory_enabled=True)
 
@@ -404,6 +423,7 @@ async def update_preferences(account_id: str, update: PreferenceMemoryUpdate) ->
                         )
             await asyncio.to_thread(persist)
         except Exception as error:
+            _fallback_or_raise("preference persistence")
             logger.error("Preference persistence failed; keeping memory copy: %s", error)
     return current
 
@@ -424,6 +444,7 @@ async def delete_preferences(account_id: str) -> PreferenceMemory:
                         cursor.execute("DELETE FROM yatra_account_preferences WHERE account_id = %s", (account_id,))
             await asyncio.to_thread(delete)
         except Exception as error:
+            _fallback_or_raise("preference delete")
             logger.error("Preference delete failed: %s", error)
     return PreferenceMemory(memory_enabled=True)
 
@@ -444,4 +465,5 @@ async def delete_account(account_id: str) -> None:
                         cursor.execute("DELETE FROM yatra_accounts WHERE id = %s", (account_id,))
             await asyncio.to_thread(delete)
         except Exception as error:
+            _fallback_or_raise("account delete")
             logger.error("Account delete failed: %s", error)

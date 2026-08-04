@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Awaitable, Callable, TypeVar
 
+from app.services.observability import record_provider_call
+
 
 class ProviderErrorCode(StrEnum):
     TIMEOUT = "timeout"
@@ -94,31 +96,49 @@ class ProviderExecutor:
         policy: RetryPolicy | None = None,
         circuit: CircuitBreaker | None = None,
         sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        name: str = "provider",
     ) -> None:
         self.policy = policy or RetryPolicy()
         self.circuit = circuit or CircuitBreaker()
         self._sleeper = sleeper
+        self.name = name
 
     async def execute(self, operation: Callable[[], Awaitable[T]]) -> T:
-        self.circuit.before_call()
-        for attempt in range(self.policy.max_attempts):
-            try:
-                result = await asyncio.wait_for(operation(), timeout=self.policy.timeout_seconds)
-                self.circuit.record_success()
-                return result
-            except ProviderExecutionError as error:
-                failure = error
-            except asyncio.TimeoutError:
-                failure = ProviderExecutionError(ProviderErrorCode.TIMEOUT)
-            except Exception:  # noqa: BLE001 - provider boundary must fail closed
-                failure = ProviderExecutionError(ProviderErrorCode.UNAVAILABLE)
+        started = time.perf_counter()
+        try:
+            self.circuit.before_call()
+            for attempt in range(self.policy.max_attempts):
+                try:
+                    result = await asyncio.wait_for(operation(), timeout=self.policy.timeout_seconds)
+                    self.circuit.record_success()
+                    return result
+                except ProviderExecutionError as error:
+                    failure = error
+                except asyncio.TimeoutError:
+                    failure = ProviderExecutionError(ProviderErrorCode.TIMEOUT)
+                except Exception:  # noqa: BLE001 - provider boundary must fail closed
+                    failure = ProviderExecutionError(ProviderErrorCode.UNAVAILABLE)
 
-            if not failure.retryable or attempt >= self.policy.max_retries:
-                self.circuit.record_failure()
-                raise failure
-            delay = self.policy.backoff_seconds * (2**attempt)
-            if delay:
-                await self._sleeper(delay)
+                if not failure.retryable or attempt >= self.policy.max_retries:
+                    self.circuit.record_failure()
+                    raise failure
+                delay = self.policy.backoff_seconds * (2**attempt)
+                if delay:
+                    await self._sleeper(delay)
 
-        self.circuit.record_failure()
-        raise ProviderExecutionError(ProviderErrorCode.UNAVAILABLE)
+            self.circuit.record_failure()
+            raise ProviderExecutionError(ProviderErrorCode.UNAVAILABLE)
+        except ProviderExecutionError as error:
+            record_provider_call(
+                self.name,
+                (time.perf_counter() - started) * 1000,
+                success=False,
+                error_code=error.code.value,
+            )
+            raise
+        else:
+            record_provider_call(
+                self.name,
+                (time.perf_counter() - started) * 1000,
+                success=True,
+            )

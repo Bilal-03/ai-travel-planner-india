@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { TransportOption, formatINR, formatDuration } from "@/lib/api";
+import { track } from "@/lib/analytics";
 import DataStatusBadge from "./DataStatusBadge";
 import EstimateDisclaimer from "./EstimateDisclaimer";
 import FreshnessTimestamp from "./FreshnessTimestamp";
@@ -150,7 +151,7 @@ export default function TransportCard({
           href={bookingUrl}
           target="_blank"
           rel="noreferrer"
-          onClick={(event) => event.stopPropagation()}
+          onClick={(event) => { event.stopPropagation(); track("provider_link_clicked", { metadata: { provider: option.provider, source: option.mode } }); }}
           className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary-light transition-colors"
         >
           {isFlight ? "Check live fares on Google Flights" : isTrain ? "Check trains on IRCTC" : "View road route"} ↗

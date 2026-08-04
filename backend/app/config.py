@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     # --- Cache ---
     upstash_redis_url: Optional[str] = Field(default=None, validation_alias="UPSTASH_REDIS_REST_URL")
     upstash_redis_token: Optional[str] = Field(default=None, validation_alias="UPSTASH_REDIS_REST_TOKEN")
+    require_redis: bool = Field(default=False, validation_alias="REQUIRE_REDIS")
 
     # --- Durable trip jobs ---
     trip_job_secret: Optional[str] = Field(default=None, validation_alias="TRIP_JOB_SECRET")
@@ -63,6 +64,21 @@ class Settings(BaseSettings):
         validation_alias="ACCOUNT_SESSION_TTL_SECONDS",
     )
 
+    # --- Production hardening ---
+    environment: str = Field(default="development", validation_alias="APP_ENV")
+    require_durable_storage: bool = Field(default=False, validation_alias="REQUIRE_DURABLE_STORAGE")
+    max_request_body_bytes: int = Field(
+        default=1_000_000,
+        ge=16_384,
+        le=10_000_000,
+        validation_alias="MAX_REQUEST_BODY_BYTES",
+    )
+    bot_protection_token: Optional[str] = Field(default=None, validation_alias="BOT_PROTECTION_TOKEN")
+    sentry_dsn: Optional[str] = Field(default=None, validation_alias="SENTRY_DSN")
+    otel_exporter_endpoint: Optional[str] = Field(default=None, validation_alias="OTEL_EXPORTER_OTLP_ENDPOINT")
+    analytics_admin_token: Optional[str] = Field(default=None, validation_alias="ANALYTICS_ADMIN_TOKEN")
+    analytics_hash_salt: str = Field(default="yatraai-local-analytics-salt", validation_alias="ANALYTICS_HASH_SALT")
+
     # --- App ---
     frontend_url: str = "http://localhost:3000"
     backend_port: int = 8000
@@ -77,6 +93,10 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.strip().casefold() in {"production", "prod"}
 
 
 settings = Settings()

@@ -170,6 +170,7 @@ class ProviderGateway:
                     failure_threshold=self.config.provider_circuit_failure_threshold,
                     cooldown_seconds=self.config.provider_circuit_cooldown_seconds,
                 ),
+                name=domain,
             )
             for domain in ("flight", "hotel", "rail", "bus", "places", "routes", "weather")
         }

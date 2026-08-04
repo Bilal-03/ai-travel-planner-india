@@ -9,6 +9,7 @@ import httpx
 from app.cache.redis_cache import cached
 from app.config import settings
 from app.models.trip import DataProvenance, DataStatus
+from app.services.url_safety import UnsafeUrlError, validate_external_url
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +41,28 @@ async def get_destination_photos(destination: str, limit: int = 3) -> list[dict]
         image_url = urls.get("regular")
         if not image_url:
             continue
+        try:
+            image_url = validate_external_url(
+                image_url,
+                allowed_hosts={"images.unsplash.com", "plus.unsplash.com"},
+            )
+        except UnsafeUrlError:
+            logger.warning("Discarding an unsafe photo URL returned by Unsplash")
+            continue
+        photographer_url = user.get("links", {}).get("html")
+        if photographer_url:
+            try:
+                photographer_url = validate_external_url(
+                    photographer_url,
+                    allowed_hosts={"unsplash.com", "www.unsplash.com"},
+                )
+            except UnsafeUrlError:
+                photographer_url = None
         photos.append({
             "url": image_url,
             "alt": photo.get("alt_description") or f"Travel in {destination}",
             "photographer_name": user.get("name"),
-            "photographer_url": user.get("links", {}).get("html"),
+            "photographer_url": photographer_url,
             "provenance": DataProvenance(
                 provider="Unsplash",
                 status=DataStatus.RECENTLY_VERIFIED,

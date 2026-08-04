@@ -24,6 +24,13 @@ explicit preference memory, and account ownership on saved trips. Apply it after
 the preceding migrations so account deletion can cascade through the normalized
 multi-city projections.
 
+`005_phase7_collaboration_analytics.sql` adds append-only itinerary versions,
+structured trip edits, hashed share grants, collaborator roles, privacy-safe
+analytics events, and sensitive-action audit logs. Apply it before enabling
+`REQUIRE_DURABLE_STORAGE=true` in production. The application creates the same
+tables only as a local-development convenience; the migration remains the
+source of truth for hosted databases.
+
 Before applying in production, run the migration against a staging database and
 verify the status check constraint and expiry index. Do not hand-edit the live
 schema or replace this file with a runtime `ALTER TABLE` call.

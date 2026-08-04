@@ -1,0 +1,10 @@
+{
+  "name": "YatraAI India Travel Planner",
+  "short_name": "YatraAI",
+  "description": "Offline-ready India trip itineraries with verified planning context.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1330",
+  "theme_color": "#6366f1",
+  "icons": []
+}

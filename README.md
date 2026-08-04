@@ -31,6 +31,8 @@
 | 🖨️ **Print / PDF** | Print any itinerary or save it as a PDF from the browser |
 | 🏙️ **City Autocomplete** | Instant search across popular Indian cities and destinations, with an OSM fallback |
 | 📱 **Fully Responsive** | Works beautifully on mobile, tablet, and desktop |
+| 📴 **Offline PWA** | Keeps a recent itinerary summary, addresses, and emergency notes available offline |
+| 👥 **Collaboration** | Create expiring viewer/editor links with immutable history and conflict checks |
 
 ---
 
@@ -113,9 +115,13 @@ Copy the included root [`.env.example`](.env.example) to `.env` for the backend,
 | `RAILRADAR_API_KEY` | ⚪ Optional | Train search | [RapidAPI - RailRadar](https://rapidapi.com/railradar/) |
 | `SKYSCANNER_RAPIDAPI_KEY` | ⚪ Optional | Live flight search | [RapidAPI](https://rapidapi.com/) |
 | `UNSPLASH_ACCESS_KEY` | ⚪ Optional | Destination photos | [Unsplash Developers](https://unsplash.com/developers) |
-| `DATABASE_URL` | ⚪ Optional | Neon PostgreSQL pooled connection string | [Neon](https://neon.com/) |
-| `UPSTASH_REDIS_REST_URL` | ⚪ Optional | Cache (falls back to in-memory) | [Upstash](https://upstash.com/) |
-| `UPSTASH_REDIS_REST_TOKEN` | ⚪ Optional | Cache | Same as above |
+| `DATABASE_URL` | ⚪ Local / ✅ production | Neon PostgreSQL pooled connection string | [Neon](https://neon.com/) |
+| `UPSTASH_REDIS_REST_URL` | ⚪ Local / ✅ production | Redis cache, queue, and distributed rate limits | [Upstash](https://upstash.com/) |
+| `UPSTASH_REDIS_REST_TOKEN` | ⚪ Local / ✅ production | Redis authentication token | Same as above |
+| `REQUIRE_DURABLE_STORAGE` | ⚪ Optional | Set `true` in production to reject memory persistence fallback | — |
+| `REQUIRE_REDIS` | ⚪ Optional | Set `true` in production for distributed rate limits and queue readiness | — |
+| `SENTRY_DSN` / `OTEL_EXPORTER_OTLP_ENDPOINT` | ⚪ Optional | Error reporting and trace export | Sentry / OTel provider |
+| `ANALYTICS_ADMIN_TOKEN` | ⚪ Optional | Protects the analytics summary endpoint | Generate a random secret |
 | `FRONTEND_URL` | ✅ Yes | Frontend URL for CORS | Your Vercel URL in production |
 | `AUTH_PROVIDER` | ⚪ Local default | `local` signed sessions or `supabase` JWT verification | `local` for development; Supabase Auth in managed deployment |
 | `SUPABASE_URL` | ⚪ Optional locally | Managed auth project URL | [Supabase Auth](https://supabase.com/docs/guides/auth) |
@@ -134,6 +140,13 @@ root `.env.example`. Phase 6 uses Supabase Auth as the managed authentication
 target when configured and a local signed-session fallback for credential-free
 development; PostgreSQL is required for durable account history and preference
 memory in production.
+
+Phase 7 production deployments must apply the ordered SQL migrations under
+[`backend/migrations/`](backend/migrations/), set `APP_ENV=production`, enable
+`REQUIRE_DURABLE_STORAGE=true` and `REQUIRE_REDIS=true`, and verify `/health`
+reports `ready: true` before accepting traffic. See the
+[Phase 7 completion report](docs/phase-7-completion-report.md) for the complete
+runbook and CI checks.
 
 ---
 

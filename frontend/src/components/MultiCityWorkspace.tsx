@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { api, ApiError, formatDate, formatDuration, formatINR, MultiCityTrip } from "@/lib/api";
+import ShareTrip from "@/components/ShareTrip";
 
 interface MultiCityWorkspaceProps {
   trip: MultiCityTrip;
@@ -57,7 +58,7 @@ export default function MultiCityWorkspace({ trip, onUpdate, onNewTrip }: MultiC
           <h1 className="mt-3 max-w-5xl text-3xl font-semibold leading-tight text-foreground sm:text-5xl">{routeLabel}</h1>
           <p className="mt-3 text-sm text-foreground-secondary">{formatDate(trip.start_date)} – {formatDate(trip.end_date)} · {trip.total_days} days · {trip.destination_stays.length} destination stays</p>
         </div>
-        <button type="button" onClick={onNewTrip} className="rounded border border-glass-border px-4 py-2 text-xs uppercase tracking-wide text-foreground-muted transition hover:border-marigold hover:text-foreground">Plan another trip</button>
+        <div className="flex items-center gap-2"><ShareTrip tripId={trip.id} kind="multi_city" /><button type="button" onClick={onNewTrip} className="rounded border border-glass-border px-4 py-2 text-xs uppercase tracking-wide text-foreground-muted transition hover:border-marigold hover:text-foreground">Plan another trip</button></div>
       </div>
 
       {error && <p role="alert" className="mt-5 rounded border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">{error}</p>}

@@ -1,8 +1,8 @@
 # YatraAI implementation roadmap
 
 This roadmap mirrors the delivery order in the master implementation plan.
-Phases 0, 1, 2, 3, 4, 5, and 6 are complete on their respective branches. Phase 7
-is the next implementation boundary.
+Phases 0 through 6 are complete on their respective branches. Phase 7 is
+complete on `codex/phase-7-production-hardening`.
 
 ## Phase status
 
@@ -15,7 +15,7 @@ is the next implementation boundary.
 | 4 | Stardrift-inspired but simple trip workspace UX | Complete on `codex/phase-4-trip-workspace` |
 | 5 | Provider gateway and live travel integrations | Complete on `codex/phase-5-provider-gateway` |
 | 6 | Multi-destination trips, accounts, and explicit preference memory | Complete on `codex/phase-6-multi-city-accounts` |
-| 7 | Offline access, collaboration, analytics, security, and production hardening | Not started |
+| 7 | Offline access, collaboration, analytics, security, and production hardening | Complete on `codex/phase-7-production-hardening` |
 
 ## Phase 0 exit evidence
 
@@ -94,6 +94,17 @@ disableable, and deletable preference memory. Supabase HS256 JWTs are accepted
 when configured, while a signed local-session adapter keeps local development
 usable without provider credentials. See `docs/phase-6-completion-report.md` for
 exit evidence and limitations.
+
+## Phase 7 gate
+
+Phase 7 is complete after adding the offline PWA shell and local trip
+essentials snapshot, connectivity/staleness indicators, owner/editor/viewer
+collaboration links, immutable versions, activity history, optimistic conflict
+handling, trip copy, privacy-safe analytics, production observability hooks,
+strict request/CORS/security boundaries, fail-closed durable persistence,
+distributed rate-limit enforcement, and automated CI/CD checks. See
+`docs/phase-7-completion-report.md` for exit evidence, deployment configuration,
+and known operational boundaries.
 
 ## Later sequencing constraints
 

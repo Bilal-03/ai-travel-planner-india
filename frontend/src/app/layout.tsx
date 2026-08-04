@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope, Outfit, Teko, Space_Mono } from "next/font/google";
+import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -50,6 +51,7 @@ export const metadata: Metadata = {
       "AI-powered domestic India travel itineraries with flights, trains, weather forecasts, and budget tracking.",
     type: "website",
   },
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({
@@ -83,6 +85,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
+        <ServiceWorkerRegistrar />
         {children}
       </body>
     </html>

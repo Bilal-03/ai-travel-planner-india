@@ -3,10 +3,15 @@
  * Type-safe request/response handling with error management.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const EDIT_TOKEN_HEADER = "X-Trip-Edit-Token";
+const SHARE_TOKEN_HEADER = "X-Trip-Share-Token";
 const ACCOUNT_TOKEN_HEADER = "X-Yatra-Account-Token";
 const ACCOUNT_TOKEN_STORAGE_KEY = "yatraai:account-token";
+const BOT_PROTECTION_TOKEN = process.env.NEXT_PUBLIC_BOT_PROTECTION_TOKEN;
+
+export type CollaborationRole = "owner" | "editor" | "viewer";
+export type TripKind = "single" | "multi_city";
 
 function editTokenKey(tripId: string): string {
   return `yatraai:trip-edit-token:${tripId}`;
@@ -23,6 +28,39 @@ function getEditToken(tripId: string): string | null {
   return window.sessionStorage.getItem(editTokenKey(tripId));
 }
 
+function shareTokenKey(tripId: string): string {
+  return `yatraai:trip-share-token:${tripId}`;
+}
+
+function revisionKey(tripId: string): string {
+  return `yatraai:trip-revision:${tripId}`;
+}
+
+function saveRevision(tripId: string, response: Response): void {
+  if (typeof window === "undefined") return;
+  const tag = response.headers.get("ETag");
+  if (tag) window.sessionStorage.setItem(revisionKey(tripId), tag);
+}
+
+function getRevision(tripId: string): string | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem(revisionKey(tripId));
+}
+
+export function setShareToken(tripId: string, token: string | null): void {
+  if (typeof window === "undefined" || !token) return;
+  window.sessionStorage.setItem(shareTokenKey(tripId), token);
+}
+
+function getShareToken(tripId: string): string | null {
+  if (typeof window === "undefined") return null;
+  const stored = window.sessionStorage.getItem(shareTokenKey(tripId));
+  if (stored) return stored;
+  const fromUrl = new URLSearchParams(window.location.search).get("share");
+  if (fromUrl) setShareToken(tripId, fromUrl);
+  return fromUrl;
+}
+
 function saveAccountToken(token: string | null): void {
   if (typeof window !== "undefined" && token) {
     window.localStorage.setItem(ACCOUNT_TOKEN_STORAGE_KEY, token);
@@ -36,7 +74,18 @@ function getAccountToken(): string | null {
 
 function editHeaders(tripId: string): HeadersInit | undefined {
   const token = getEditToken(tripId);
-  return token ? { [EDIT_TOKEN_HEADER]: token } : undefined;
+  const shareToken = getShareToken(tripId);
+  const headers: Record<string, string> = {};
+  if (token) headers[EDIT_TOKEN_HEADER] = token;
+  if (shareToken) headers[SHARE_TOKEN_HEADER] = shareToken;
+  const revision = getRevision(tripId);
+  if (revision) headers["If-Match"] = revision;
+  return Object.keys(headers).length ? headers : undefined;
+}
+
+function shareHeaders(tripId: string): HeadersInit | undefined {
+  const token = getShareToken(tripId);
+  return token ? { [SHARE_TOKEN_HEADER]: token } : undefined;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -464,6 +513,39 @@ export interface SavedTripSummary {
   created_at: string;
 }
 
+export interface ShareLink {
+  id: string;
+  trip_id: string;
+  kind: TripKind;
+  role: Exclude<CollaborationRole, "owner">;
+  share_url: string;
+  invite_email: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+}
+
+export interface TripVersion {
+  id: string;
+  trip_id: string;
+  kind: TripKind;
+  version: number;
+  action: string;
+  actor_id: string | null;
+  created_at: string;
+  snapshot?: Record<string, unknown> | null;
+}
+
+export interface TripActivity {
+  id: string;
+  trip_id: string;
+  kind: TripKind;
+  action: string;
+  actor_id: string | null;
+  version: number | null;
+  metadata: Record<string, string | number | boolean | null>;
+  created_at: string;
+}
+
 export interface GenerationStatus {
   step: string;
   message: string;
@@ -563,6 +645,7 @@ async function request<T>(
                   : {}),
               }
             : {}),
+          ...(BOT_PROTECTION_TOKEN ? { "X-Yatra-Bot-Token": BOT_PROTECTION_TOKEN } : {}),
           ...fetchOptions.headers,
         },
       });
@@ -718,7 +801,10 @@ export const api = {
   },
 
   getMultiCityTrip: (tripId: string) =>
-    request<MultiCityTrip>(`/api/multi-city/${encodeURIComponent(tripId)}`),
+    request<MultiCityTrip>(`/api/multi-city/${encodeURIComponent(tripId)}`, {
+      headers: shareHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
+    }),
 
   reorderMultiCityTrip: async (tripId: string, destinationStayIds: string[]) => {
     const trip = await request<MultiCityTrip>(`/api/multi-city/${encodeURIComponent(tripId)}/reorder`, {
@@ -727,6 +813,7 @@ export const api = {
       headers: editHeaders(tripId),
       timeoutMs: 90_000,
       retries: 0,
+      onResponse: (response) => saveRevision(tripId, response),
     });
     return trip;
   },
@@ -738,6 +825,7 @@ export const api = {
       headers: editHeaders(tripId),
       timeoutMs: 30_000,
       retries: 0,
+      onResponse: (response) => saveRevision(tripId, response),
     }),
 
   /** Accept a durable asynchronous trip-generation job. */
@@ -804,7 +892,10 @@ export const api = {
   },
 
   /** Get a saved trip by ID */
-  getTrip: (tripId: string) => request<Itinerary>(`/api/trips/${tripId}`),
+  getTrip: (tripId: string) => request<Itinerary>(`/api/trips/${encodeURIComponent(tripId)}`, {
+    headers: shareHeaders(tripId),
+    onResponse: (response) => saveRevision(tripId, response),
+  }),
 
   /** Get share URL for a trip */
   shareTrip: (tripId: string) =>
@@ -813,17 +904,81 @@ export const api = {
       { method: "POST" }
     ),
 
+  createShareLink: (tripId: string, role: Exclude<CollaborationRole, "owner">, inviteEmail?: string) =>
+    request<ShareLink>(`/api/trips/${encodeURIComponent(tripId)}/share-links`, {
+      method: "POST",
+      body: JSON.stringify({ role, invite_email: inviteEmail || null }),
+      headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
+      timeoutMs: 15_000,
+      retries: 0,
+    }),
+
+  listShareLinks: (tripId: string) =>
+    request<ShareLink[]>(`/api/trips/${encodeURIComponent(tripId)}/share-links`, {
+      headers: editHeaders(tripId),
+      timeoutMs: 15_000,
+      retries: 0,
+    }),
+
+  revokeShareLink: (tripId: string, linkId: string) =>
+    request<{ revoked: boolean }>(`/api/trips/${encodeURIComponent(tripId)}/share-links/${encodeURIComponent(linkId)}`, {
+      method: "DELETE",
+      headers: editHeaders(tripId),
+      timeoutMs: 15_000,
+      retries: 0,
+    }),
+
+  getShareAccess: (tripId: string) =>
+    request<{ trip_id: string; kind: TripKind; role: CollaborationRole; version: number }>(`/api/trips/${encodeURIComponent(tripId)}/access`, {
+      headers: editHeaders(tripId),
+      timeoutMs: 15_000,
+      retries: 0,
+    }),
+
+  getTripHistory: (tripId: string, kind: TripKind = "single") =>
+    request<TripVersion[]>(`/api/trips/${encodeURIComponent(tripId)}/history?kind=${kind}`, {
+      headers: editHeaders(tripId),
+      timeoutMs: 15_000,
+      retries: 0,
+    }),
+
+  getTripActivity: (tripId: string, kind: TripKind = "single") =>
+    request<TripActivity[]>(`/api/trips/${encodeURIComponent(tripId)}/activity?kind=${kind}`, {
+      headers: editHeaders(tripId),
+      timeoutMs: 15_000,
+      retries: 0,
+    }),
+
+  copyTrip: async (tripId: string, kind: TripKind = "single") => {
+    let editToken: string | null = null;
+    const result = await request<{ trip_id: string; kind: TripKind; trip: Itinerary | MultiCityTrip }>(`/api/trips/${encodeURIComponent(tripId)}/copy`, {
+      method: "POST",
+      body: JSON.stringify({ kind }),
+      headers: editHeaders(tripId),
+      timeoutMs: 30_000,
+      retries: 0,
+      onResponse: (response) => {
+        editToken = response.headers.get(EDIT_TOKEN_HEADER);
+      },
+    });
+    saveEditToken(result.trip_id, editToken);
+    return result;
+  },
+
   refineTrip: (tripId: string, instruction: string) =>
     request<Itinerary>(`/api/trips/${tripId}/refine`, {
       method: "POST",
       body: JSON.stringify({ instruction }),
       headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
     }),
 
   undoTrip: (tripId: string) =>
     request<Itinerary>(`/api/trips/${tripId}/undo`, {
       method: "POST",
       headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
     }),
 
   selectTransport: (tripId: string, option: TransportOption) =>
@@ -835,12 +990,14 @@ export const api = {
         code: option.code,
       }),
       headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
     }),
 
   generatePackingList: (tripId: string) =>
     request<PackingItem[]>(`/api/trips/${tripId}/packing-list`, {
       method: "POST",
       headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
     }),
 
   /** Search flights */
@@ -856,7 +1013,7 @@ export const api = {
     ),
 
   /** Health check */
-  health: () => request<{ status: string; services: Record<string, string> }>("/health"),
+  health: () => request<{ status: string; ready?: boolean; services: Record<string, unknown> }>("/health"),
 
   /**
    * Starts a backend cold start as soon as the visitor opens the site.

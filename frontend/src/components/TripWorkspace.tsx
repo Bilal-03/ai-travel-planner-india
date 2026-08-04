@@ -18,6 +18,7 @@ import {
   formatINR,
   getVibeEmoji,
 } from "@/lib/api";
+import { track } from "@/lib/analytics";
 
 const TripMap = dynamic(() => import("@/components/TripMap"), { ssr: false });
 
@@ -181,6 +182,9 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
       const updated = await api.refineTrip(itinerary.id, instruction);
       setPreviousItinerary(before);
       onUpdate(updated);
+      const lower = instruction.toLowerCase();
+      if (lower.includes("replace")) track("activity_replaced", { tripId: itinerary.id, kind: "single", metadata: { accepted: true } });
+      if (lower.includes("regenerate day")) track("day_regenerated", { tripId: itinerary.id, kind: "single", metadata: { accepted: true } });
     } catch (error) {
       setRefinementError(error instanceof ApiError ? error.message : "Couldn’t apply that change. Please try again.");
     } finally {

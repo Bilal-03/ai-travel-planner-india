@@ -3,50 +3,74 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
+import { api, type CollaborationRole, type TripKind } from "@/lib/api";
+import { track } from "@/lib/analytics";
 
 interface ShareTripProps {
   tripId: string;
+  kind?: TripKind;
 }
 
-export default function ShareTrip({ tripId }: ShareTripProps) {
+export default function ShareTrip({ tripId, kind = "single" }: ShareTripProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [linkRole, setLinkRole] = useState<Exclude<CollaborationRole, "owner">>("viewer");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [linkMessage, setLinkMessage] = useState<string | null>(null);
 
-  const shareUrl =
+  const publicShareUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/trip/${tripId}`
       : `/trip/${tripId}`;
+  const activeShareUrl = shareUrl || publicShareUrl;
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(shareUrl);
+      await navigator.clipboard.writeText(activeShareUrl);
       setCopied(true);
+      track("trip_shared", { tripId, kind, metadata: { source: "copy" } });
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Fallback
       const input = document.createElement("input");
-      input.value = shareUrl;
+      input.value = activeShareUrl;
       document.body.appendChild(input);
       input.select();
       document.execCommand("copy");
       document.body.removeChild(input);
       setCopied(true);
+      track("trip_shared", { tripId, kind, metadata: { source: "copy" } });
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
   const shareWhatsApp = () => {
+    track("trip_shared", { tripId, kind, metadata: { source: "whatsapp" } });
     window.open(
-      `https://wa.me/?text=${encodeURIComponent(`Check out my India trip itinerary! 🇮🇳✈️\n${shareUrl}`)}`,
+      `https://wa.me/?text=${encodeURIComponent(`Check out my India trip itinerary! 🇮🇳✈️\n${activeShareUrl}`)}`,
       "_blank"
     );
   };
 
   const shareTwitter = () => {
+    track("trip_shared", { tripId, kind, metadata: { source: "twitter" } });
     window.open(
-      `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Just planned my India trip with AI! 🇮🇳✨`)}&url=${encodeURIComponent(shareUrl)}`,
+      `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Just planned my India trip with AI! 🇮🇳✨`)}&url=${encodeURIComponent(activeShareUrl)}`,
       "_blank"
     );
+  };
+
+  const createLink = async () => {
+    setLinkMessage(null);
+    try {
+      const link = await api.createShareLink(tripId, linkRole, inviteEmail.trim() || undefined);
+      setShareUrl(link.share_url);
+      setLinkMessage(`${linkRole === "editor" ? "Edit" : "View-only"} link created.`);
+      track("trip_shared", { tripId, kind, metadata: { source: "collaboration_link", kind: linkRole } });
+    } catch {
+      setLinkMessage("Only the trip owner can create a collaboration link.");
+    }
   };
 
   return (
@@ -78,7 +102,7 @@ export default function ShareTrip({ tripId }: ShareTripProps) {
             <div className="flex gap-2 mb-4">
               <input
                 type="text"
-                value={shareUrl}
+                value={activeShareUrl}
                 readOnly
                 className="flex-1 px-3 py-2 bg-glass-bg border border-glass-border rounded-lg
                            text-foreground text-xs truncate"
@@ -93,6 +117,19 @@ export default function ShareTrip({ tripId }: ShareTripProps) {
               >
                 {copied ? "✓" : "Copy"}
               </button>
+            </div>
+
+            <div className="mb-4 rounded-lg border border-glass-border bg-background/25 p-3">
+              <p className="text-[11px] font-semibold text-foreground">Invite collaborators</p>
+              <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                <input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="Email (optional)" type="email" className="min-w-0 rounded-lg border border-glass-border bg-glass-bg px-2 py-2 text-xs text-foreground" />
+                <select value={linkRole} onChange={(event) => setLinkRole(event.target.value as Exclude<CollaborationRole, "owner">)} className="rounded-lg border border-glass-border bg-glass-bg px-2 py-2 text-xs text-foreground">
+                  <option value="viewer">Viewer</option>
+                  <option value="editor">Editor</option>
+                </select>
+              </div>
+              <button type="button" onClick={() => void createLink()} className="mt-2 w-full rounded-lg border border-primary/40 px-3 py-2 text-xs font-semibold text-primary transition hover:bg-primary/10">Create secure link</button>
+              {linkMessage && <p className="mt-2 text-[11px] text-foreground-muted">{linkMessage}</p>}
             </div>
 
             {/* Social Share */}
@@ -115,7 +152,7 @@ export default function ShareTrip({ tripId }: ShareTripProps) {
 
             {/* QR Code */}
             <div className="flex justify-center p-3 bg-white rounded-lg">
-              <QRCodeSVG value={shareUrl} size={120} />
+              <QRCodeSVG value={activeShareUrl} size={120} />
             </div>
 
             <p className="text-center text-foreground-muted text-xs mt-2">

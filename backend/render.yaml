@@ -24,6 +24,16 @@ services:
         sync: false
       - key: UPSTASH_REDIS_REST_TOKEN
         sync: false
+      - key: REQUIRE_REDIS
+        value: "true"
+      - key: APP_ENV
+        value: production
+      - key: REQUIRE_DURABLE_STORAGE
+        value: "true"
+      - key: MAX_REQUEST_BODY_BYTES
+        value: "1000000"
+      - key: BOT_PROTECTION_TOKEN
+        sync: false
       - key: TRIP_JOB_SECRET
         sync: false
       - key: AUTH_PROVIDER
@@ -31,6 +41,14 @@ services:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: ANALYTICS_ADMIN_TOKEN
+        sync: false
+      - key: ANALYTICS_HASH_SALT
         sync: false
       - key: ACCOUNT_SESSION_TTL_SECONDS
         value: "2592000"

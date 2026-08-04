@@ -9,13 +9,22 @@ from datetime import datetime
 from typing import Optional
 
 from app.config import settings
+from app.models.collaboration import TripKind
 from app.models.trip import Itinerary, Trip
+from app.services.collaboration_service import record_trip_version
 
 logger = logging.getLogger(__name__)
 _memory_store: dict[str, dict] = {}
 _memory_multi_city_store: dict[str, dict] = {}
 _schema_ready = False
 _schema_lock = threading.Lock()
+
+
+def _fallback_or_raise(operation: str) -> None:
+    """Production must fail closed when durable storage is unavailable."""
+
+    if settings.require_durable_storage:
+        raise RuntimeError(f"Durable storage is unavailable during {operation}")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS trips (
@@ -135,12 +144,25 @@ def _ensure_schema_sync() -> bool:
             logger.info("Connected to Neon PostgreSQL; trips table is ready")
             return True
         except Exception as error:
+            if settings.require_durable_storage:
+                raise RuntimeError("Durable PostgreSQL storage could not be initialised") from error
             logger.warning("Neon setup failed; using in-memory trips: %s", error)
             return False
 
 
 async def _ensure_schema() -> bool:
-    return bool(settings.database_url) and await asyncio.to_thread(_ensure_schema_sync)
+    if not settings.database_url:
+        if settings.require_durable_storage:
+            raise RuntimeError("DATABASE_URL is required when durable storage is enabled")
+        return False
+    return await asyncio.to_thread(_ensure_schema_sync)
+
+
+async def ensure_durable_storage_ready() -> None:
+    """Fail startup rather than serving a process-local database in production."""
+
+    if settings.require_durable_storage and not await _ensure_schema():
+        raise RuntimeError("Durable PostgreSQL storage is not ready")
 
 
 def _write_multi_city_projections(cursor, trip_id: str, trip: Trip) -> None:
@@ -218,9 +240,11 @@ async def save_trip(
                              owner_token_hash, owner_user_id, created_at),
                         )
             await asyncio.to_thread(insert)
-            return trip_id
         except Exception as error:
+            _fallback_or_raise("save_trip")
             logger.error("Neon save failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("save_trip")
     _memory_store[trip_id] = {
         "itinerary": data,
         "previous_itinerary": None,
@@ -228,6 +252,7 @@ async def save_trip(
         "owner_user_id": owner_user_id,
         "created_at": created_at,
     }
+    await record_trip_version(trip_id, TripKind.SINGLE, itinerary.model_dump(mode="json"), action="created", actor_id=owner_user_id)
     return trip_id
 
 
@@ -245,7 +270,10 @@ async def get_trip(trip_id: str) -> Optional[Itinerary]:
             if data:
                 return Itinerary.model_validate_json(data)
         except Exception as error:
+            _fallback_or_raise("get_trip")
             logger.error("Neon read failed: %s", error)
+    else:
+        _fallback_or_raise("get_trip")
     cached = _memory_store.get(trip_id)
     return Itinerary.model_validate_json(cached["itinerary"]) if cached else None
 
@@ -262,7 +290,10 @@ async def get_trip_owner_token_hash(trip_id: str) -> Optional[str]:
                         return row[0] if row else None
             return await asyncio.to_thread(fetch)
         except Exception as error:
+            _fallback_or_raise("get_trip_owner_token_hash")
             logger.error("Neon owner-token lookup failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("get_trip_owner_token_hash")
     cached = _memory_store.get(trip_id)
     return cached.get("owner_token_hash") if cached else None
 
@@ -279,7 +310,10 @@ async def get_trip_owner_user_id(trip_id: str) -> Optional[str]:
                         return row[0] if row else None
             return await asyncio.to_thread(fetch)
         except Exception as error:
+            _fallback_or_raise("get_trip_owner_user_id")
             logger.error("Neon owner-user lookup failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("get_trip_owner_user_id")
     cached = _memory_store.get(trip_id)
     return cached.get("owner_user_id") if cached else None
 
@@ -294,9 +328,11 @@ async def update_trip(itinerary: Itinerary) -> None:
                     with connection.cursor() as cursor:
                         cursor.execute("UPDATE trips SET previous_itinerary_json = itinerary_json, itinerary_json = %s::jsonb, budget = %s WHERE id = %s", (data, itinerary.budget.total_estimated, itinerary.id))
             await asyncio.to_thread(update)
-            return
         except Exception as error:
+            _fallback_or_raise("update_trip")
             logger.error("Neon update failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("update_trip")
     existing = _memory_store.get(itinerary.id, {})
     _memory_store[itinerary.id] = {
         "itinerary": data,
@@ -305,6 +341,7 @@ async def update_trip(itinerary: Itinerary) -> None:
         "owner_user_id": existing.get("owner_user_id"),
         "created_at": datetime.utcnow().isoformat(),
     }
+    await record_trip_version(itinerary.id, TripKind.SINGLE, itinerary.model_dump(mode="json"), action="updated")
 
 
 async def undo_trip(trip_id: str) -> Optional[Itinerary]:
@@ -323,9 +360,15 @@ async def undo_trip(trip_id: str) -> Optional[Itinerary]:
                         )
                         return cursor.rowcount > 0
             if await asyncio.to_thread(swap):
-                return await get_trip(trip_id)
+                restored = await get_trip(trip_id)
+                if restored:
+                    await record_trip_version(trip_id, TripKind.SINGLE, restored.model_dump(mode="json"), action="undo")
+                return restored
         except Exception as error:
+            _fallback_or_raise("undo_trip")
             logger.error("Neon undo failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("undo_trip")
 
     existing = _memory_store.get(trip_id)
     if not existing or not existing.get("previous_itinerary"):
@@ -333,7 +376,9 @@ async def undo_trip(trip_id: str) -> Optional[Itinerary]:
     current = existing["itinerary"]
     existing["itinerary"] = existing["previous_itinerary"]
     existing["previous_itinerary"] = current
-    return Itinerary.model_validate_json(existing["itinerary"])
+    restored = Itinerary.model_validate_json(existing["itinerary"])
+    await record_trip_version(trip_id, TripKind.SINGLE, restored.model_dump(mode="json"), action="undo")
+    return restored
 
 
 async def claim_trip(trip_id: str, owner_token_hash: str, owner_user_id: str) -> bool:
@@ -351,7 +396,10 @@ async def claim_trip(trip_id: str, owner_token_hash: str, owner_user_id: str) ->
             if await asyncio.to_thread(claim):
                 return True
         except Exception as error:
+            _fallback_or_raise("claim_trip")
             logger.error("Neon trip claim failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("claim_trip")
     cached = _memory_store.get(trip_id)
     if not cached or cached.get("owner_token_hash") != owner_token_hash:
         return False
@@ -393,7 +441,10 @@ async def list_saved_trip_summaries(owner_user_id: str) -> list[dict]:
             summaries.extend(await asyncio.to_thread(fetch))
             return summaries
         except Exception as error:
+            _fallback_or_raise("list_saved_trip_summaries")
             logger.error("Neon trip history lookup failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("list_saved_trip_summaries")
     for trip_id, cached in _memory_store.items():
         if cached.get("owner_user_id") != owner_user_id:
             continue
@@ -434,7 +485,10 @@ async def delete_saved_trips(owner_user_id: str) -> None:
                         cursor.execute("DELETE FROM multi_city_trips WHERE owner_user_id = %s", (owner_user_id,))
             await asyncio.to_thread(delete)
         except Exception as error:
+            _fallback_or_raise("delete_saved_trips")
             logger.error("Neon saved-trip delete failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("delete_saved_trips")
     for trip_id in [key for key, value in _memory_store.items() if value.get("owner_user_id") == owner_user_id]:
         _memory_store.pop(trip_id, None)
     for trip_id in [key for key, value in _memory_multi_city_store.items() if value.get("owner_user_id") == owner_user_id]:
@@ -465,9 +519,11 @@ async def save_multi_city_trip(
                         )
                         _write_multi_city_projections(cursor, trip_id, trip)
             await asyncio.to_thread(insert)
-            return trip_id
         except Exception as error:
+            _fallback_or_raise("save_multi_city_trip")
             logger.error("Neon multi-city save failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("save_multi_city_trip")
     _memory_multi_city_store[trip_id] = {
         "trip": data,
         "previous_trip": None,
@@ -475,6 +531,7 @@ async def save_multi_city_trip(
         "owner_user_id": owner_user_id,
         "created_at": created_at,
     }
+    await record_trip_version(trip_id, TripKind.MULTI_CITY, trip.model_dump(mode="json"), action="created", actor_id=owner_user_id)
     return trip_id
 
 
@@ -491,7 +548,10 @@ async def get_multi_city_trip(trip_id: str) -> Optional[Trip]:
             if data:
                 return Trip.model_validate_json(data)
         except Exception as error:
+            _fallback_or_raise("get_multi_city_trip")
             logger.error("Neon multi-city read failed: %s", error)
+    else:
+        _fallback_or_raise("get_multi_city_trip")
     cached = _memory_multi_city_store.get(trip_id)
     return Trip.model_validate_json(cached["trip"]) if cached else None
 
@@ -507,7 +567,10 @@ async def get_multi_city_trip_owner_token_hash(trip_id: str) -> Optional[str]:
                         return row[0] if row else None
             return await asyncio.to_thread(fetch)
         except Exception as error:
+            _fallback_or_raise("get_multi_city_trip_owner_token_hash")
             logger.error("Neon multi-city owner-token lookup failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("get_multi_city_trip_owner_token_hash")
     cached = _memory_multi_city_store.get(trip_id)
     return cached.get("owner_token_hash") if cached else None
 
@@ -525,9 +588,11 @@ async def update_multi_city_trip(trip: Trip) -> None:
                         )
                         _write_multi_city_projections(cursor, trip.id, trip)
             await asyncio.to_thread(update)
-            return
         except Exception as error:
+            _fallback_or_raise("update_multi_city_trip")
             logger.error("Neon multi-city update failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("update_multi_city_trip")
     existing = _memory_multi_city_store.get(trip.id, {})
     _memory_multi_city_store[trip.id] = {
         "trip": data,
@@ -536,6 +601,7 @@ async def update_multi_city_trip(trip: Trip) -> None:
         "owner_user_id": existing.get("owner_user_id"),
         "created_at": existing.get("created_at", datetime.utcnow().isoformat()),
     }
+    await record_trip_version(trip.id, TripKind.MULTI_CITY, trip.model_dump(mode="json"), action="updated")
 
 
 async def claim_multi_city_trip(trip_id: str, owner_token_hash: str, owner_user_id: str) -> bool:
@@ -552,7 +618,10 @@ async def claim_multi_city_trip(trip_id: str, owner_token_hash: str, owner_user_
             if await asyncio.to_thread(claim):
                 return True
         except Exception as error:
+            _fallback_or_raise("claim_multi_city_trip")
             logger.error("Neon multi-city claim failed; using memory: %s", error)
+    else:
+        _fallback_or_raise("claim_multi_city_trip")
     cached = _memory_multi_city_store.get(trip_id)
     if not cached or cached.get("owner_token_hash") != owner_token_hash:
         return False

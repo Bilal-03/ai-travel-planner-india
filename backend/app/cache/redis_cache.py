@@ -52,6 +52,17 @@ class CacheClient:
             logger.warning(f"⚠️  Redis connection failed, using in-memory cache: {e}")
             self._redis = None
 
+    @property
+    def is_distributed(self) -> bool:
+        """Whether this client is backed by Redis rather than process memory."""
+
+        return self._redis is not None
+
+    def health(self) -> str:
+        """Return a small health label suitable for readiness responses."""
+
+        return "redis" if self.is_distributed else "in_memory"
+
     def get(self, key: str) -> Optional[str]:
         if self._redis:
             try:
@@ -107,8 +118,12 @@ class CacheClient:
             _memory_list_expiry.pop(key, None)
             _memory_counters.pop(key, None)
 
-    def increment(self, key: str, ttl_seconds: int = 3600) -> int:
-        """Increment a counter and apply a TTL when it is first created."""
+    def increment(self, key: str, ttl_seconds: int = 3600, *, require_distributed: bool = False) -> int:
+        """Increment a counter and apply a TTL when it is first created.
+
+        Rate-limit callers can require Redis explicitly so a mid-request Redis
+        outage cannot silently turn a distributed guard into a per-process one.
+        """
 
         if self._redis:
             try:
@@ -116,8 +131,12 @@ class CacheClient:
                 if value == 1:
                     self._redis.expire(key, ttl_seconds)
                 return value
-            except Exception:
-                pass
+            except Exception as error:
+                if require_distributed:
+                    raise RuntimeError("Redis is unavailable for a distributed counter") from error
+
+        if require_distributed:
+            raise RuntimeError("A distributed Redis counter is required")
 
         with _memory_lock:
             current = _memory_counters.get(key)

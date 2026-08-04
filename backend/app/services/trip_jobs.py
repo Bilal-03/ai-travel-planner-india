@@ -24,6 +24,7 @@ from app.cache.redis_cache import get_cache
 from app.config import settings
 from app.models.trip import Itinerary, TripRequest
 from app.services.gemini_planner import generate_itinerary
+from app.services.observability import capture_exception, safe_error_message
 from app.services.trip_storage import save_trip
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,12 @@ def request_cache_key(request: TripRequest) -> str:
     payload = request.model_dump_json(exclude_none=True, round_trip=True)
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return f"trip-generation:{digest}"
+
+
+def queue_depth() -> int:
+    """Expose a bounded operational signal for the readiness/monitoring surface."""
+
+    return len(get_cache().list_range(QUEUE_KEY, 0, -1))
 
 
 def edit_token_for_job(job_id: str) -> str:
@@ -483,11 +490,12 @@ async def _execute_job(job_id: str) -> None:
                 status=TripJobState.FAILED,
                 message="The trip request could not be completed.",
                 progress=current.progress,
-                error=str(error),
+                error=safe_error_message(error, "The trip request could not be completed."),
             )
             return
         except Exception as error:
             logger.exception("Trip job %s failed on attempt %s", job_id, attempt)
+            capture_exception(error, context={"operation": "trip_job", "job_id": job_id, "attempt": attempt})
             if attempt < MAX_JOB_ATTEMPTS and not _cancel_requested(job_id):
                 current = _load_job(job_id) or current
                 await _publish_event(

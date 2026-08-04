@@ -1,0 +1,163 @@
+name: YatraAI CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Backend lint
+        run: python -m ruff check app main.py tests --select E9,F63,F7,F82
+      - name: Backend type-check
+        # Keep the Phase 7 gate focused on the hardened boundary and new
+        # collaboration/observability modules while legacy planner typing is
+        # migrated separately.
+        run: >-
+          python -m mypy
+          app/config.py
+          app/cache/redis_cache.py
+          app/providers/gateway.py
+          app/providers/resilience.py
+          app/services/account_service.py
+          app/services/collaboration_service.py
+          app/services/observability.py
+          app/services/photos.py
+          app/services/trip_storage.py
+          app/services/url_safety.py
+          app/models/collaboration.py
+          app/api/account.py
+          app/api/analytics.py
+          app/api/collaboration.py
+          app/api/multi_city.py
+          app/api/trips.py
+          main.py
+          --ignore-missing-imports
+          --follow-imports=skip
+          --allow-untyped-defs
+      - name: Backend unit tests
+        run: python -m pytest -q
+      - name: Migration checks
+        run: python scripts/check_migrations.py
+
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Frontend lint
+        run: npm run lint
+      - name: Frontend type-check
+        run: npx tsc --noEmit
+      - name: Frontend unit tests
+        run: npm run test:unit
+      - name: Build verification
+        run: npm run build
+
+  api-contract:
+    name: API contract tests
+    needs: backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q tests/test_phase6_account_api.py tests/test_trip_jobs_api.py tests/test_phase7_hardening.py
+
+  playwright:
+    name: Playwright smoke tests
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend
+        working-directory: backend
+        run: python -m pip install -r requirements.txt
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: Start backend
+        working-directory: backend
+        run: uvicorn main:app --host 127.0.0.1 --port 8000 > /tmp/yatraai-backend.log 2>&1 &
+      - name: Start frontend
+        working-directory: frontend
+        run: NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run dev -- --hostname 127.0.0.1 > /tmp/yatraai-frontend.log 2>&1 &
+      - name: Wait for services
+        run: |
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:8000/health && curl --fail --silent http://127.0.0.1:3000/ && exit 0
+            sleep 2
+          done
+          cat /tmp/yatraai-backend.log
+          cat /tmp/yatraai-frontend.log
+          exit 1
+      - name: Run Playwright smoke tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+  dependency-and-secret-scan:
+    name: Dependency and secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: npm --prefix frontend ci
+      - run: npm --prefix frontend audit --audit-level=high --omit=dev
+      - run: python -m pip install pip-audit
+      - run: pip-audit -r backend/requirements.txt
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-review:
+    name: Pull request dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4

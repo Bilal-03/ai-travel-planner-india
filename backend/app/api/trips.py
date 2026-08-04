@@ -17,6 +17,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app.cache.redis_cache import get_cache
+from app.config import settings
+from app.models.collaboration import AnalyticsEventRequest, TripKind
 from app.models.trip import GenerationStatus, Itinerary, PackingItem, TripRequest, TransportMode
 from app.services.gemini_planner import (
     generate_itinerary,
@@ -25,6 +27,8 @@ from app.services.gemini_planner import (
     select_transport_for_itinerary,
 )
 from app.services.account_service import get_account_for_token
+from app.services.collaboration_service import VersionConflictError, assert_version, record_analytics, resolve_share_token
+from app.services.observability import capture_exception, monotonic_ms, safe_error_message
 from app.services.trip_storage import get_trip, get_trip_owner_token_hash, save_trip, undo_trip, update_trip
 
 logger = logging.getLogger(__name__)
@@ -32,6 +36,7 @@ router = APIRouter(prefix="/api/trips", tags=["trips"])
 _progress_queues: dict[str, asyncio.Queue[dict]] = {}
 TRIP_CACHE_TTL_SECONDS = 60 * 60
 EDIT_TOKEN_HEADER = "X-Trip-Edit-Token"
+SHARE_TOKEN_HEADER = "X-Trip-Share-Token"
 ACCOUNT_TOKEN_HEADER = "X-Yatra-Account-Token"
 _rate_limit_windows: dict[tuple[str, str], deque[float]] = defaultdict(deque)
 _rate_limit_lock = Lock()
@@ -68,10 +73,14 @@ async def _rate_limit(request: Request, scope: str, limit: int, window_seconds: 
                 detail="Too many requests. Please wait before trying again.",
                 headers={"Retry-After": str(retry_after)},
             )
-        attempts = get_cache().increment(
-            f"travel:rate-limit:{scope}:{client_hash}",
-            ttl_seconds=window_seconds,
-        )
+        try:
+            attempts = get_cache().increment(
+                f"travel:rate-limit:{scope}:{client_hash}",
+                ttl_seconds=window_seconds,
+                require_distributed=settings.require_redis,
+            )
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail="The distributed rate limiter is temporarily unavailable.") from error
         if attempts > limit:
             raise HTTPException(
                 status_code=429,
@@ -96,13 +105,32 @@ async def packing_rate_limit(request: Request) -> None:
 async def require_trip_owner(
     trip_id: str,
     edit_token: str | None = Header(None, alias=EDIT_TOKEN_HEADER),
+    share_token: str | None = Header(None, alias=SHARE_TOKEN_HEADER),
 ) -> None:
     expected_hash = await get_trip_owner_token_hash(trip_id)
-    if not expected_hash or not edit_token or not hmac.compare_digest(expected_hash, _hash_edit_token(edit_token)):
-        raise HTTPException(
-            status_code=403,
-            detail="This shared itinerary is read-only. Open it from the browser that created it to make changes.",
-        )
+    if expected_hash and edit_token and hmac.compare_digest(expected_hash, _hash_edit_token(edit_token)):
+        return
+    share_value = share_token if isinstance(share_token, str) else None
+    role = await resolve_share_token(share_value or "", trip_id, TripKind.SINGLE)
+    if role and role.value == "editor":
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="This shared itinerary is read-only. Open it from the browser that created it to make changes.",
+    )
+
+
+async def _record_analytics(event: AnalyticsEventRequest) -> None:
+    try:
+        await record_analytics(event)
+    except Exception:
+        logger.debug("Product analytics was unavailable", exc_info=True)
+
+
+async def _current_version(trip_id: str) -> int:
+    from app.services.collaboration_service import current_version
+
+    return await current_version(trip_id, TripKind.SINGLE)
 
 
 def _request_cache_key(request: TripRequest) -> str:
@@ -155,6 +183,9 @@ async def generate_trip(
     Generate a complete AI-powered itinerary.
     This is the main endpoint — orchestrates all services.
     """
+    started = monotonic_ms()
+    await _record_analytics(AnalyticsEventRequest(event="planner_started", kind=TripKind.SINGLE))
+    await _record_analytics(AnalyticsEventRequest(event="generation_started", kind=TripKind.SINGLE))
     try:
         await _publish_progress(progress_token, "starting", "Starting your planner request…", 5)
         cache_key = _request_cache_key(request)
@@ -174,6 +205,8 @@ async def generate_trip(
             itinerary.id = trip_id
             response.headers[EDIT_TOKEN_HEADER] = edit_token
             await _publish_progress(progress_token, "cached", "Using your matching recent itinerary.", 100)
+            await _record_analytics(AnalyticsEventRequest(event="generation_completed", kind=TripKind.SINGLE, duration_ms=int(monotonic_ms() - started), metadata={"source": "cache"}))
+            await _record_analytics(AnalyticsEventRequest(event="planner_completed", kind=TripKind.SINGLE, duration_ms=int(monotonic_ms() - started), metadata={"source": "cache"}))
             return itinerary
         logger.info(
             f"🚀 Generating trip: {request.origin} → {request.destination}, "
@@ -198,18 +231,23 @@ async def generate_trip(
         get_cache().set(cache_key, itinerary.model_dump_json(), TRIP_CACHE_TTL_SECONDS)
         response.headers[EDIT_TOKEN_HEADER] = edit_token
         await _publish_progress(progress_token, "complete", "Your itinerary is ready.", 100)
+        await _record_analytics(AnalyticsEventRequest(event="generation_completed", kind=TripKind.SINGLE, trip_id=trip_id, duration_ms=int(monotonic_ms() - started), metadata={"estimated_data": any(option.is_fallback for option in itinerary.transport_options)}))
+        await _record_analytics(AnalyticsEventRequest(event="planner_completed", kind=TripKind.SINGLE, trip_id=trip_id, duration_ms=int(monotonic_ms() - started)))
 
         return itinerary
 
     except ValueError as e:
         await _publish_progress(progress_token, "failed", str(e), 100)
+        await _record_analytics(AnalyticsEventRequest(event="generation_failed", kind=TripKind.SINGLE, duration_ms=int(monotonic_ms() - started), metadata={"invalid_itinerary": True}))
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception(f"Trip generation failed: {e}")
+        capture_exception(e, context={"operation": "generate_trip"})
         await _publish_progress(progress_token, "failed", "The planner could not complete this request.", 100)
+        await _record_analytics(AnalyticsEventRequest(event="generation_failed", kind=TripKind.SINGLE, duration_ms=int(monotonic_ms() - started)))
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate itinerary: {str(e)}",
+            detail=safe_error_message(e, "Failed to generate itinerary. Please try again."),
         )
 
 
@@ -217,6 +255,8 @@ async def generate_trip(
 async def select_trip_transport(
     trip_id: str,
     request: TransportSelectionRequest,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
     _: None = Depends(require_trip_owner),
 ):
     """Select the option that is displayed as recommended and budgeted."""
@@ -224,21 +264,27 @@ async def select_trip_transport(
     if not itinerary:
         raise HTTPException(status_code=404, detail="Trip not found")
     try:
+        await assert_version(trip_id, TripKind.SINGLE, if_match)
         updated = select_transport_for_itinerary(
             itinerary, request.mode, request.provider, request.code
         )
         await update_trip(updated)
+        await _record_analytics(AnalyticsEventRequest(event="transport_selected", kind=TripKind.SINGLE, trip_id=trip_id, metadata={"provider": request.provider}))
+        response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
         return updated
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"ETag": f'W/"{exc.current}"'}) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{trip_id}", response_model=Itinerary)
-async def get_trip_by_id(trip_id: str):
+async def get_trip_by_id(trip_id: str, response: Response):
     """Retrieve a saved/shared trip by ID."""
     itinerary = await get_trip(trip_id)
     if not itinerary:
         raise HTTPException(status_code=404, detail="Trip not found")
+    response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
     return itinerary
 
 
@@ -259,6 +305,8 @@ async def share_trip(trip_id: str):
 async def refine_trip(
     trip_id: str,
     request: RefineTripRequest,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
     _: None = Depends(require_trip_owner),
     __: None = Depends(refinement_rate_limit),
 ):
@@ -266,26 +314,49 @@ async def refine_trip(
     itinerary = await get_trip(trip_id)
     if not itinerary:
         raise HTTPException(status_code=404, detail="Trip not found")
+    try:
+        await assert_version(trip_id, TripKind.SINGLE, if_match)
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"ETag": f'W/"{exc.current}"'}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     refined = await refine_itinerary(itinerary, request.instruction)
     await update_trip(refined)
+    lower_instruction = request.instruction.casefold()
+    if "replace" in lower_instruction:
+        await _record_analytics(AnalyticsEventRequest(event="activity_replaced", kind=TripKind.SINGLE, trip_id=trip_id, metadata={"accepted": True}))
+    if "regenerate day" in lower_instruction:
+        await _record_analytics(AnalyticsEventRequest(event="day_regenerated", kind=TripKind.SINGLE, trip_id=trip_id, metadata={"accepted": True}))
+    response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
     return refined
 
 
 @router.post("/{trip_id}/undo", response_model=Itinerary)
 async def undo_trip_change(
     trip_id: str,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
     _: None = Depends(require_trip_owner),
 ):
     """Restore the previous server-validated itinerary revision."""
+    try:
+        await assert_version(trip_id, TripKind.SINGLE, if_match)
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"ETag": f'W/"{exc.current}"'}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     restored = await undo_trip(trip_id)
     if not restored:
         raise HTTPException(status_code=409, detail="There is no previous trip version to restore.")
+    response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
     return restored
 
 
 @router.post("/{trip_id}/packing-list", response_model=list[PackingItem])
 async def create_packing_list(
     trip_id: str,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
     _: None = Depends(require_trip_owner),
     __: None = Depends(packing_rate_limit),
 ):
@@ -293,6 +364,13 @@ async def create_packing_list(
     itinerary = await get_trip(trip_id)
     if not itinerary:
         raise HTTPException(status_code=404, detail="Trip not found")
+    try:
+        await assert_version(trip_id, TripKind.SINGLE, if_match)
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"ETag": f'W/"{exc.current}"'}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     itinerary.packing_list = await generate_packing_list(itinerary)
     await update_trip(itinerary)
+    response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
     return itinerary.packing_list

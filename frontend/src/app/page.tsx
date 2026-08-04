@@ -24,6 +24,8 @@ import {
   MultiCityTrip,
   MultiCityTripRequest,
 } from "@/lib/api";
+import { track } from "@/lib/analytics";
+import { saveOfflineTrip } from "@/lib/offline";
 
 const ACTIVE_JOB_STORAGE_KEY = "yatraai:active-trip-job";
 
@@ -90,6 +92,7 @@ export default function Home() {
   const stopJobEventsRef = useRef<(() => void) | null>(null);
   const activeJobIdRef = useRef<string | null>(null);
   const resumeStartedRef = useRef(false);
+  const generationStartedAtRef = useRef<number | null>(null);
 
   const stopJobEvents = () => {
     stopJobEventsRef.current?.();
@@ -103,6 +106,8 @@ export default function Home() {
     clearPersistedJob();
     setIsGenerating(false);
     setError(message);
+    track("generation_failed", { metadata: { status: "failed", duration_ms: generationStartedAtRef.current ? Date.now() - generationStartedAtRef.current : undefined } });
+    generationStartedAtRef.current = null;
   }, []);
 
   const resolveCompletedJob = useCallback(async (jobId: string) => {
@@ -114,8 +119,13 @@ export default function Home() {
       activeJobIdRef.current = null;
       clearPersistedJob();
       setItinerary(result);
+      saveOfflineTrip(result, "single");
       setError(null);
       setIsGenerating(false);
+      const duration = generationStartedAtRef.current ? Date.now() - generationStartedAtRef.current : undefined;
+      track("generation_completed", { tripId: result.id, kind: "single", metadata: { duration_ms: duration } });
+      track("planner_completed", { tripId: result.id, kind: "single", metadata: { duration_ms: duration, days: result.total_days } });
+      generationStartedAtRef.current = null;
     } catch (err) {
       if (activeJobIdRef.current !== jobId) return;
       finishFailedJob(jobId, err instanceof ApiError ? err.message : "The saved itinerary could not be loaded.");
@@ -210,6 +220,9 @@ export default function Home() {
     activeJobIdRef.current = null;
     const controller = new AbortController();
     const idempotencyKey = existingIdempotencyKey || randomId();
+    generationStartedAtRef.current = Date.now();
+    track("planner_started", { kind: "single" });
+    track("generation_started", { kind: "single" });
     requestAbortRef.current = controller;
     writePersistedJob({ jobId: null, idempotencyKey, lastEventId: 0, request: data });
     setIsGenerating(true);
@@ -298,10 +311,21 @@ export default function Home() {
     setItinerary(null);
     setMultiCityTrip(null);
     setError(null);
+    generationStartedAtRef.current = Date.now();
+    track("planner_started", { kind: "multi_city" });
+    track("generation_started", { kind: "multi_city" });
     try {
-      setMultiCityTrip(await api.generateMultiCityTrip(request));
+      const result = await api.generateMultiCityTrip(request);
+      setMultiCityTrip(result);
+      saveOfflineTrip(result, "multi_city");
+      const duration = generationStartedAtRef.current ? Date.now() - generationStartedAtRef.current : undefined;
+      track("generation_completed", { tripId: result.id, kind: "multi_city", metadata: { duration_ms: duration, days: result.total_days } });
+      track("planner_completed", { tripId: result.id, kind: "multi_city", metadata: { duration_ms: duration, days: result.total_days } });
+      generationStartedAtRef.current = null;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "The multi-city route could not be generated.");
+      track("generation_failed", { kind: "multi_city", metadata: { status: "failed", duration_ms: generationStartedAtRef.current ? Date.now() - generationStartedAtRef.current : undefined } });
+      generationStartedAtRef.current = null;
     } finally {
       setIsMultiCityGenerating(false);
     }
@@ -318,6 +342,7 @@ export default function Home() {
     if (!itinerary) return;
     try {
       setItinerary(await api.selectTransport(itinerary.id, option));
+      track("transport_selected", { tripId: itinerary.id, kind: "single", metadata: { provider: option.provider } });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn’t update transport. Please try again.");
     }
@@ -373,11 +398,11 @@ export default function Home() {
 
       {/* ── Itinerary Result ─────────────────────────────────────── */}
       {itinerary && (
-        <TripWorkspace itinerary={itinerary} onUpdate={setItinerary} onNewTrip={handleNewTrip} onTransportSelect={handleTransportSelect} />
+        <TripWorkspace itinerary={itinerary} onUpdate={(updated) => { setItinerary(updated); saveOfflineTrip(updated, "single"); }} onNewTrip={handleNewTrip} onTransportSelect={handleTransportSelect} />
       )}
 
       {multiCityTrip && (
-        <MultiCityWorkspace trip={multiCityTrip} onUpdate={setMultiCityTrip} onNewTrip={handleNewTrip} />
+        <MultiCityWorkspace trip={multiCityTrip} onUpdate={(updated) => { setMultiCityTrip(updated); saveOfflineTrip(updated, "multi_city"); }} onNewTrip={handleNewTrip} />
       )}
 
       <Footer />
