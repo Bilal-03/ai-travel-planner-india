@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import HomeHero from "@/components/HomeHero";
@@ -20,6 +20,7 @@ import {
   Itinerary,
   TripRequest,
   GenerationStatus,
+  TripJob,
   formatINR,
   formatDate,
   getVibeEmoji,
@@ -29,6 +30,56 @@ import {
 // Leaflet must be imported dynamically (no SSR)
 const TripMap = dynamic(() => import("@/components/TripMap"), { ssr: false });
 
+const ACTIVE_JOB_STORAGE_KEY = "yatraai:active-trip-job";
+
+interface PersistedTripJob {
+  jobId: string | null;
+  idempotencyKey: string;
+  lastEventId: number;
+  request: TripRequest;
+}
+
+function randomId(): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random()}`;
+}
+
+function readPersistedJob(): PersistedTripJob | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PersistedTripJob;
+  } catch {
+    window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+    return null;
+  }
+}
+
+function writePersistedJob(job: PersistedTripJob): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, JSON.stringify(job));
+  }
+}
+
+function clearPersistedJob(): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+  }
+}
+
+function statusFromJob(job: TripJob): GenerationStatus {
+  return {
+    step: job.step,
+    message: job.message,
+    progress: job.progress,
+    status: job.status,
+    job_id: job.id,
+    error: job.error,
+  };
+}
+
 export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
@@ -36,8 +87,100 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [lastRequest, setLastRequest] = useState<TripRequest | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const stopProgressRef = useRef<(() => void) | null>(null);
+  const requestAbortRef = useRef<AbortController | null>(null);
+  const stopJobEventsRef = useRef<(() => void) | null>(null);
+  const activeJobIdRef = useRef<string | null>(null);
+  const resumeStartedRef = useRef(false);
+
+  const stopJobEvents = () => {
+    stopJobEventsRef.current?.();
+    stopJobEventsRef.current = null;
+  };
+
+  const finishFailedJob = useCallback((jobId: string, message: string) => {
+    if (activeJobIdRef.current !== jobId) return;
+    stopJobEvents();
+    activeJobIdRef.current = null;
+    clearPersistedJob();
+    setIsGenerating(false);
+    setError(message);
+  }, []);
+
+  const resolveCompletedJob = useCallback(async (jobId: string) => {
+    if (activeJobIdRef.current !== jobId) return;
+    try {
+      const result = await api.getTripJobResult(jobId);
+      if (activeJobIdRef.current !== jobId) return;
+      stopJobEvents();
+      activeJobIdRef.current = null;
+      clearPersistedJob();
+      setItinerary(result);
+      setError(null);
+      setIsGenerating(false);
+    } catch (err) {
+      if (activeJobIdRef.current !== jobId) return;
+      finishFailedJob(jobId, err instanceof ApiError ? err.message : "The saved itinerary could not be loaded.");
+    }
+  }, [finishFailedJob]);
+
+  const applyJobSnapshot = useCallback((job: TripJob) => {
+    setGenerationStatus(statusFromJob(job));
+    if (job.status === "completed") {
+      void resolveCompletedJob(job.id);
+      return;
+    }
+    if (job.status === "failed") {
+      finishFailedJob(job.id, job.error || job.message || "The planner could not complete this request.");
+      return;
+    }
+    if (job.status === "cancelled") {
+      finishFailedJob(job.id, "Generation cancelled. Your completed form is still available to edit or retry.");
+      return;
+    }
+
+    activeJobIdRef.current = job.id;
+    stopJobEvents();
+    stopJobEventsRef.current = api.subscribeTripJobEvents(
+      job.id,
+      (event) => {
+        if (activeJobIdRef.current !== event.job_id) return;
+        const stored = readPersistedJob();
+        if (stored && stored.jobId === event.job_id) {
+          writePersistedJob({ ...stored, lastEventId: event.id });
+        }
+        setGenerationStatus(event);
+        if (event.status === "completed") {
+          void resolveCompletedJob(event.job_id);
+        } else if (event.status === "failed") {
+          finishFailedJob(event.job_id, event.error || event.message);
+        } else if (event.status === "cancelled") {
+          finishFailedJob(event.job_id, "Generation cancelled. Your completed form is still available to edit or retry.");
+        }
+      },
+      readPersistedJob()?.lastEventId || 0,
+    );
+  }, [finishFailedJob, resolveCompletedJob]);
+
+  const resumePersistedJob = useCallback(async (persisted: PersistedTripJob) => {
+    setLastRequest(persisted.request);
+    setIsGenerating(true);
+    setError(null);
+    setGenerationStatus({ step: "accepted", message: "Resuming your trip plan…", progress: 4, status: "accepted" });
+
+    try {
+      const job = persisted.jobId
+        ? await api.getTripJob(persisted.jobId)
+        : await api.createTripJob(persisted.request, persisted.idempotencyKey);
+      activeJobIdRef.current = job.id;
+      writePersistedJob({ ...persisted, jobId: job.id });
+      applyJobSnapshot(job);
+    } catch (err) {
+      activeJobIdRef.current = null;
+      clearPersistedJob();
+      setIsGenerating(false);
+      setError(err instanceof ApiError ? err.message : "The saved trip job could not be resumed.");
+    }
+  }, [applyJobSnapshot]);
 
   // Render's free instances can sleep after inactivity. Start the inexpensive
   // health request on arrival, while the visitor is completing the form.
@@ -53,25 +196,37 @@ export default function Home() {
     };
   }, []);
 
-  const handleSubmit = async (data: TripRequest) => {
-    abortRef.current?.abort();
-    stopProgressRef.current?.();
+  // A refresh or route navigation must reconnect to the accepted job instead
+  // of starting a second generation request.
+  useEffect(() => {
+    if (resumeStartedRef.current) return;
+    resumeStartedRef.current = true;
+    const persisted = readPersistedJob();
+    if (persisted) window.setTimeout(() => void resumePersistedJob(persisted), 0);
+  }, [resumePersistedJob]);
+
+  const handleSubmit = async (data: TripRequest, existingIdempotencyKey?: string) => {
+    requestAbortRef.current?.abort();
+    stopJobEvents();
+    activeJobIdRef.current = null;
     const controller = new AbortController();
-    const progressToken = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-    abortRef.current = controller;
-    stopProgressRef.current = api.subscribeTripProgress(progressToken, setGenerationStatus);
+    const idempotencyKey = existingIdempotencyKey || randomId();
+    requestAbortRef.current = controller;
+    writePersistedJob({ jobId: null, idempotencyKey, lastEventId: 0, request: data });
     setIsGenerating(true);
     setError(null);
     setItinerary(null);
     setLastRequest(data);
-    setGenerationStatus({ step: "starting", message: "Sending your trip request…", progress: 5 });
+    setGenerationStatus({ step: "accepted", message: "Sending your trip request…", progress: 2, status: "accepted" });
 
     try {
-      const result = await api.generateTrip(data, { signal: controller.signal, progressToken });
-      if (abortRef.current !== controller) return;
-      setItinerary(result);
+      const job = await api.createTripJob(data, idempotencyKey, controller.signal);
+      if (requestAbortRef.current !== controller) return;
+      activeJobIdRef.current = job.id;
+      writePersistedJob({ jobId: job.id, idempotencyKey, lastEventId: 0, request: data });
+      applyJobSnapshot(job);
     } catch (err) {
-      if (abortRef.current !== controller) return;
+      if (requestAbortRef.current !== controller) return;
       if (controller.signal.aborted) {
         setError("Generation cancelled. Your completed form is still available to edit or retry.");
       } else if (err instanceof ApiError) {
@@ -80,30 +235,52 @@ export default function Home() {
         setError("Something went wrong. Please try again.");
       }
     } finally {
-      if (abortRef.current === controller) {
-        stopProgressRef.current?.();
-        stopProgressRef.current = null;
-        abortRef.current = null;
-        setIsGenerating(false);
+      if (requestAbortRef.current === controller) {
+        requestAbortRef.current = null;
+        if (!activeJobIdRef.current) setIsGenerating(false);
       }
     }
   };
 
   const cancelGeneration = () => {
-    abortRef.current?.abort();
-    stopProgressRef.current?.();
-    stopProgressRef.current = null;
-    abortRef.current = null;
-    setIsGenerating(false);
-    setGenerationStatus(null);
-    setError("Generation cancelled. Your completed form is still available to edit or retry.");
+    requestAbortRef.current?.abort();
+    const jobId = activeJobIdRef.current;
+    if (!jobId) {
+      stopJobEvents();
+      clearPersistedJob();
+      setIsGenerating(false);
+      setGenerationStatus(null);
+      setError("Generation cancelled. Your completed form is still available to edit or retry.");
+      return;
+    }
+    void api.cancelTripJob(jobId).then((job) => {
+      if (activeJobIdRef.current !== jobId) return;
+      setGenerationStatus(statusFromJob(job));
+      stopJobEvents();
+      activeJobIdRef.current = null;
+      clearPersistedJob();
+      setIsGenerating(false);
+      setError("Generation cancelled. Your completed form is still available to edit or retry.");
+    }).catch((err) => {
+      if (activeJobIdRef.current === jobId) {
+        setError(err instanceof ApiError ? err.message : "The planner could not be cancelled yet.");
+      }
+    });
   };
 
   const retryGeneration = () => {
-    if (lastRequest) void handleSubmit(lastRequest);
+    if (lastRequest) {
+      const persisted = readPersistedJob();
+      const samePendingRequest = persisted && !persisted.jobId;
+      void handleSubmit(lastRequest, samePendingRequest ? persisted.idempotencyKey : undefined);
+    }
   };
 
   const handleNewTrip = () => {
+    requestAbortRef.current?.abort();
+    stopJobEvents();
+    activeJobIdRef.current = null;
+    clearPersistedJob();
     setItinerary(null);
     setError(null);
     window.scrollTo({ top: 0, behavior: "smooth" });

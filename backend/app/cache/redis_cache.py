@@ -6,6 +6,7 @@ Decorator-based caching with configurable TTL for each external API.
 import json
 import hashlib
 import logging
+import threading
 import time
 from functools import wraps
 from typing import Any, Optional
@@ -15,6 +16,10 @@ logger = logging.getLogger(__name__)
 # ── In-memory fallback cache ──────────────────────────────────────────
 
 _memory_cache: dict[str, tuple[Any, float]] = {}  # key → (value, expire_timestamp)
+_memory_lists: dict[str, list[str]] = {}
+_memory_list_expiry: dict[str, float] = {}
+_memory_counters: dict[str, tuple[int, float]] = {}
+_memory_lock = threading.RLock()
 
 
 class CacheClient:
@@ -62,6 +67,22 @@ class CacheClient:
             del _memory_cache[key]
         return None
 
+    def set_if_absent(self, key: str, value: str, ttl_seconds: int = 3600) -> bool:
+        """Set a value only when the key does not already exist."""
+
+        if self._redis:
+            try:
+                return bool(self._redis.set(key, value, ex=ttl_seconds, nx=True))
+            except Exception:
+                pass
+
+        with _memory_lock:
+            existing = _memory_cache.get(key)
+            if existing and time.time() < existing[1]:
+                return False
+            _memory_cache[key] = (value, time.time() + ttl_seconds)
+            return True
+
     def set(self, key: str, value: str, ttl_seconds: int = 3600):
         if self._redis:
             try:
@@ -80,7 +101,86 @@ class CacheClient:
                 return
             except Exception:
                 pass
-        _memory_cache.pop(key, None)
+        with _memory_lock:
+            _memory_cache.pop(key, None)
+            _memory_lists.pop(key, None)
+            _memory_list_expiry.pop(key, None)
+            _memory_counters.pop(key, None)
+
+    def increment(self, key: str, ttl_seconds: int = 3600) -> int:
+        """Increment a counter and apply a TTL when it is first created."""
+
+        if self._redis:
+            try:
+                value = int(self._redis.incr(key))
+                if value == 1:
+                    self._redis.expire(key, ttl_seconds)
+                return value
+            except Exception:
+                pass
+
+        with _memory_lock:
+            current = _memory_counters.get(key)
+            now = time.time()
+            if not current or now >= current[1]:
+                value = 1
+            else:
+                value = current[0] + 1
+            _memory_counters[key] = (value, now + ttl_seconds)
+            return value
+
+    def list_push(self, key: str, value: str, ttl_seconds: int = 3600) -> int:
+        """Append to a Redis list or its process-local equivalent."""
+
+        if self._redis:
+            try:
+                pipe = self._redis.pipeline(transaction=True)
+                pipe.rpush(key, value)
+                pipe.expire(key, ttl_seconds)
+                result = pipe.execute()
+                return int(result[0])
+            except Exception:
+                pass
+
+        with _memory_lock:
+            _memory_lists.setdefault(key, []).append(value)
+            _memory_list_expiry[key] = time.time() + ttl_seconds
+            return len(_memory_lists[key])
+
+    def list_range(self, key: str, start: int = 0, end: int = -1) -> list[str]:
+        """Read a list range for replay or pending-job recovery."""
+
+        if self._redis:
+            try:
+                return list(self._redis.lrange(key, start, end))
+            except Exception:
+                pass
+
+        with _memory_lock:
+            expires = _memory_list_expiry.get(key)
+            if expires and time.time() >= expires:
+                _memory_lists.pop(key, None)
+                _memory_list_expiry.pop(key, None)
+                return []
+            values = _memory_lists.get(key, [])
+            if end == -1:
+                return list(values[start:])
+            return list(values[start:end + 1])
+
+    def list_pop_left(self, key: str) -> Optional[str]:
+        """Pop one queue item without blocking the event loop."""
+
+        if self._redis:
+            try:
+                return self._redis.lpop(key)
+            except Exception:
+                pass
+
+        with _memory_lock:
+            values = _memory_lists.get(key, [])
+            if not values:
+                return None
+            return values.pop(0)
 
 
 # ── Singleton ─────────────────────────────────────────────────────────

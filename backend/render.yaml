@@ -24,5 +24,7 @@ services:
         sync: false
       - key: UPSTASH_REDIS_REST_TOKEN
         sync: false
+      - key: TRIP_JOB_SECRET
+        sync: false
       - key: FRONTEND_URL
         sync: false

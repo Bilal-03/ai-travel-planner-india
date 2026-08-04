@@ -11,6 +11,7 @@ import secrets
 import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
+from asyncio import Lock
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -31,7 +32,7 @@ _progress_queues: dict[str, asyncio.Queue[dict]] = {}
 TRIP_CACHE_TTL_SECONDS = 60 * 60
 EDIT_TOKEN_HEADER = "X-Trip-Edit-Token"
 _rate_limit_windows: dict[tuple[str, str], deque[float]] = defaultdict(deque)
-_rate_limit_lock = asyncio.Lock()
+_rate_limit_lock = Lock()
 
 
 class RefineTripRequest(BaseModel):
@@ -49,26 +50,33 @@ def _hash_edit_token(token: str) -> str:
 
 
 async def _rate_limit(request: Request, scope: str, limit: int, window_seconds: int) -> None:
-    """Small in-process guard for expensive AI endpoints.
-
-    Deployments with multiple instances should put this counter in Redis, but a
-    local guard still protects each worker and keeps development deterministic.
-    """
+    """Shared Redis-backed guard for expensive endpoints with local fallback."""
     client = request.client.host if request.client else "unknown"
+    client_hash = hashlib.sha256(client.encode("utf-8")).hexdigest()[:16]
     now = time.monotonic()
-    key = (scope, client)
+    local_key = (scope, client)
     async with _rate_limit_lock:
-        attempts = _rate_limit_windows[key]
-        while attempts and attempts[0] <= now - window_seconds:
-            attempts.popleft()
-        if len(attempts) >= limit:
-            retry_after = max(1, int(window_seconds - (now - attempts[0])))
+        local_attempts = _rate_limit_windows[local_key]
+        while local_attempts and local_attempts[0] <= now - window_seconds:
+            local_attempts.popleft()
+        if len(local_attempts) >= limit:
+            retry_after = max(1, int(window_seconds - (now - local_attempts[0])))
             raise HTTPException(
                 status_code=429,
                 detail="Too many requests. Please wait before trying again.",
                 headers={"Retry-After": str(retry_after)},
             )
-        attempts.append(now)
+        attempts = get_cache().increment(
+            f"travel:rate-limit:{scope}:{client_hash}",
+            ttl_seconds=window_seconds,
+        )
+        if attempts > limit:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests. Please wait before trying again.",
+                headers={"Retry-After": str(window_seconds)},
+            )
+        local_attempts.append(now)
 
 
 async def generation_rate_limit(request: Request) -> None:

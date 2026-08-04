@@ -18,8 +18,9 @@ lowercase `Settings` fields. Never commit actual `.env` or `.env.local` files.
 | `OPENWEATHERMAP_API_KEY` | No | `weather.py` | Enables forecast data; otherwise forecast is unavailable. |
 | `UNSPLASH_ACCESS_KEY` | No | `photos.py` | Enables destination photos; otherwise the photo list is empty. |
 | `DATABASE_URL` | No locally; operationally important in production | `trip_storage.py` | Enables Neon-compatible PostgreSQL; absent or failing storage uses an in-memory dictionary. |
-| `UPSTASH_REDIS_REST_URL` | No | `redis_cache.py` | Enables the Redis cache when paired with its token; otherwise memory cache is used. |
-| `UPSTASH_REDIS_REST_TOKEN` | No | `redis_cache.py` | Credential for the Upstash Redis client. |
+| `UPSTASH_REDIS_REST_URL` | Strongly recommended for production | `redis_cache.py`, `services/trip_jobs.py` | Enables shared cache, job queue, event replay, idempotency, cancellation, and distributed coordination when paired with its token; otherwise process-local fallback is used. |
+| `UPSTASH_REDIS_REST_TOKEN` | Strongly recommended for production | `redis_cache.py`, `services/trip_jobs.py` | Credential for the Upstash Redis client. |
+| `TRIP_JOB_SECRET` | Strongly recommended for production | `config.py`, `services/trip_jobs.py` | Secret used to derive the edit token returned for completed asynchronous jobs. A development fallback exists, but production deployments must set this explicitly. |
 | `FRONTEND_URL` | Yes in deployment | `main.py`, `api/trips.py` | CORS origin and base used when constructing a server-side share URL. |
 | `BACKEND_PORT` | No | `config.py` | Default local port setting; Render uses its injected `PORT` in the start command. |
 | `NOMINATIM_RPS` | No | `config.py` | Configured setting exists, but the current geocoder uses its own one-request-per-second limiter. |
@@ -51,7 +52,7 @@ build/runtime according to the Vercel environment configuration.
 | `OPENWEATHERMAP_API_KEY` | No forecast and an itinerary note | Weather-sensitive planning is less informed. |
 | `UNSPLASH_ACCESS_KEY` | No destination photos | Cosmetic degradation only. |
 | `DATABASE_URL` | Process-local trips | Trips disappear on restart and are not shared across instances. |
-| Redis URL/token | Process-local cache, progress, and rate limits | No cross-instance coordination; duplicate work and inconsistent limits are possible. |
+| Redis URL/token | Process-local cache, jobs, progress, and rate limits | No cross-instance coordination; jobs and replay history are not restart-durable and duplicate work is possible. |
 
 ## Variables not yet implemented
 
@@ -60,4 +61,5 @@ The Phase 5 provider-gateway plan calls for `FLIGHT_PROVIDER`,
 `BUS_PROVIDER`, and `WEATHER_PROVIDER`. They are intentionally not added in
 Phase 0 because no provider abstraction is being introduced.
 
-No environment variables are added by the Phase 0 branch.
+Phase 2 adds `TRIP_JOB_SECRET` and makes Redis strongly recommended for durable
+multi-instance job processing. No new frontend variables are required.

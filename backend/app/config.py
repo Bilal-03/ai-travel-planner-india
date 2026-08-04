@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     upstash_redis_url: Optional[str] = Field(default=None, validation_alias="UPSTASH_REDIS_REST_URL")
     upstash_redis_token: Optional[str] = Field(default=None, validation_alias="UPSTASH_REDIS_REST_TOKEN")
 
+    # --- Durable trip jobs ---
+    trip_job_secret: Optional[str] = Field(default=None, validation_alias="TRIP_JOB_SECRET")
+
     # --- App ---
     frontend_url: str = "http://localhost:3000"
     backend_port: int = 8000

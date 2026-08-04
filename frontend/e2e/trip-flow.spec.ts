@@ -78,6 +78,20 @@ function itinerary() {
 
 test("plans a trip and opens a read-only shared itinerary", async ({ page }) => {
   const trip = itinerary();
+  const job = {
+    id: "e2e-job-123",
+    status: "accepted",
+    step: "accepted",
+    message: "Your trip request was accepted.",
+    progress: 0,
+    result_trip_id: null,
+    error: null,
+    attempts: 0,
+    cancel_requested: false,
+    created_at: "2026-08-03T12:00:00Z",
+    updated_at: "2026-08-03T12:00:00Z",
+    completed_at: null,
+  };
   await page.route("**/health", (route) => route.fulfill({ json: { status: "healthy", services: {} } }));
   await page.route("**/api/search/cities?*", (route) => {
     const city = new URL(route.request().url()).searchParams.get("q")?.toLowerCase() || "";
@@ -86,8 +100,14 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
       : { name: "Delhi", state: "Delhi", display_name: "Delhi, Delhi", coordinates: { lat: 28.6139, lng: 77.209 } };
     return route.fulfill({ json: [result] });
   });
-  await page.route("**/api/trips/progress/**", (route) => route.fulfill({ status: 204 }));
-  await page.route("**/api/trips/generate", (route) => route.fulfill({ json: trip, headers: { "X-Trip-Edit-Token": "test-edit-token" } }));
+  await page.route("**/api/trip-jobs", (route) => route.fulfill({ json: job, status: 202 }));
+  await page.route("**/api/trip-jobs/e2e-job-123", (route) => route.fulfill({ json: { ...job, status: "completed", step: "completed", message: "Your itinerary is ready.", progress: 100, result_trip_id: trip.id } }));
+  await page.route("**/api/trip-jobs/e2e-job-123/events**", (route) => route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    body: `id: 1\nevent: progress\ndata: ${JSON.stringify({ id: 1, job_id: job.id, status: "completed", step: "completed", message: "Your itinerary is ready.", progress: 100, timestamp: "2026-08-03T12:00:01Z", error: null })}\n\n`,
+  }));
+  await page.route("**/api/trip-jobs/e2e-job-123/result", (route) => route.fulfill({ json: trip, headers: { "X-Trip-Edit-Token": "test-edit-token" } }));
   await page.route("**/api/trips/e2e-trip-123", (route) => route.fulfill({ json: trip }));
 
   await page.goto("/");
@@ -104,7 +124,7 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
   // Framer Motion keeps the button in a short hover transform; force avoids
   // treating that visual transition as an interaction failure.
   await page.locator("#share-trip-btn").click({ force: true });
-  await expect(page.locator('input[readonly][value$="/trip/e2e-trip-123"]')).toBeVisible();
+  await expect(page.locator('input[readonly]')).toHaveValue(/\/trip\/e2e-trip-123$/);
 
   await page.goto("/trip/e2e-trip-123");
   await expect(page.getByText("Shared Trip")).toBeVisible();

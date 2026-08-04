@@ -1,11 +1,11 @@
 # YatraAI current architecture
 
 Audit date: 2026-08-04
-Repository branch: `codex/phase-1-data-trust`
+Repository branch: `codex/phase-2-durable-generation`
 
-This document records the implementation that exists at the Phase 0 audit. It
-describes behavior and ownership as implemented; it is not a proposal for the
-next architecture.
+This document records the implementation that exists at the Phase 2 boundary.
+It describes behavior and ownership as implemented; it is not a proposal for
+the next architecture.
 
 ## System shape
 
@@ -18,17 +18,19 @@ flowchart LR
     Gemini[Gemini]
     Providers[External data providers]
 
-    Browser -->|JSON HTTP + EventSource| API
-    API --> Cache
-    API --> Store
+    Browser -->|JSON HTTP + replayable EventSource| API
+    API -->|job queue, snapshots, events, idempotency, cancel flags| Cache
+    API -->|final itinerary| Store
     API --> Gemini
     API --> Providers
 ```
 
 The repository is a two-part monorepo. The frontend and backend deploy
-independently, but itinerary generation is one synchronous request handled by
-the FastAPI process. There is no separate worker, job table, queue, migration
-system, or provider gateway in the current implementation.
+independently. The primary generation path now submits a short asynchronous
+job request; a FastAPI-hosted worker consumes the queued job and writes
+replayable progress events. Redis provides the shared transport when configured
+and the existing process-local cache remains the development fallback. Final
+itineraries are saved through the PostgreSQL-compatible trip store.
 
 ## Frontend routes and responsibilities
 
@@ -40,9 +42,12 @@ system, or provider gateway in the current implementation.
 
 `frontend/src/lib/api.ts` is the single typed HTTP client. It stores the
 creator's edit token in browser session storage, adds it to write requests,
-wraps fetch timeouts and limited retries, and exposes the progress EventSource
-client. The frontend types mirror the backend Pydantic response, but responses
-are not runtime-validated before rendering.
+wraps fetch timeouts and limited retries, and exposes both the legacy and
+replayable job EventSource clients. The home page persists the active job ID,
+idempotency key, request, and last event ID in local storage so refreshes and
+navigation can reconnect to the same generation. The frontend types mirror the
+backend Pydantic response, but responses are not runtime-validated before
+rendering.
 
 Leaflet is dynamically imported in `TripMap.tsx` and is not part of the
 initial server render. The rest of the itinerary UI is composed from focused
@@ -57,8 +62,13 @@ The route modules are mounted by `backend/main.py`:
 | --- | --- | --- |
 | `GET` | `/` | Service identity and docs link. |
 | `GET` | `/health` | Configuration-state health response; it does not verify every upstream dependency. |
-| `POST` | `/api/trips/generate` | Performs the full itinerary generation inside the request, saves a trip, and returns an `Itinerary`. Accepts `X-Progress-Token`. |
+| `POST` | `/api/trips/generate` | Legacy compatibility route that performs full generation inside the request, saves a trip, and returns an `Itinerary`. Accepts `X-Progress-Token`; the frontend uses `/api/trip-jobs`. |
 | `GET` | `/api/trips/progress/{token}` | Streams process-local progress messages as Server-Sent Events. |
+| `POST` | `/api/trip-jobs` | Accepts a generation request, applies the generation rate limit, reserves `Idempotency-Key`, and returns a job snapshot with HTTP 202. |
+| `GET` | `/api/trip-jobs/{job_id}` | Returns the current job state, progress, retry count, and saved-result ID. |
+| `GET` | `/api/trip-jobs/{job_id}/events` | Replays events after `Last-Event-ID` or `last_event_id`, then streams until the job is terminal. |
+| `POST` | `/api/trip-jobs/{job_id}/cancel` | Sets a durable cancellation flag and publishes a cancellation progress event. |
+| `GET` | `/api/trip-jobs/{job_id}/result` | Returns the saved itinerary after completion and exposes its creator edit token. |
 | `GET` | `/api/trips/{trip_id}` | Loads a saved itinerary. |
 | `POST` | `/api/trips/{trip_id}/share` | Returns a frontend share URL for an existing trip. |
 | `POST` | `/api/trips/{trip_id}/transport` | Selects one existing option, recalculates the budget, and updates the trip. Requires the creator edit token. |
@@ -77,8 +87,18 @@ contract. The model layer is Pydantic-only; there is no SQLAlchemy model layer.
 
 ## Generation and domain services
 
-`backend/app/services/gemini_planner.py` is the orchestration boundary. Its
-current sequence is:
+`backend/app/services/gemini_planner.py` remains the domain orchestration
+boundary. `backend/app/services/trip_jobs.py` wraps it in a worker lifecycle:
+
+1. Reserve an idempotency key and persist the accepted job snapshot.
+2. Queue the job and claim it with a short-lived worker lease.
+3. Forward planner callbacks into named job states and monotonic replayable
+   events.
+4. Retry transient failures once, classify validation/request errors separately,
+   and stop at a user-safe terminal state.
+5. Save the completed itinerary and mark the job terminal.
+
+The planner's current sequence is:
 
 1. Resolve the origin and destination through `geocode_to_city_info`.
 2. Compute straight-line distance with `haversine_distance`.
@@ -115,9 +135,11 @@ The supporting service boundaries are:
 configured. It stores the complete itinerary JSON in a JSONB column with a
 stable short ID and a SHA-256 hash of the creator edit token. Phase 1 also
 includes the external migration `backend/migrations/001_phase1_travel_facts.sql`
-for durable fact-level provenance/freshness storage; it is intentionally not
-executed by the application at runtime. If setup or a write fails, it stores
-the trip in a process-local dictionary.
+for durable fact-level provenance/freshness storage, and Phase 2 includes
+`backend/migrations/002_phase2_trip_jobs.sql` for the operational job snapshot
+schema. Those migrations are intentionally not executed by the application at
+runtime. The active Phase 2 queue/snapshot/event transport is Redis-first; if
+setup or a write fails, trip storage falls back to a process-local dictionary.
 
 `redis_cache.py` uses a synchronous Redis client when both Upstash settings are
 available. Cache misses, Redis connection failures, and Redis operation
@@ -125,8 +147,12 @@ failures fall back to a process-local dictionary with TTL timestamps. The
 generation cache stores a serialized itinerary for one hour; provider caches
 use service-specific TTLs.
 
-The progress queues and rate-limit windows in `api/trips.py` are also process
-local. They are not durable and are not shared between backend instances.
+Trip-job queue, snapshots, event history, idempotency reservations,
+cancellation flags, and the generation rate limit use the shared Redis client
+when configured. Without Redis they fall back to process-local state and are
+not durable or shared between backend instances. The old synchronous generation
+and process-local progress endpoints remain for backwards-compatible clients;
+the frontend uses the new job endpoints.
 
 ## Deployment and configuration
 
@@ -152,6 +178,10 @@ mocked Playwright journey covering generation and a read-only shared link. The
 frontend has lint and production-build scripts but no unit-test script or
 runtime API schema validation.
 
-The Phase 0 baseline corpus added on this branch is documented in
+Phase 2 adds direct service tests for idempotency, event replay, cancellation,
+retry, stable edit tokens, and an HTTP-level job lifecycle test covering submit,
+poll, SSE replay, result retrieval, and duplicate submission behavior.
+
+The Phase 0 baseline corpus added on the Phase 0 branch is documented in
 `backend/tests/fixtures/` and exercised by
 `backend/tests/test_baseline_fixtures.py`.

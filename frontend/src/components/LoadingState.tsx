@@ -12,6 +12,14 @@ interface LoadingStateProps {
 
 const STEP_ICONS: Record<string, string> = {
   starting: "🚀",
+  accepted: "📨",
+  retrieving_data: "📦",
+  resolving_locations: "🗺️",
+  fetching_transport: "🚂",
+  fetching_places: "📍",
+  fetching_weather: "🌤️",
+  optimising: "🧭",
+  generating_narrative: "🤖",
   geocoding: "🗺️",
   trip_context: "📍",
   planning: "🤖",

@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.services.trip_jobs import ensure_worker_started, stop_worker
 
 # Configure logging
 logging.basicConfig(
@@ -30,7 +31,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"   RailRadar API: {'✅ configured' if settings.railradar_api_key else '❌ not set'}")
     logger.info(f"   Neon PostgreSQL: {'✅ configured' if settings.database_url else '❌ not set (using in-memory)'}")
     logger.info(f"   Redis: {'✅ configured' if settings.upstash_redis_url else '❌ not set (using in-memory)'}")
+    await ensure_worker_started()
     yield
+    await stop_worker()
     logger.info("👋 AI Travel Planner shutting down")
 
 
@@ -59,10 +62,12 @@ app.add_middleware(
 from app.api.trips import router as trips_router
 from app.api.search import router as search_router
 from app.api.transport import router as transport_router
+from app.api.trip_jobs import router as trip_jobs_router
 
 app.include_router(trips_router)
 app.include_router(search_router)
 app.include_router(transport_router)
+app.include_router(trip_jobs_router)
 
 
 @app.get("/")

@@ -1027,6 +1027,7 @@ async def generate_itinerary(
     await report("trip_context", "Gathering transport, places, weather, and stay context…", 30)
     logger.info("🚂✈️📍🌤️🖼️ Fetching trip context in parallel...")
 
+    await report("fetching_transport", "Checking flights, trains, and road options…", 32)
     transport_task = search_transport(
         origin=request.origin,
         destination=request.destination,
@@ -1034,12 +1035,14 @@ async def generate_itinerary(
         budget=request.budget,
         distance_km=distance_km,
     )
+    await report("fetching_places", "Finding places matching your interests…", 34)
     poi_task = discover_pois(
         lat=destination.coordinates.lat,
         lng=destination.coordinates.lng,
         vibes=[v.value for v in request.vibes],
         city=destination.name,
     )
+    await report("fetching_weather", "Checking the forecast for your travel dates…", 36)
     weather_task = get_forecast(
         lat=destination.coordinates.lat,
         lng=destination.coordinates.lng,

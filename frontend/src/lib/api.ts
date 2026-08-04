@@ -271,6 +271,46 @@ export interface GenerationStatus {
   step: string;
   message: string;
   progress: number;
+  status?: TripJobState;
+  id?: number;
+  job_id?: string;
+  error?: string | null;
+}
+
+export type TripJobState =
+  | "accepted"
+  | "retrieving_data"
+  | "resolving_locations"
+  | "fetching_transport"
+  | "fetching_places"
+  | "fetching_weather"
+  | "optimising"
+  | "generating_narrative"
+  | "validating"
+  | "saving"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface TripJob {
+  id: string;
+  status: TripJobState;
+  step: string;
+  message: string;
+  progress: number;
+  result_trip_id: string | null;
+  error: string | null;
+  attempts: number;
+  cancel_requested: boolean;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface TripJobEvent extends GenerationStatus {
+  id: number;
+  job_id: string;
+  status: TripJobState;
 }
 
 export interface GenerationRequestOptions {
@@ -369,6 +409,57 @@ export const api = {
     });
     saveEditToken(itinerary.id, editToken);
     return itinerary;
+  },
+
+  /** Accept a durable asynchronous trip-generation job. */
+  createTripJob: (data: TripRequest, idempotencyKey: string, signal?: AbortSignal) =>
+    request<TripJob>("/api/trip-jobs", {
+      method: "POST",
+      body: JSON.stringify(data),
+      signal,
+      timeoutMs: 30_000,
+      retries: 1,
+      headers: { "Idempotency-Key": idempotencyKey },
+    }),
+
+  getTripJob: (jobId: string) => request<TripJob>(`/api/trip-jobs/${encodeURIComponent(jobId)}`),
+
+  cancelTripJob: (jobId: string) =>
+    request<TripJob>(`/api/trip-jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: "POST",
+    }),
+
+  getTripJobResult: async (jobId: string) => {
+    let editToken: string | null = null;
+    const itinerary = await request<Itinerary>(
+      `/api/trip-jobs/${encodeURIComponent(jobId)}/result`,
+      {
+        timeoutMs: 30_000,
+        retries: 1,
+        onResponse: (response) => {
+          editToken = response.headers.get(EDIT_TOKEN_HEADER);
+        },
+      },
+    );
+    saveEditToken(itinerary.id, editToken);
+    return itinerary;
+  },
+
+  subscribeTripJobEvents: (
+    jobId: string,
+    onProgress: (event: TripJobEvent) => void,
+    lastEventId?: number,
+  ) => {
+    const query = lastEventId ? `?last_event_id=${encodeURIComponent(String(lastEventId))}` : "";
+    const stream = new EventSource(`${API_BASE}/api/trip-jobs/${encodeURIComponent(jobId)}/events${query}`);
+    stream.addEventListener("progress", (event) => {
+      try {
+        onProgress(JSON.parse((event as MessageEvent).data) as TripJobEvent);
+      } catch {
+        // Ignore malformed intermediary events; the status endpoint remains authoritative.
+      }
+    });
+    return () => stream.close();
   },
 
   subscribeTripProgress: (token: string, onProgress: (status: GenerationStatus) => void) => {
