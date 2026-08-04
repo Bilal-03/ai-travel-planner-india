@@ -1,14 +1,15 @@
 # YatraAI implementation roadmap
 
 This roadmap mirrors the delivery order in the master implementation plan.
-The Phase 0 audit is the only phase executed on this branch.
+Phases 0 and 1 are complete on their respective branches; Phase 2 remains
+intentionally unstarted.
 
 ## Phase status
 
 | Phase | Focus | Status at Phase 0 close |
 | --- | --- | --- |
 | 0 | Audit, documentation, safety baseline, fixtures, and tests | Complete on `codex/phase-0-audit-baseline` |
-| 1 | Common provenance, freshness, provider-neutral response models | Not started |
+| 1 | Common provenance, freshness, provider-neutral response models | Complete on `codex/phase-1-data-trust` |
 | 2 | Durable trip jobs, Redis events, resumable progress, idempotency | Not started |
 | 3 | Deterministic constraint engine and scoped itinerary refinement | Not started |
 | 4 | Stardrift-inspired but simple trip workspace UX | Not started |
@@ -34,11 +35,11 @@ The Phase 0 audit is the only phase executed on this branch.
 
 ## Phase 1 gate
 
-Do not start Phase 1 until the Phase 0 completion report has been reviewed.
-Phase 1 should first define and test the provenance contract, then introduce
-provider-neutral transport/place/weather/route models and visible frontend
-status components. It must preserve the current fallback providers and
-generation flow while making estimated/static/unavailable states explicit.
+Phase 1 is complete after defining and testing the provenance contract,
+introducing provider-neutral metadata on transport/place/weather/route/meal/
+budget models, adding visible frontend status components, and preserving the
+current fallback providers and generation flow. See
+`docs/phase-1-completion-report.md` for the exit evidence and limitations.
 
 ## Later sequencing constraints
 

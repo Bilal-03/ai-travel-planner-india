@@ -2,6 +2,9 @@
 
 import { motion } from "framer-motion";
 import { BudgetBreakdown as BudgetBreakdownType, formatINR } from "@/lib/api";
+import DataStatusBadge from "./DataStatusBadge";
+import EstimateDisclaimer from "./EstimateDisclaimer";
+import ProviderAttribution from "./ProviderAttribution";
 
 interface BudgetBreakdownProps {
   budget: BudgetBreakdownType;
@@ -40,6 +43,11 @@ export default function BudgetBreakdownComponent({
           </div>
         </div>
       </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <DataStatusBadge provenance={budget.provenance} compact />
+        <ProviderAttribution provenance={budget.provenance} />
+      </div>
+      <EstimateDisclaimer provenance={budget.provenance} />
 
       {/* Progress Ring (simplified as bar) */}
       <div className="relative w-full h-3 bg-glass-bg rounded-full overflow-hidden">

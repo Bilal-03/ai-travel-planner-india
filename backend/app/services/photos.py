@@ -1,12 +1,14 @@
 """Optional Unsplash destination imagery, cached to keep the UI fast."""
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
 
 from app.cache.redis_cache import cached
 from app.config import settings
+from app.models.trip import DataProvenance, DataStatus
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ async def get_destination_photos(destination: str, limit: int = 3) -> list[dict]
         logger.warning("Unsplash search failed for %s: %s", destination, error)
         return []
 
+    retrieved_at = datetime.now(timezone.utc)
     photos = []
     for photo in results:
         urls = photo.get("urls", {})
@@ -42,5 +45,14 @@ async def get_destination_photos(destination: str, limit: int = 3) -> list[dict]
             "alt": photo.get("alt_description") or f"Travel in {destination}",
             "photographer_name": user.get("name"),
             "photographer_url": user.get("links", {}).get("html"),
+            "provenance": DataProvenance(
+                provider="Unsplash",
+                status=DataStatus.RECENTLY_VERIFIED,
+                retrieved_at=retrieved_at,
+                expires_at=retrieved_at + timedelta(days=7),
+                confidence=0.8,
+                source_reference="https://unsplash.com/",
+                disclaimer="Illustrative destination photography; confirm the exact venue and current conditions independently.",
+            ).model_dump(mode="json"),
         })
     return photos

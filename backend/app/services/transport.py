@@ -6,14 +6,14 @@ and graceful fallback when API quotas are exhausted.
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
 
 from app.cache.redis_cache import cached
 from app.config import settings
-from app.models.trip import TransportMode, TransportOption
+from app.models.trip import DataProvenance, DataStatus, TransportMode, TransportOption
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,47 @@ def get_station_code(city: str) -> Optional[str]:
     return CITY_STATION.get(city.lower().strip())
 
 
+def _transport_provenance(
+    provider: str,
+    status: DataStatus,
+    disclaimer: str,
+    *,
+    source_reference: Optional[str] = None,
+    ttl_seconds: Optional[int] = None,
+    field_statuses: Optional[dict[str, DataStatus]] = None,
+    retrieved_at: Optional[datetime] = None,
+    confidence: Optional[float] = None,
+) -> tuple[DataProvenance, dict[str, DataProvenance]]:
+    """Build one transport fact envelope plus field-level envelopes."""
+
+    checked_at = retrieved_at or datetime.now(timezone.utc)
+    expires_at = checked_at + timedelta(seconds=ttl_seconds) if ttl_seconds else None
+    primary = DataProvenance(
+        provider=provider,
+        status=status,
+        retrieved_at=checked_at,
+        expires_at=expires_at,
+        confidence=confidence,
+        source_reference=source_reference,
+        disclaimer=disclaimer,
+    )
+    fields: dict[str, DataProvenance] = {}
+    for field_name, field_status in (field_statuses or {}).items():
+        field_provider = provider
+        if field_status == DataStatus.ESTIMATED:
+            field_provider = "YatraAI estimate"
+        fields[field_name] = DataProvenance(
+            provider=field_provider,
+            status=field_status,
+            retrieved_at=checked_at,
+            expires_at=expires_at,
+            confidence=confidence if field_status != DataStatus.UNAVAILABLE else None,
+            source_reference=source_reference,
+            disclaimer=disclaimer,
+        )
+    return primary, fields
+
+
 # ── Static fallback routes ────────────────────────────────────────────
 # Pre-seeded common intercity routes with approximate data
 
@@ -105,6 +146,23 @@ def _estimated_route_distance(origin: str, destination: str) -> float:
 
 def _estimated_train_option(origin: str, destination: str, distance_km: float | None) -> TransportOption:
     distance = distance_km or _estimated_route_distance(origin, destination)
+    checked_at = datetime.now(timezone.utc)
+    provenance, field_data_provenance = _transport_provenance(
+        "YatraAI transport estimator",
+        DataStatus.ESTIMATED,
+        "Train fare and duration are planning estimates; no schedule, operating date, or availability was verified. Verify before booking.",
+        source_reference="app://transport/estimated-train",
+        ttl_seconds=86400,
+        confidence=0.45,
+        field_statuses={
+            "train": DataStatus.UNAVAILABLE,
+            "schedule": DataStatus.UNAVAILABLE,
+            "fare": DataStatus.ESTIMATED,
+            "availability": DataStatus.UNAVAILABLE,
+            "travel_date": DataStatus.UNAVAILABLE,
+        },
+        retrieved_at=checked_at,
+    )
     return TransportOption(
         mode=TransportMode.TRAIN,
         provider="Indian Railways fare estimate",
@@ -122,8 +180,10 @@ def _estimated_train_option(origin: str, destination: str, distance_km: float | 
             "availability": "Not available",
             "travel_date": "Not date-verified",
         },
+        field_data_provenance=field_data_provenance,
+        provenance=provenance,
         availability_status="Not available",
-        last_checked_at=datetime.now(timezone.utc),
+        last_checked_at=checked_at,
     )
 
 
@@ -140,6 +200,23 @@ def _get_fallback_trains(
             (train["from"] == origin_lower and train["to"] == dest_lower)
             or (train["from"] == dest_lower and train["to"] == origin_lower)
         ):
+            checked_at = datetime.now(timezone.utc)
+            provenance, field_data_provenance = _transport_provenance(
+                "YatraAI static train catalogue",
+                DataStatus.STATIC_REFERENCE,
+                "Static train schedule reference; fare is estimated and operation, date, availability, and current timings were not verified. Verify before booking.",
+                source_reference="app://transport/fallback-trains",
+                ttl_seconds=86400 * 30,
+                confidence=0.55,
+                field_statuses={
+                    "train": DataStatus.STATIC_REFERENCE,
+                    "schedule": DataStatus.STATIC_REFERENCE,
+                    "fare": DataStatus.ESTIMATED,
+                    "availability": DataStatus.UNAVAILABLE,
+                    "travel_date": DataStatus.UNAVAILABLE,
+                },
+                retrieved_at=checked_at,
+            )
             results.append(TransportOption(
                 mode=TransportMode.TRAIN,
                 provider=train["name"],
@@ -156,8 +233,10 @@ def _get_fallback_trains(
                     "availability": "Not available",
                     "travel_date": "Not date-verified",
                 },
+                field_data_provenance=field_data_provenance,
+                provenance=provenance,
                 availability_status="Not available",
-                last_checked_at=datetime.now(timezone.utc),
+                last_checked_at=checked_at,
             ))
 
     return results or [_estimated_train_option(origin, destination, distance_km)]
@@ -241,6 +320,21 @@ def _get_fallback_flights(
     results = []
     for f in FALLBACK_FLIGHTS:
         if f["from"] == origin_lower and f["to"] == dest_lower:
+            checked_at = datetime.now(timezone.utc)
+            provenance, field_data_provenance = _transport_provenance(
+                "YatraAI static flight catalogue",
+                DataStatus.ESTIMATED,
+                "Flight fare is planning guidance without a verified schedule or availability. Verify the fare, timing, and seat availability before booking.",
+                source_reference="app://transport/fallback-flights",
+                ttl_seconds=86400,
+                confidence=0.4,
+                field_statuses={
+                    "fare": DataStatus.ESTIMATED,
+                    "schedule": DataStatus.UNAVAILABLE,
+                    "availability": DataStatus.UNAVAILABLE,
+                },
+                retrieved_at=checked_at,
+            )
             results.append({
                 "mode": "flight",
                 "provider": f["provider"],
@@ -258,13 +352,33 @@ def _get_fallback_flights(
                     "schedule": "Not available",
                     "availability": "Not available",
                 },
+                "field_data_provenance": {
+                    key: value.model_dump(mode="json")
+                    for key, value in field_data_provenance.items()
+                },
+                "provenance": provenance.model_dump(mode="json"),
                 "availability_status": "Not available",
-                "last_checked_at": datetime.now(timezone.utc).isoformat(),
+                "last_checked_at": checked_at.isoformat(),
             })
     if results:
         return results
 
     distance = distance_km or _estimated_route_distance(origin, destination)
+    checked_at = datetime.now(timezone.utc)
+    provenance, field_data_provenance = _transport_provenance(
+        "YatraAI transport estimator",
+        DataStatus.ESTIMATED,
+        "Flight fare and duration are planning estimates without a verified schedule or availability. Verify before booking.",
+        source_reference="app://transport/estimated-flight",
+        ttl_seconds=86400,
+        confidence=0.4,
+        field_statuses={
+            "fare": DataStatus.ESTIMATED,
+            "schedule": DataStatus.UNAVAILABLE,
+            "availability": DataStatus.UNAVAILABLE,
+        },
+        retrieved_at=checked_at,
+    )
     return [{
         "mode": "flight",
         "provider": "Domestic flight fare estimate",
@@ -281,8 +395,13 @@ def _get_fallback_flights(
             "schedule": "Not available",
             "availability": "Not available",
         },
+        "field_data_provenance": {
+            key: value.model_dump(mode="json")
+            for key, value in field_data_provenance.items()
+        },
+        "provenance": provenance.model_dump(mode="json"),
         "availability_status": "Not available",
-        "last_checked_at": datetime.now(timezone.utc).isoformat(),
+        "last_checked_at": checked_at.isoformat(),
     }]
 
 # ── Skyscanner Flight Search ──────────────────────────────────────────
@@ -326,6 +445,7 @@ async def search_flights(
             resp.raise_for_status()
             data = resp.json()
             
+            checked_at = datetime.now(timezone.utc)
             flights = []
             itineraries = data.get("data", {}).get("itineraries", [])
             for it in itineraries:
@@ -354,6 +474,21 @@ async def search_flights(
                     
                     if max_price and price > max_price:
                         continue
+
+                    provenance, field_data_provenance = _transport_provenance(
+                        f"Skyscanner RapidAPI ({provider})",
+                        DataStatus.RECENTLY_VERIFIED,
+                        "Search result retrieved recently, but fare and seat availability can change before booking. Verify before purchase.",
+                        source_reference="https://www.skyscanner.co.in/",
+                        ttl_seconds=3600,
+                        confidence=0.8,
+                        field_statuses={
+                            "fare": DataStatus.RECENTLY_VERIFIED,
+                            "schedule": DataStatus.RECENTLY_VERIFIED,
+                            "availability": DataStatus.UNAVAILABLE,
+                        },
+                        retrieved_at=checked_at,
+                    )
                         
                     flights.append({
                         "mode": "flight",
@@ -365,14 +500,19 @@ async def search_flights(
                         "arrival_time": arr_time,
                         "departure_city": origin.title(),
                         "arrival_city": destination.title(),
-                    "is_fallback": False,
-                    "field_provenance": {
-                        "fare": "Flight search result",
-                        "schedule": "Flight search result",
-                        "availability": "Not provided by search result",
-                    },
-                    "availability_status": "Not provided by search result",
-                    "last_checked_at": datetime.now(timezone.utc).isoformat(),
+                        "is_fallback": False,
+                        "field_provenance": {
+                            "fare": "Flight search result",
+                            "schedule": "Flight search result",
+                            "availability": "Not provided by search result",
+                        },
+                        "field_data_provenance": {
+                            key: value.model_dump(mode="json")
+                            for key, value in field_data_provenance.items()
+                        },
+                        "provenance": provenance.model_dump(mode="json"),
+                        "availability_status": "Not provided by search result",
+                        "last_checked_at": checked_at.isoformat(),
                     })
                 except Exception as e:
                     logger.warning(f"Failed to parse flight itinerary: {e}")
@@ -439,6 +579,7 @@ async def search_trains(
         fallbacks = _get_fallback_trains(origin, destination, distance_km)
         return [f.model_dump() for f in fallbacks]
 
+    checked_at = datetime.now(timezone.utc)
     trains = []
     # Parse RailRadar response
     for train_entry in data.get("data", {}).get("trains", [])[:5]:
@@ -452,6 +593,22 @@ async def search_trains(
             duration_minutes = train_entry.get("duration", 0)
             distance = distance_km or _estimated_route_distance(origin, destination)
             estimated_fare = max(350, int(distance * 1.45 + 250))
+            provenance, field_data_provenance = _transport_provenance(
+                "RailRadar",
+                DataStatus.SCHEDULE_ONLY,
+                "Rail schedule data was retrieved recently, but the travel date, fare, and seat availability were not verified. Verify before booking.",
+                source_reference="https://railradar.in/",
+                ttl_seconds=21600,
+                confidence=0.7,
+                field_statuses={
+                    "train": DataStatus.SCHEDULE_ONLY,
+                    "schedule": DataStatus.SCHEDULE_ONLY,
+                    "fare": DataStatus.ESTIMATED,
+                    "availability": DataStatus.UNAVAILABLE,
+                    "travel_date": DataStatus.UNAVAILABLE,
+                },
+                retrieved_at=checked_at,
+            )
 
             trains.append({
                 "mode": "train",
@@ -471,8 +628,13 @@ async def search_trains(
                     "availability": "Not available",
                     "travel_date": "Not verified against operating days",
                 },
+                "field_data_provenance": {
+                    key: value.model_dump(mode="json")
+                    for key, value in field_data_provenance.items()
+                },
+                "provenance": provenance.model_dump(mode="json"),
                 "availability_status": "Not available",
-                "last_checked_at": datetime.now(timezone.utc).isoformat(),
+                "last_checked_at": checked_at.isoformat(),
             })
         except Exception as e:
             logger.warning(f"Failed to parse train data: {e}")
@@ -487,6 +649,21 @@ async def search_trains(
 
 def _road_option(origin: str, destination: str, distance_km: float) -> TransportOption:
     """Return a transparent self-drive/cab estimate; it is never a live quote."""
+    checked_at = datetime.now(timezone.utc)
+    provenance, field_data_provenance = _transport_provenance(
+        "YatraAI road-trip estimator",
+        DataStatus.ESTIMATED,
+        "Road fare and duration are planning estimates based on distance; traffic, tolls, and provider availability were not verified. Verify before booking.",
+        source_reference="app://transport/road-estimator",
+        ttl_seconds=86400,
+        confidence=0.45,
+        field_statuses={
+            "fare": DataStatus.ESTIMATED,
+            "schedule": DataStatus.ESTIMATED,
+            "availability": DataStatus.UNAVAILABLE,
+        },
+        retrieved_at=checked_at,
+    )
     return TransportOption(
         mode=TransportMode.ROAD,
         provider="Road trip estimate",
@@ -502,8 +679,10 @@ def _road_option(origin: str, destination: str, distance_km: float) -> Transport
             "schedule": "Traveller-selected departure time",
             "availability": "Not checked",
         },
+        field_data_provenance=field_data_provenance,
+        provenance=provenance,
         availability_status="Not checked",
-        last_checked_at=datetime.now(timezone.utc),
+        last_checked_at=checked_at,
     )
 
 

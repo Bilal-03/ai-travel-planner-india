@@ -9,7 +9,7 @@ import logging
 import math
 import re
 from copy import deepcopy
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Awaitable, Callable, Optional
 
 from google import genai
@@ -21,6 +21,8 @@ from app.models.trip import (
     Activity,
     AccommodationPreference,
     BudgetBreakdown,
+    DataProvenance,
+    DataStatus,
     DayPlan,
     DayWeather,
     GeoPoint,
@@ -52,6 +54,24 @@ DEFAULT_ACTIVITY_START = 9 * 60
 LATEST_ACTIVITY_END = 20 * 60
 MIN_ROUTE_BUFFER_MINUTES = 10
 COORDINATE_MATCH_RADIUS_KM = 2.0
+
+
+def _planner_estimate_provenance(
+    disclaimer: str,
+    *,
+    provider: str = "YatraAI planning estimate",
+    confidence: float = 0.5,
+) -> DataProvenance:
+    """Attach a visible disclosure to deterministic or model-suggested values."""
+
+    return DataProvenance(
+        provider=provider,
+        status=DataStatus.ESTIMATED,
+        retrieved_at=datetime.now(timezone.utc),
+        confidence=confidence,
+        source_reference="app://yatraai-planning-estimates",
+        disclaimer=disclaimer,
+    )
 
 STAY_RATE_PER_NIGHT = {
     AccommodationPreference.BUDGET: 1200,
@@ -741,6 +761,11 @@ def _calculate_budget(
         miscellaneous=0,
         total_estimated=total,
         remaining=request.budget - total,
+        provenance=_planner_estimate_provenance(
+            "Budget totals are planning estimates assembled from transport, lodging, meal, activity, and local-transport inputs. Verify live prices, taxes, and booking fees before purchase.",
+            provider="YatraAI deterministic budget calculator",
+            confidence=0.9,
+        ),
     )
 
 
@@ -826,9 +851,14 @@ def _plan_to_itinerary(
                 name=source_poi["name"],
                 category=source_poi.get("category", "attraction"),
                 coordinates=GeoPoint(lat=coordinates["lat"], lng=coordinates["lng"]),
+                osm_tags=source_poi.get("osm_tags"),
+                estimated_visit_minutes=int(source_poi.get("estimated_visit_minutes", 60)),
                 estimated_cost=cost,
                 description=act.get("notes"),
                 opening_hours=source_poi.get("opening_hours"),
+                rating=source_poi.get("rating"),
+                provenance=source_poi.get("provenance", {}),
+                field_provenance=source_poi.get("field_provenance", {}),
             ),
             start_time=act.get("start_time"),
             end_time=act.get("end_time"),
@@ -867,12 +897,32 @@ def _plan_to_itinerary(
         # Parse meals
         meals = []
         for meal in dp.get("meals", []):
+            meal_name = meal.get("name", "Local food")
+            source_poi = approved_by_name.get(_normalize_place_name(meal_name))
+            meal_provenance = (
+                source_poi.get("provenance", {})
+                if source_poi
+                else _planner_estimate_provenance(
+                    "Meal venue, meal type, and price are estimates; verify the restaurant, dietary fit, and current menu before dining.",
+                    confidence=0.45,
+                ).model_dump(mode="json")
+            )
+            estimated_cost = meal.get("estimated_cost", 300)
+            if not isinstance(estimated_cost, (int, float)):
+                estimated_cost = 300
             meals.append(MealRecommendation(
-                name=meal.get("name", "Local food"),
+                name=meal_name,
                 cuisine=meal.get("cuisine"),
                 meal_type=meal.get("meal_type", "lunch"),
-                estimated_cost=meal.get("estimated_cost", 300),
+                estimated_cost=int(estimated_cost),
                 notes=meal.get("notes"),
+                provenance=meal_provenance,
+                field_provenance={
+                    "estimated_cost": _planner_estimate_provenance(
+                        "Meal cost is a per-traveller planning estimate; verify the current menu and taxes before dining.",
+                        confidence=0.45,
+                    ),
+                },
             ))
 
         local_minutes, local_cost = (local_transport or {}).get(day_num, (0, 0))

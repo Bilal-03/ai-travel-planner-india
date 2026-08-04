@@ -6,13 +6,14 @@ Results cached for 7 days to respect fair-use policies.
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
 
 from app.cache.redis_cache import cached
 from app.data.landmark_catalogue import LANDMARK_CATALOGUE
-from app.models.trip import GeoPoint, POI, TravelVibe
+from app.models.trip import DataProvenance, DataStatus, GeoPoint, POI, TravelVibe
 
 logger = logging.getLogger(__name__)
 
@@ -167,15 +168,57 @@ def _priority_landmarks(city: Optional[str]) -> list[dict]:
         "benaras": "varanasi",
     }
     normalized_city = city_aliases.get(normalized_city, normalized_city)
-    return [
-        {
+    priority_pois = []
+    for landmark in PRIORITY_CITY_LANDMARKS.get(normalized_city, []):
+        reviewed_at = datetime.fromisoformat(landmark["reviewed_at"]).replace(tzinfo=timezone.utc)
+        review_due_at = datetime.fromisoformat(landmark["review_due_at"]).replace(tzinfo=timezone.utc)
+        provenance = DataProvenance(
+            provider=landmark["source_publisher"],
+            status=DataStatus.STATIC_REFERENCE,
+            retrieved_at=reviewed_at,
+            expires_at=review_due_at,
+            confidence=0.9,
+            source_reference=landmark["source_url"],
+            disclaimer="Editorial landmark reference; verify current opening hours, access, ticket price, and closures before visiting.",
+        )
+        field_provenance = {
+            "coordinates": provenance,
+            "estimated_visit_minutes": DataProvenance(
+                provider="YatraAI planning estimate",
+                status=DataStatus.ESTIMATED,
+                retrieved_at=reviewed_at,
+                expires_at=review_due_at,
+                confidence=0.65,
+                source_reference="app://poi-estimates",
+                disclaimer="Visit duration is a planning estimate and can vary with queues and personal pace.",
+            ),
+            "estimated_cost": DataProvenance(
+                provider="YatraAI planning estimate",
+                status=DataStatus.ESTIMATED,
+                retrieved_at=reviewed_at,
+                expires_at=review_due_at,
+                confidence=0.55,
+                source_reference="app://poi-estimates",
+                disclaimer="Ticket cost is an estimate; verify current admission and special fees before visiting.",
+            ),
+            "opening_hours": DataProvenance(
+                provider="not_provided",
+                status=DataStatus.UNAVAILABLE,
+                disclaimer="Opening hours were not provided; verify the venue directly before visiting.",
+            ),
+        }
+        priority_pois.append({
             **landmark,
             "coordinates": dict(landmark["coordinates"]),
             "osm_tags": {"source": "editorial_landmark_shortlist"},
             "opening_hours": None,
-        }
-        for landmark in PRIORITY_CITY_LANDMARKS.get(normalized_city, [])
-    ]
+            "provenance": provenance.model_dump(mode="json"),
+            "field_provenance": {
+                key: value.model_dump(mode="json")
+                for key, value in field_provenance.items()
+            },
+        })
+    return priority_pois
 
 
 @cached("pois", ttl_seconds=86400 * 7)  # Cache for 7 days
@@ -232,6 +275,7 @@ async def discover_pois(
 
     pois = priority_pois
     seen_names = {poi["name"].casefold() for poi in priority_pois}
+    retrieved_at = datetime.now(timezone.utc)
 
     for element in data.get("elements", []):
         name = _extract_name(element)
@@ -259,6 +303,46 @@ async def discover_pois(
                 category = tags[key]
                 break
 
+        opening_hours = tags.get("opening_hours")
+        provenance = DataProvenance(
+            provider="OpenStreetMap Overpass",
+            status=DataStatus.RECENTLY_VERIFIED,
+            retrieved_at=retrieved_at,
+            expires_at=retrieved_at + timedelta(days=7),
+            confidence=0.75,
+            source_reference="https://www.openstreetmap.org/",
+            disclaimer="Map data may be incomplete or stale; verify current opening hours, access, ticket price, and closures before visiting.",
+        )
+        field_provenance = {
+            "coordinates": provenance,
+            "estimated_visit_minutes": DataProvenance(
+                provider="YatraAI planning estimate",
+                status=DataStatus.ESTIMATED,
+                retrieved_at=retrieved_at,
+                expires_at=retrieved_at + timedelta(days=7),
+                confidence=0.55,
+                source_reference="app://poi-estimates",
+                disclaimer="Visit duration is a planning estimate and can vary with queues and personal pace.",
+            ),
+            "estimated_cost": DataProvenance(
+                provider="YatraAI planning estimate",
+                status=DataStatus.ESTIMATED,
+                retrieved_at=retrieved_at,
+                expires_at=retrieved_at + timedelta(days=7),
+                confidence=0.45,
+                source_reference="app://poi-estimates",
+                disclaimer="Ticket cost is a category estimate; verify current admission and special fees before visiting.",
+            ),
+            "opening_hours": DataProvenance(
+                provider="OpenStreetMap Overpass" if opening_hours else "not_provided",
+                status=DataStatus.RECENTLY_VERIFIED if opening_hours else DataStatus.UNAVAILABLE,
+                retrieved_at=retrieved_at if opening_hours else None,
+                expires_at=retrieved_at + timedelta(days=7) if opening_hours else None,
+                confidence=0.65 if opening_hours else None,
+                source_reference="https://www.openstreetmap.org/" if opening_hours else None,
+                disclaimer="Map opening hours may be stale; verify directly before visiting." if opening_hours else "Opening hours were not provided; verify the venue directly before visiting.",
+            ),
+        }
         pois.append({
             "name": name,
             "category": category,
@@ -269,7 +353,12 @@ async def discover_pois(
             ]},
             "estimated_visit_minutes": _estimate_visit_time(tags),
             "estimated_cost": _estimate_cost(tags),
-            "opening_hours": tags.get("opening_hours"),
+            "opening_hours": opening_hours,
+            "provenance": provenance.model_dump(mode="json"),
+            "field_provenance": {
+                key: value.model_dump(mode="json")
+                for key, value in field_provenance.items()
+            },
         })
 
     logger.info(f"Discovered {len(pois)} POIs for vibes={vibes} at ({lat}, {lng})")

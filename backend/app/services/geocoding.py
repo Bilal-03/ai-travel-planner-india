@@ -7,12 +7,13 @@ Rate-limited to 1 req/sec with descriptive User-Agent per Nominatim policy.
 import asyncio
 import logging
 import math
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
 
 from app.cache.redis_cache import cached
-from app.models.trip import CityInfo, CitySearchResult, GeoPoint
+from app.models.trip import DataProvenance, DataStatus, CityInfo, CitySearchResult, GeoPoint
 from app.services.india_cities import search_local_cities
 
 logger = logging.getLogger(__name__)
@@ -74,10 +75,20 @@ async def geocode_city(city_name: str) -> Optional[dict]:
     normalized = " ".join(city_name.casefold().split())
     for city in search_local_cities(city_name, limit=8):
         if city["name"].casefold() == normalized:
+            retrieved_at = datetime.now(timezone.utc)
             return {
                 "name": city["name"],
                 "state": city["state"],
                 "coordinates": city["coordinates"],
+                "provenance": DataProvenance(
+                    provider="YatraAI bundled city index",
+                    status=DataStatus.STATIC_REFERENCE,
+                    retrieved_at=retrieved_at,
+                    expires_at=retrieved_at + timedelta(days=30),
+                    confidence=0.95,
+                    source_reference="app://data/india-cities",
+                    disclaimer="Bundled city reference; coordinates are stable, but venue details and local conditions need current verification.",
+                ).model_dump(mode="json"),
             }
 
     await _rate_limit()
@@ -111,11 +122,21 @@ async def geocode_city(city_name: str) -> Optional[dict]:
 
     address = result.get("address", {})
     state = address.get("state", address.get("state_district"))
+    retrieved_at = datetime.now(timezone.utc)
 
     return {
         "name": city_name.title(),
         "state": state,
         "coordinates": {"lat": lat, "lng": lng},
+        "provenance": DataProvenance(
+            provider="Nominatim",
+            status=DataStatus.RECENTLY_VERIFIED,
+            retrieved_at=retrieved_at,
+            expires_at=retrieved_at + timedelta(days=30),
+            confidence=0.9,
+            source_reference=NOMINATIM_BASE,
+            disclaimer="Coordinates were geocoded recently; recheck if the destination is a small locality or access point.",
+        ).model_dump(mode="json"),
     }
 
 
@@ -133,6 +154,7 @@ async def geocode_to_city_info(city_name: str) -> Optional[CityInfo]:
         coordinates=GeoPoint(**data["coordinates"]),
         iata_code=get_iata_code(data["name"]),
         station_code=get_station_code(data["name"]),
+        provenance=data.get("provenance", {}),
     )
 
 

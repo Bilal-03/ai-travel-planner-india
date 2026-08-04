@@ -6,12 +6,13 @@ Calculates travel times and routes between POIs for feasibility validation.
 import asyncio
 import logging
 import math
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
 
 from app.cache.redis_cache import cached
-from app.models.trip import GeoPoint, RouteSegment
+from app.models.trip import DataProvenance, DataStatus, GeoPoint, RouteSegment
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ async def get_route(
 
     route = data["routes"][0]
     geometry = route.get("geometry", {}).get("coordinates", [])
+    retrieved_at = datetime.now(timezone.utc)
 
     return {
         "from_point": {"lat": from_lat, "lng": from_lng},
@@ -73,6 +75,15 @@ async def get_route(
         "geometry": geometry,  # [[lng, lat], ...]
         "distance_km": round(route["distance"] / 1000, 1),
         "duration_minutes": round(route["duration"] / 60, 1),
+        "provenance": DataProvenance(
+            provider="OSRM",
+            status=DataStatus.RECENTLY_VERIFIED,
+            retrieved_at=retrieved_at,
+            expires_at=retrieved_at + timedelta(days=7),
+            confidence=0.8,
+            source_reference=OSRM_BASE,
+            disclaimer="Route distance and duration are traffic-independent planning values; regenerate after reordering stops and recheck travel time on the day.",
+        ).model_dump(mode="json"),
     }
 
 
@@ -119,6 +130,14 @@ async def validate_day_feasibility(
                 to_point=stops[i + 1],
                 distance_km=estimated_distance,
                 duration_minutes=30,
+                provenance=DataProvenance(
+                    provider="YatraAI route estimator",
+                    status=DataStatus.ESTIMATED,
+                    retrieved_at=datetime.now(timezone.utc),
+                    confidence=0.35,
+                    source_reference="app://routing/estimate",
+                    disclaimer="Route duration is a fallback estimate because the routing provider was unavailable; regenerate after reordering stops and recheck travel time.",
+                ),
             ))
 
     total_visit_minutes = sum(visit_durations)

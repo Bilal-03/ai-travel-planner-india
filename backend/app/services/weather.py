@@ -4,14 +4,14 @@ Fetches 5-day forecast and categorizes days for itinerary planning.
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
 
 from app.cache.redis_cache import cached
 from app.config import settings
-from app.models.trip import DayWeather, WeatherSeverity
+from app.models.trip import DataProvenance, DataStatus, DayWeather, WeatherSeverity
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,9 @@ async def get_forecast(
         logger.error(f"OpenWeatherMap API error: {e}")
         return []
 
+    retrieved_at = datetime.now(timezone.utc)
+    expires_at = retrieved_at + timedelta(hours=6)
+
     # Parse into daily summaries
     start = date.fromisoformat(start_date)
     end = date.fromisoformat(end_date)
@@ -124,6 +127,15 @@ async def get_forecast(
             "rain_probability": round(avg_rain, 2),
             "severity": severity.value,
             "summary": _severity_to_summary(severity, main_condition, temp_max),
+            "provenance": DataProvenance(
+                provider="OpenWeatherMap",
+                status=DataStatus.RECENTLY_VERIFIED,
+                retrieved_at=retrieved_at,
+                expires_at=expires_at,
+                confidence=0.75,
+                source_reference=OWM_BASE,
+                disclaimer="Forecast conditions can change; recheck close to the travel date, especially for outdoor activities.",
+            ).model_dump(mode="json"),
         })
 
     return forecasts

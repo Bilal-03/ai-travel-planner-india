@@ -54,6 +54,34 @@ export type TravelPreference = "cheapest" | "fastest" | "balanced";
 export type TripPace = "relaxed" | "balanced" | "packed";
 export type DietaryPreference = "vegetarian" | "non_vegetarian";
 
+export type DataStatus =
+  | "live"
+  | "recently_verified"
+  | "schedule_only"
+  | "estimated"
+  | "static_reference"
+  | "unavailable";
+
+export interface DataProvenance {
+  provider: string;
+  status: DataStatus;
+  retrieved_at: string | null;
+  expires_at: string | null;
+  confidence: number | null;
+  source_reference: string | null;
+  disclaimer: string;
+}
+
+export const UNAVAILABLE_PROVENANCE: DataProvenance = {
+  provider: "not_provided",
+  status: "unavailable",
+  retrieved_at: null,
+  expires_at: null,
+  confidence: null,
+  source_reference: null,
+  disclaimer: "Provider provenance is unavailable; verify before booking.",
+};
+
 export interface TripRequest {
   origin: string;
   destination: string;
@@ -87,6 +115,8 @@ export interface TransportOption {
   is_recommended: boolean;
   is_fallback: boolean;
   field_provenance: Record<string, string>;
+  field_data_provenance?: Record<string, DataProvenance>;
+  provenance?: DataProvenance;
   availability_status: string;
   last_checked_at: string | null;
 }
@@ -100,6 +130,8 @@ export interface POI {
   estimated_cost: number;
   description: string | null;
   opening_hours: string | null;
+  provenance?: DataProvenance;
+  field_provenance?: Record<string, DataProvenance>;
 }
 
 export interface Activity {
@@ -117,6 +149,8 @@ export interface MealRecommendation {
   meal_type: string;
   estimated_cost: number;
   notes: string | null;
+  provenance?: DataProvenance;
+  field_provenance?: Record<string, DataProvenance>;
 }
 
 export interface DayWeather {
@@ -128,6 +162,7 @@ export interface DayWeather {
   rain_probability: number;
   severity: "great" | "okay" | "indoor";
   summary: string;
+  provenance?: DataProvenance;
 }
 
 export interface DayPlan {
@@ -157,6 +192,7 @@ export interface BudgetBreakdown {
   miscellaneous: number;
   total_estimated: number;
   remaining: number;
+  provenance?: DataProvenance;
 }
 
 export interface RouteSegment {
@@ -166,6 +202,7 @@ export interface RouteSegment {
   distance_km: number;
   duration_minutes: number;
   day_number: number | null;
+  provenance?: DataProvenance;
 }
 
 export interface CityInfo {
@@ -174,6 +211,7 @@ export interface CityInfo {
   coordinates: GeoPoint;
   iata_code: string | null;
   station_code: string | null;
+  provenance?: DataProvenance;
 }
 
 export interface DestinationPhoto {
@@ -181,6 +219,7 @@ export interface DestinationPhoto {
   alt: string;
   photographer_name: string | null;
   photographer_url: string | null;
+  provenance?: DataProvenance;
 }
 
 export interface FestivalEvent {

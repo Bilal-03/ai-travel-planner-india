@@ -2,6 +2,10 @@
 
 import { motion } from "framer-motion";
 import { TransportOption, formatINR, formatDuration } from "@/lib/api";
+import DataStatusBadge from "./DataStatusBadge";
+import EstimateDisclaimer from "./EstimateDisclaimer";
+import FreshnessTimestamp from "./FreshnessTimestamp";
+import ProviderAttribution from "./ProviderAttribution";
 
 interface TransportCardProps {
   option: TransportOption;
@@ -18,6 +22,7 @@ export default function TransportCard({
 }: TransportCardProps) {
   const isFlight = option.mode === "flight";
   const isTrain = option.mode === "train";
+  const fareProvenance = option.field_data_provenance?.fare || option.provenance;
   const modeIcon = isFlight ? "✈️" : isTrain ? "🚂" : "🚗";
   const bookingUrl = isFlight
     ? `https://www.google.com/travel/flights?q=${encodeURIComponent(`Flights from ${option.departure_city} to ${option.arrival_city}${travelDate ? ` on ${travelDate}` : ""}`)}`
@@ -77,15 +82,21 @@ export default function TransportCard({
             {option.code && (
               <div className="text-foreground-muted text-xs">{option.code}</div>
             )}
+            <div className="mt-1">
+              <DataStatusBadge provenance={option.provenance} compact />
+            </div>
           </div>
         </div>
 
         {/* Right: price */}
-        <div className="text-right">
+          <div className="text-right">
           <div className="font-bold text-lg text-foreground">
             {formatINR(option.price)}
           </div>
-          <div className="text-foreground-muted text-xs">per person</div>
+          <div className="flex items-center justify-end gap-1 text-foreground-muted text-xs">
+            <span>per person</span>
+            <DataStatusBadge provenance={fareProvenance} compact />
+          </div>
         </div>
       </div>
 
@@ -117,12 +128,18 @@ export default function TransportCard({
         </div>
       </div>
 
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <ProviderAttribution provenance={option.provenance} />
+        <FreshnessTimestamp provenance={option.provenance} />
+      </div>
+      <EstimateDisclaimer provenance={fareProvenance || option.provenance} className="mt-2" />
+
       {(isTrain || Object.keys(option.field_provenance || {}).length > 0) && (
         <div className="mt-3 border-t border-glass-border pt-3 text-xs text-foreground-muted space-y-1">
           {option.field_provenance?.train && <div><span className="text-foreground-secondary">Train / number:</span> {option.field_provenance.train}</div>}
           {option.field_provenance?.schedule && <div><span className="text-foreground-secondary">Schedule:</span> {option.field_provenance.schedule}</div>}
           {option.field_provenance?.travel_date && <div><span className="text-foreground-secondary">Travel date:</span> {option.field_provenance.travel_date}</div>}
-          {option.field_provenance?.fare && <div><span className="text-foreground-secondary">Fare:</span> {option.field_provenance.fare}</div>}
+          {option.field_provenance?.fare && <div><span className="text-foreground-secondary">Fare:</span> {option.field_provenance.fare} {fareProvenance && <DataStatusBadge provenance={fareProvenance} compact />}</div>}
           <div><span className="text-foreground-secondary">Availability:</span> {option.field_provenance?.availability || option.availability_status}</div>
           {option.last_checked_at && <div>Checked {new Date(option.last_checked_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>}
         </div>

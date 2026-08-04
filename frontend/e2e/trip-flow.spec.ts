@@ -22,6 +22,11 @@ function itinerary() {
     is_recommended: true,
     is_fallback: true,
     field_provenance: { fare: "Estimated 3A fare", availability: "Not available" },
+    field_data_provenance: {
+      fare: { provider: "YatraAI estimate", status: "estimated", retrieved_at: "2026-08-03T12:00:00Z", expires_at: "2026-08-04T12:00:00Z", confidence: 0.45, source_reference: "app://transport/fallback-trains", disclaimer: "Verify before booking." },
+      availability: { provider: "not_provided", status: "unavailable", retrieved_at: null, expires_at: null, confidence: null, source_reference: null, disclaimer: "Availability was not provided; verify before booking." },
+    },
+    provenance: { provider: "YatraAI static train catalogue", status: "static_reference", retrieved_at: "2026-08-03T12:00:00Z", expires_at: "2027-02-03T00:00:00Z", confidence: 0.55, source_reference: "app://transport/fallback-trains", disclaimer: "Static schedule reference; verify before booking." },
     availability_status: "Not available",
     last_checked_at: "2026-08-03T12:00:00Z",
   };
@@ -51,8 +56,8 @@ function itinerary() {
       date: start,
       weather: null,
       transport: null,
-      activities: [{ poi: { id: "amber", name: "Amber Fort", category: "fort", coordinates: { lat: 26.9855, lng: 75.8513 }, estimated_visit_minutes: 120, estimated_cost: 500, description: null, opening_hours: "09:00-17:00" }, start_time: "10:00", end_time: "12:00", estimated_cost: 500, notes: null, is_backup: false }],
-      meals: [{ name: "Suggested meal type: Rajasthani thali", cuisine: "Rajasthani", meal_type: "lunch", estimated_cost: 300, notes: "Choose a trusted local restaurant." }],
+      activities: [{ poi: { id: "amber", name: "Amber Fort", category: "fort", coordinates: { lat: 26.9855, lng: 75.8513 }, estimated_visit_minutes: 120, estimated_cost: 500, description: null, opening_hours: "09:00-17:00", provenance: { provider: "Ministry of Tourism", status: "static_reference", retrieved_at: "2026-08-03T00:00:00Z", expires_at: "2027-02-03T00:00:00Z", confidence: 0.9, source_reference: "https://www.incredibleindia.gov.in/", disclaimer: "Verify current access and hours before visiting." }, field_provenance: { estimated_cost: { provider: "YatraAI estimate", status: "estimated", retrieved_at: "2026-08-03T00:00:00Z", expires_at: "2027-02-03T00:00:00Z", confidence: 0.55, source_reference: "app://poi-estimates", disclaimer: "Verify current admission before visiting." } } }, start_time: "10:00", end_time: "12:00", estimated_cost: 500, notes: null, is_backup: false }],
+      meals: [{ name: "Suggested meal type: Rajasthani thali", cuisine: "Rajasthani", meal_type: "lunch", estimated_cost: 300, notes: "Choose a trusted local restaurant.", provenance: { provider: "YatraAI planning estimate", status: "estimated", retrieved_at: "2026-08-03T00:00:00Z", expires_at: null, confidence: 0.45, source_reference: "app://yatraai-planning-estimates", disclaimer: "Verify the restaurant and current menu before dining." }, field_provenance: { estimated_cost: { provider: "YatraAI planning estimate", status: "estimated", retrieved_at: "2026-08-03T00:00:00Z", expires_at: null, confidence: 0.45, source_reference: "app://yatraai-planning-estimates", disclaimer: "Verify the current menu before dining." } } }],
       backup_activities: [],
       day_budget: 1200,
       day_spent: 800,
@@ -60,7 +65,7 @@ function itinerary() {
       local_transport_cost: 120,
       notes: "Explore Amber Fort.",
     }],
-    budget: { outbound_transport: 1800, return_transport: 1800, transport: 3600, food: 600, activities: 1000, accommodation: 2400, local_transport: 500, taxes_buffer: 405, miscellaneous: 0, total_estimated: 8505, remaining: 1495 },
+    budget: { outbound_transport: 1800, return_transport: 1800, transport: 3600, food: 600, activities: 1000, accommodation: 2400, local_transport: 500, taxes_buffer: 405, miscellaneous: 0, total_estimated: 8505, remaining: 1495, provenance: { provider: "YatraAI deterministic budget calculator", status: "estimated", retrieved_at: "2026-08-03T00:00:00Z", expires_at: null, confidence: 0.9, source_reference: "app://budget-calculator", disclaimer: "Verify live prices, taxes, and booking fees before purchase." } },
     route_segments: [],
     weather_forecast: [],
     destination_photos: [],
@@ -95,6 +100,7 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
   await page.locator("#generate-trip-btn").click();
 
   await expect(page.getByRole("heading", { name: "Delhi → Jaipur" })).toBeVisible();
+  await expect(page.getByText("Static reference").first()).toBeVisible();
   // Framer Motion keeps the button in a short hover transform; force avoids
   // treating that visual transition as an interaction failure.
   await page.locator("#share-trip-btn").click({ force: true });

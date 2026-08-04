@@ -1,7 +1,7 @@
 # YatraAI current architecture
 
 Audit date: 2026-08-04
-Repository branch: `codex/phase-0-audit-baseline`
+Repository branch: `codex/phase-1-data-trust`
 
 This document records the implementation that exists at the Phase 0 audit. It
 describes behavior and ownership as implemented; it is not a proposal for the
@@ -69,9 +69,11 @@ The route modules are mounted by `backend/main.py`:
 | `GET` | `/api/transport/flights` | Skyscanner search or labelled fallback estimates. |
 | `GET` | `/api/transport/trains` | RailRadar schedule search or labelled static/estimated records. |
 
-`TripRequest`, `TransportOption`, `POI`, `DayPlan`, `BudgetBreakdown`, and
-`Itinerary` are defined in `backend/app/models/trip.py`. The model layer is
-Pydantic-only; there is no SQLAlchemy model layer.
+`TripRequest`, `DataProvenance`, `TransportOption`, `POI`, `DayPlan`,
+`BudgetBreakdown`, and `Itinerary` are defined in `backend/app/models/trip.py`.
+`DataProvenance` carries provider, status, retrieval/expiry, confidence, source,
+and disclaimer metadata; expired facts are treated as unavailable by the
+contract. The model layer is Pydantic-only; there is no SQLAlchemy model layer.
 
 ## Generation and domain services
 
@@ -111,8 +113,11 @@ The supporting service boundaries are:
 
 `trip_storage.py` creates one `trips` table at runtime when `DATABASE_URL` is
 configured. It stores the complete itinerary JSON in a JSONB column with a
-stable short ID and a SHA-256 hash of the creator edit token. If setup or a
-write fails, it stores the trip in a process-local dictionary.
+stable short ID and a SHA-256 hash of the creator edit token. Phase 1 also
+includes the external migration `backend/migrations/001_phase1_travel_facts.sql`
+for durable fact-level provenance/freshness storage; it is intentionally not
+executed by the application at runtime. If setup or a write fails, it stores
+the trip in a process-local dictionary.
 
 `redis_cache.py` uses a synchronous Redis client when both Upstash settings are
 available. Cache misses, Redis connection failures, and Redis operation
@@ -139,7 +144,8 @@ inventory is in [environment-variables.md](environment-variables.md).
 
 ## Existing test and verification surface
 
-The backend has 21 deterministic pytest tests covering request validation,
+The backend has the original deterministic tests plus Phase 1 provenance tests
+covering request validation,
 budgeting, transport labels, POI catalogue coverage, route feasibility,
 planner normalization, and shared-trip write protection. The frontend has one
 mocked Playwright journey covering generation and a read-only shared link. The

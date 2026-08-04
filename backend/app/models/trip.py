@@ -6,7 +6,7 @@ All monetary values are in INR (₹).
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -57,6 +57,62 @@ class WeatherSeverity(str, Enum):
     GREAT = "great"        # Clear / sunny
     OKAY = "okay"          # Partly cloudy / mild
     INDOOR = "indoor"      # Rain / storm — indoor backup recommended
+
+
+class DataStatus(str, Enum):
+    """How trustworthy and current a travel fact is."""
+
+    LIVE = "live"
+    RECENTLY_VERIFIED = "recently_verified"
+    SCHEDULE_ONLY = "schedule_only"
+    ESTIMATED = "estimated"
+    STATIC_REFERENCE = "static_reference"
+    UNAVAILABLE = "unavailable"
+
+
+class DataProvenance(BaseModel):
+    """Provider, freshness, and disclosure metadata for an external fact."""
+
+    provider: str = "not_provided"
+    status: DataStatus = DataStatus.UNAVAILABLE
+    retrieved_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    confidence: Optional[float] = Field(None, ge=0, le=1)
+    source_reference: Optional[str] = None
+    disclaimer: str = "Provider provenance is unavailable; verify before booking."
+
+    @model_validator(mode="after")
+    def validate_freshness_window(self) -> "DataProvenance":
+        if self.status in {DataStatus.LIVE, DataStatus.RECENTLY_VERIFIED} and not self.retrieved_at:
+            raise ValueError("live or recently_verified facts require retrieved_at")
+        if self.retrieved_at and self.expires_at and self.expires_at <= self.retrieved_at:
+            raise ValueError("expires_at must be later than retrieved_at")
+        return self
+
+    @staticmethod
+    def _as_utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def is_stale(self, now: Optional[datetime] = None) -> bool:
+        """Return whether this fact has passed its freshness window."""
+
+        if self.expires_at is None:
+            return False
+        current = self._as_utc(now or datetime.now(timezone.utc))
+        return self._as_utc(self.expires_at) <= current
+
+    def effective_status(self, now: Optional[datetime] = None) -> DataStatus:
+        """Treat expired facts as unavailable to live-claim consumers."""
+
+        if self.status == DataStatus.UNAVAILABLE or self.is_stale(now):
+            return DataStatus.UNAVAILABLE
+        return self.status
+
+
+def _unavailable_provenance() -> DataProvenance:
+    return DataProvenance()
 
 
 # ── Request Models ─────────────────────────────────────────────────────
@@ -122,6 +178,7 @@ class CityInfo(BaseModel):
     coordinates: GeoPoint
     iata_code: Optional[str] = None
     station_code: Optional[str] = None
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
 
 
 class DestinationPhoto(BaseModel):
@@ -129,6 +186,7 @@ class DestinationPhoto(BaseModel):
     alt: str
     photographer_name: Optional[str] = None
     photographer_url: Optional[str] = None
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
 
 
 class FestivalEvent(BaseModel):
@@ -163,8 +221,23 @@ class TransportOption(BaseModel):
         default_factory=dict,
         description="Per-field source labels; transport cards must not imply all data is live",
     )
+    field_data_provenance: dict[str, DataProvenance] = Field(
+        default_factory=dict,
+        description="Per-field provider and freshness metadata",
+    )
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
     availability_status: str = "Not checked"
     last_checked_at: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def prevent_live_fallback_claims(self) -> "TransportOption":
+        live_statuses = {DataStatus.LIVE, DataStatus.RECENTLY_VERIFIED}
+        if self.is_fallback and self.provenance.status in live_statuses:
+            raise ValueError("Fallback transport cannot be marked live/recently_verified")
+        fare_provenance = self.field_data_provenance.get("fare")
+        if self.is_fallback and fare_provenance and fare_provenance.status in live_statuses:
+            raise ValueError("Fallback transport fare cannot be marked live/recently_verified")
+        return self
 
 
 # ── POI Models ─────────────────────────────────────────────────────────
@@ -180,6 +253,8 @@ class POI(BaseModel):
     description: Optional[str] = None
     opening_hours: Optional[str] = None
     rating: Optional[float] = None
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
+    field_provenance: dict[str, DataProvenance] = Field(default_factory=dict)
 
 
 # ── Weather Models ─────────────────────────────────────────────────────
@@ -193,6 +268,7 @@ class DayWeather(BaseModel):
     rain_probability: float = 0.0
     severity: WeatherSeverity = WeatherSeverity.GREAT
     summary: str = ""
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
 
 
 # ── Itinerary Models ──────────────────────────────────────────────────
@@ -213,6 +289,8 @@ class MealRecommendation(BaseModel):
     estimated_cost: int
     location: Optional[GeoPoint] = None
     notes: Optional[str] = None
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
+    field_provenance: dict[str, DataProvenance] = Field(default_factory=dict)
 
 
 class DayPlan(BaseModel):
@@ -238,6 +316,7 @@ class RouteSegment(BaseModel):
     distance_km: float = 0
     duration_minutes: float = 0
     day_number: Optional[int] = None
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
 
 
 class BudgetBreakdown(BaseModel):
@@ -252,6 +331,7 @@ class BudgetBreakdown(BaseModel):
     miscellaneous: int = 0
     total_estimated: int = 0
     remaining: int = 0
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
 
 
 class Itinerary(BaseModel):

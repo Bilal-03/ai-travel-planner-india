@@ -1,6 +1,6 @@
 """Transport labels and recommendation policy must remain explicit and testable."""
 
-from app.models.trip import TransportMode, TransportOption, TravelPreference
+from app.models.trip import DataStatus, TransportMode, TransportOption, TravelPreference
 from app.services.gemini_planner import _select_transport
 from app.services.transport import _get_fallback_trains
 
@@ -38,3 +38,6 @@ def test_fallback_train_labels_each_unverified_field_honestly():
     assert option.field_provenance["availability"] == "Not available"
     assert option.availability_status == "Not available"
     assert option.last_checked_at is not None
+    assert option.provenance.status == DataStatus.STATIC_REFERENCE
+    assert option.field_data_provenance["fare"].status == DataStatus.ESTIMATED
+    assert "Verify before booking" in option.provenance.disclaimer

@@ -1,6 +1,10 @@
 "use client";
 
 import { DayWeather } from "@/lib/api";
+import DataStatusBadge from "./DataStatusBadge";
+import EstimateDisclaimer from "./EstimateDisclaimer";
+import FreshnessTimestamp from "./FreshnessTimestamp";
+import ProviderAttribution from "./ProviderAttribution";
 
 interface WeatherBadgeProps {
   weather: DayWeather;
@@ -35,7 +39,7 @@ export default function WeatherBadge({ weather, compact = false }: WeatherBadgeP
         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border ${styles}`}
         title={weather.summary}
       >
-        {icon} {Math.round(weather.temp_max)}°
+        {icon} {Math.round(weather.temp_max)}° <DataStatusBadge provenance={weather.provenance} compact />
       </span>
     );
   }
@@ -54,6 +58,14 @@ export default function WeatherBadge({ weather, compact = false }: WeatherBadgeP
           💧 {Math.round(weather.rain_probability * 100)}%
         </div>
       )}
+      <div className="ml-auto flex flex-col items-end gap-1">
+        <DataStatusBadge provenance={weather.provenance} compact />
+        <FreshnessTimestamp provenance={weather.provenance} />
+      </div>
+      <div className="basis-full">
+        <ProviderAttribution provenance={weather.provenance} />
+        <EstimateDisclaimer provenance={weather.provenance} className="mt-1" />
+      </div>
     </div>
   );
 }

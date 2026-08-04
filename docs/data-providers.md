@@ -3,22 +3,21 @@
 Audit date: 2026-08-04
 
 This inventory distinguishes external, curated, calculated, and fallback data.
-The current transport implementation has per-field provenance labels; the
-common `DataProvenance` model described in the master plan is not implemented
-yet.
+Phase 1 adds a common `DataProvenance` model to every displayed travel-data
+family while retaining the existing transport labels for compatibility.
 
 ## Current provider map
 
 | Domain | Current implementation | Source type | Current fallback and label | Cache / freshness | Main risk |
 | --- | --- | --- | --- | --- | --- |
-| City search and geocoding | `services/india_cities.py`, `services/geocoding.py` | Bundled city index, then Nominatim | No result when both fail; India bounding-box check | Local/index and cached geocodes; Nominatim cache 30 days | A bounding box is not a full administrative validation; public geocoder availability is external. |
-| Flights | `services/transport.py` | Skyscanner RapidAPI when keyed | Static route/fare guidance or calculated fare, marked `is_fallback` with `Estimated fare guidance` | One-hour cache | Search results do not confirm booking inventory; fallback routes contain hard-coded fare guidance. |
-| Trains | `services/transport.py` | RailRadar schedule endpoint when keyed | Static train reference or calculated fare estimate; schedule/availability are labelled unavailable or not date-verified | Thirty-day cache keyed with request date, but upstream route response is not date-verified | The source returns schedule metadata, not confirmed fare or seats; the fallback can look like a named train. |
-| Road | `services/transport.py` | Deterministic distance/cost formula | `Road trip estimate`, not a quote | Included in the request result; no external freshness | It is a planning estimate, not cab availability or a booking quote. |
-| Places / POIs | `services/poi_discovery.py` and `data/landmark_catalogue.py` | Reviewed catalogue plus Overpass | Reviewed catalogue remains when Overpass fails | POI discovery cached seven days; catalogue has review dates | Opening hours, prices, closures, and accessibility are not common provenance facts. |
-| Routes | `services/routing.py` | OSRM driving route | Haversine-derived distance and 30-minute segment estimate | Route cache seven days | Fallback duration is conservative but not a live route; route mode is always driving. |
-| Weather | `services/weather.py` | OpenWeatherMap forecast | Empty forecast; planner notes weather unavailable | Six-hour cache | Forecast window is limited by the upstream five-day endpoint and there is no common retrieval/expiry object in the response. |
-| Destination photos | `services/photos.py` | Unsplash search | Empty photo list | Seven-day cache | Image metadata has no provenance contract in the itinerary model. |
+| City search and geocoding | `services/india_cities.py`, `services/geocoding.py` | Bundled city index, then Nominatim | `static_reference` or `recently_verified` coordinates | Local/index and cached geocodes; Nominatim cache 30 days | A bounding box is not a full administrative validation; public geocoder availability is external. |
+| Flights | `services/transport.py` | Skyscanner RapidAPI when keyed | Static/calculated fares are `estimated`; search results are `recently_verified` with unconfirmed availability | One-hour cache and one-hour provenance expiry | Search results do not confirm booking inventory; fallback routes contain hard-coded fare guidance. |
+| Trains | `services/transport.py` | RailRadar schedule endpoint when keyed | `schedule_only` schedule, `estimated` fare, unavailable seats/date verification; static references are `static_reference` | Thirty-day provider cache, with shorter fact windows | The source returns schedule metadata, not confirmed fare or seats; the fallback can look like a named train. |
+| Road | `services/transport.py` | Deterministic distance/cost formula | `estimated`, never a live quote | Included in the request result with a one-day estimate window | It is a planning estimate, not cab availability or a booking quote. |
+| Places / POIs | `services/poi_discovery.py` and `data/landmark_catalogue.py` | Reviewed catalogue plus Overpass | Catalogue is `static_reference`; OSM records are `recently_verified`; costs/durations are `estimated` | POI discovery cached seven days; catalogue has review dates | Opening hours, prices, closures, and accessibility still need direct verification. |
+| Routes | `services/routing.py` | OSRM driving route | OSRM is `recently_verified`; fallback is `estimated` | Route cache and provenance window seven days | Fallback duration is conservative but not a live route; route mode is always driving. |
+| Weather | `services/weather.py` | OpenWeatherMap forecast | Forecast facts are `recently_verified` for a six-hour window; absent data is unavailable | Six-hour cache and expiry | Forecast window is limited by the upstream five-day endpoint and should be rechecked near travel. |
+| Destination photos | `services/photos.py` | Unsplash search | Returned images are `recently_verified` for attribution purposes; absent list stays empty | Seven-day cache | Images are illustrative and do not verify the exact venue or conditions. |
 | Festivals | `services/festivals.py` | Static catalogue | Generation currently sends an empty festival list | No generation-time freshness contract | Static event dates must not be presented as current facts without review. |
 
 ## Data categories currently exposed
@@ -31,9 +30,10 @@ The existing `TransportOption` exposes:
 - `availability_status`; and
 - `last_checked_at`.
 
-Other domain models do not expose equivalent status fields. The frontend
-renders these transport labels in `TransportCard`, but it does not yet share
-reusable `DataStatusBadge`, attribution, freshness, or disclaimer components.
+Other domain models now expose `provenance` and, where needed, field-level
+provenance. The frontend renders these through reusable `DataStatusBadge`,
+`ProviderAttribution`, `FreshnessTimestamp`, and `EstimateDisclaimer`
+components in transport, weather, budget, activity, and meal views.
 
 The target statuses in the plan are:
 
@@ -46,9 +46,11 @@ static_reference
 unavailable
 ```
 
-No current path should infer that a fallback fare, route duration, or weather
-absence is live. The current UI uses `Estimated`, `Not available`, and detailed
-field labels for transport; the lack of a common contract is a Phase 1 risk.
+Fallback fares, route durations, meal costs, POI costs, and budget totals are
+explicitly `estimated` or `static_reference`; absent provider data is
+`unavailable`. Expired facts are treated as stale by the model/UI and are not
+presented as live claims. Non-live values carry a verify-before-booking or
+verify-before-visiting disclaimer.
 
 ## Provider configuration
 
@@ -69,6 +71,6 @@ the current app.
 
 Phase 5 should introduce interfaces for flights, hotels, rail, buses, places,
 routes, and weather, normalize responses before they reach the itinerary
-model, and attach the common provenance object to every displayed travel fact.
+model, and extend the Phase 1 provenance object to every newly added provider.
 It should preserve the current providers until replacements pass contract and
 fallback tests.
