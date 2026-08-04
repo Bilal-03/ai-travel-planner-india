@@ -1,7 +1,7 @@
 # YatraAI current architecture
 
 Audit date: 2026-08-04
-Repository branch: `codex/phase-6-multi-city-accounts`
+Repository branch: `codex/phase-7-production-hardening`
 
 This document records the implementation that exists at the Phase 5 boundary.
 It describes behavior and ownership as implemented; it is not a proposal for
@@ -36,15 +36,14 @@ itineraries are saved through the PostgreSQL-compatible trip store.
 
 | Route | Implementation | Responsibility |
 | --- | --- | --- |
-| `/` | `frontend/src/app/page.tsx` | Client-side planning flow, quick natural-language brief, detailed review form, durable generation state, single-destination workspace, multi-city route studio, account continuity, explicit preference memory, transport selection, refinement, packing list, map, and sharing controls. |
+| `/` | `frontend/src/app/page.tsx` | Client-side planning flow, quick natural-language brief, detailed review form, durable generation state, single-destination workspace, multi-city route studio, transport selection, refinement, packing list, map, and sharing controls. |
 | `/trip/[id]` | `frontend/src/app/trip/[id]/page.tsx` | Fetches and renders a saved itinerary as a read-only shared trip. |
 | `/trip/[id]` metadata | `frontend/src/app/trip/[id]/layout.tsx` | Server-side metadata fetch for title, description, and Open Graph data when the backend URL is configured. |
 
 `frontend/src/lib/api.ts` is the single typed HTTP client. It stores the
-creator's edit token in browser session storage, the anonymous/account session
-token in local storage, adds both to the appropriate requests, wraps fetch
-timeouts and limited retries, and exposes both the legacy and replayable job
-EventSource clients. The home page persists the active job ID,
+creator's edit token in browser session storage, adds it to the appropriate
+requests, wraps fetch timeouts and limited retries, and exposes both the legacy
+and replayable job EventSource clients. The home page persists the active job ID,
 idempotency key, request, and last event ID in local storage so refreshes and
 navigation can reconnect to the same generation. The frontend types mirror the
 backend Pydantic response, but responses are not runtime-validated before
@@ -81,12 +80,6 @@ The route modules are mounted by `backend/main.py`:
 | `GET` | `/api/multi-city/{trip_id}` | Loads a saved multi-city trip. |
 | `POST` | `/api/multi-city/{trip_id}/reorder` | Reorders every destination stay and recalculates the affected travel-leg graph. Requires the creator edit token. |
 | `PATCH` | `/api/multi-city/{trip_id}/stays/{stay_id}` | Changes one stay's nights/notes and shifts only dependent dates and leg dates; destination visits retain stable identities. Requires the creator edit token. |
-| `POST` | `/api/account/anonymous` | Creates an anonymous continuity session. |
-| `POST` | `/api/account/register` | Upgrades the current anonymous session to an optional account. |
-| `GET` | `/api/account/trips` | Returns saved single- and multi-city trip history for the account. |
-| `POST` | `/api/account/claim-trip` | Claims an anonymous trip using the creator edit token. |
-| `GET/PUT/DELETE` | `/api/account/preferences` | Reads, updates, or deletes explicit preference memory. Disable is available at `/api/account/preferences/disable`. |
-| `DELETE` | `/api/account/me` | Deletes the account, saved trips, sessions, and preference memory. |
 | `GET` | `/api/search/cities` | Local Indian-city index first, Nominatim fallback. |
 | `GET` | `/api/search/pois` | Overpass POI discovery around coordinates. |
 | `GET` | `/api/transport/flights` | Skyscanner search or labelled fallback estimates. |
@@ -165,9 +158,6 @@ The supporting service boundaries are:
   currently intentionally leaves festival facts empty.
 - `multi_city_planner.py`: deterministic multi-city composition and scoped route
   edits over provider-backed geocoding, transport, POI, and weather facts.
-- `account_service.py`: Supabase HS256 JWT verification when configured plus a
-  signed local-session fallback, Postgres-backed account/session/preferences
-  storage, and explicit deletion semantics.
 
 `constraint_engine.py` also owns `parse_refinement_instruction` and
 `apply_scoped_refinement`. Edits such as “make day two less crowded”, “reduce
@@ -183,16 +173,19 @@ affected-day merge that preserves unrelated days before server-side validation.
 `multi_city_trips` aggregate table at runtime when `DATABASE_URL` is configured.
 The multi-city table stores the aggregate JSON plus queryable stay, leg, visit,
 day, accommodation, and transport-selection projections. Both trip types retain
-stable short IDs, a SHA-256 hash of the creator edit token, and an optional
-account owner. Phase 1 also
+stable short IDs and a SHA-256 hash of the creator edit token. Phase 1 also
 includes the external migration `backend/migrations/001_phase1_travel_facts.sql`
 for durable fact-level provenance/freshness storage, Phase 2 includes
 `backend/migrations/002_phase2_trip_jobs.sql` for the operational job snapshot
 schema, and Phase 4 includes `backend/migrations/003_phase4_trip_revisions.sql`
 for one-step workspace undo. Phase 6 includes
-`backend/migrations/004_phase6_multi_city_accounts.sql` for the multi-city
-aggregate/projections, account/session tables, explicit preference memory, and
-trip ownership. Those migrations are intentionally not executed by the
+`backend/migrations/004_phase6_multi_city.sql` for the multi-city
+aggregate/projections. Phase 7 adds
+`backend/migrations/005_phase7_collaboration_analytics.sql` for collaboration,
+analytics, and audit tables. Migration
+`backend/migrations/006_remove_legacy_account_schema.sql` removes the retired
+account schema from databases that used the earlier account-based build. Those
+migrations are intentionally not executed by the
 application at runtime. The active Phase 2 queue/snapshot/event transport is Redis-first; if
 setup or a write fails, trip storage falls back to a process-local dictionary.
 
@@ -215,12 +208,11 @@ the frontend uses the new job endpoints.
   `NEXT_PUBLIC_API_URL` pointing to the backend.
 - Backend: Render web service, with `backend` as the root directory and
   `uvicorn main:app --host 0.0.0.0 --port $PORT` as the start command.
-- Data services: optional Neon PostgreSQL and Upstash Redis; Phase 6 account and
-  trip-history durability requires PostgreSQL in production.
-- Authentication: Supabase Auth is the managed deployment target. The backend
-  accepts its signed JWTs when `AUTH_PROVIDER=supabase` and
-  `SUPABASE_JWT_SECRET` is configured; local signed sessions remain available
-  when those credentials are absent.
+- Data services: optional Neon PostgreSQL and Upstash Redis; PostgreSQL is
+  required in production when durable itinerary/share storage is enabled.
+- Access model: no accounts or login. The creator receives an anonymous edit
+  token in the response header, and optional share links grant read or edit
+  access to a persisted itinerary.
 - External services: Gemini, Skyscanner RapidAPI, RailRadar, OpenWeatherMap,
   Nominatim, Overpass, OSRM, and Unsplash as configured.
 - Provider replacement is controlled by `FLIGHT_PROVIDER`,
@@ -267,6 +259,7 @@ fail-closed unsupported hotel/bus choices. The live legacy providers remain
 behind the gateway and preserve their existing provenance/fallback contracts.
 
 Phase 6 adds tests for three-city generation, return-leg composition, reorder
-leg recalculation, stay-scoped edits that preserve unrelated visit identities,
-anonymous-to-account upgrade, explicit preference disable/delete behavior, and
-the account/trip persistence boundary.
+leg recalculation, and stay-scoped edits that preserve unrelated visit
+identities. The current test surface also verifies anonymous edit-token access,
+collaboration permissions, durable-storage fail-closed behavior, and that the
+removed account routes are no longer registered.

@@ -26,7 +26,6 @@ from app.services.gemini_planner import (
     refine_itinerary,
     select_transport_for_itinerary,
 )
-from app.services.account_service import get_account_for_token
 from app.services.collaboration_service import VersionConflictError, assert_version, record_analytics, resolve_share_token
 from app.services.observability import capture_exception, monotonic_ms, safe_error_message
 from app.services.trip_storage import get_trip, get_trip_owner_token_hash, save_trip, undo_trip, update_trip
@@ -37,7 +36,6 @@ _progress_queues: dict[str, asyncio.Queue[dict]] = {}
 TRIP_CACHE_TTL_SECONDS = 60 * 60
 EDIT_TOKEN_HEADER = "X-Trip-Edit-Token"
 SHARE_TOKEN_HEADER = "X-Trip-Share-Token"
-ACCOUNT_TOKEN_HEADER = "X-Yatra-Account-Token"
 _rate_limit_windows: dict[tuple[str, str], deque[float]] = defaultdict(deque)
 _rate_limit_lock = Lock()
 
@@ -177,7 +175,6 @@ async def generate_trip(
     response: Response,
     _: None = Depends(generation_rate_limit),
     progress_token: str | None = Header(None, alias="X-Progress-Token"),
-    account_token: str | None = Header(None, alias=ACCOUNT_TOKEN_HEADER),
 ):
     """
     Generate a complete AI-powered itinerary.
@@ -196,12 +193,7 @@ async def generate_trip(
             # share record and private write capability instead of reusing an
             # unrelated traveller's saved link.
             edit_token = secrets.token_urlsafe(32)
-            account = await get_account_for_token(account_token)
-            trip_id = await save_trip(
-                itinerary,
-                _hash_edit_token(edit_token),
-                account.id if account else None,
-            )
+            trip_id = await save_trip(itinerary, _hash_edit_token(edit_token))
             itinerary.id = trip_id
             response.headers[EDIT_TOKEN_HEADER] = edit_token
             await _publish_progress(progress_token, "cached", "Using your matching recent itinerary.", 100)
@@ -221,12 +213,7 @@ async def generate_trip(
 
         # Auto-save for sharing
         edit_token = secrets.token_urlsafe(32)
-        account = await get_account_for_token(account_token)
-        trip_id = await save_trip(
-            itinerary,
-            _hash_edit_token(edit_token),
-            account.id if account else None,
-        )
+        trip_id = await save_trip(itinerary, _hash_edit_token(edit_token))
         itinerary.id = trip_id
         get_cache().set(cache_key, itinerary.model_dump_json(), TRIP_CACHE_TTL_SECONDS)
         response.headers[EDIT_TOKEN_HEADER] = edit_token

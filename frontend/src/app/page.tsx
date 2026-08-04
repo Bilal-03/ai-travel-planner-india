@@ -13,7 +13,6 @@ import LoadingState from "@/components/LoadingState";
 import TripWorkspace from "@/components/TripWorkspace";
 import MultiCityPlanner from "@/components/MultiCityPlanner";
 import MultiCityWorkspace from "@/components/MultiCityWorkspace";
-import AccountPanel from "@/components/AccountPanel";
 import {
   api,
   Itinerary,
@@ -372,8 +371,6 @@ export default function Home() {
             {isGenerating && <LoadingState waitingForBackend={!backendReady} status={generationStatus} onCancel={cancelGeneration} onRetry={retryGeneration} />}
 
             <MultiCityPlanner isLoading={isGenerating || isMultiCityGenerating} onSubmit={handleMultiCitySubmit} />
-            <AccountPanel />
-
             {error && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}

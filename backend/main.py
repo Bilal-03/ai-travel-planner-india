@@ -122,11 +122,10 @@ if not settings.is_production:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(allowed_origins),
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
         "Accept",
-        "Authorization",
         "Content-Type",
         "Idempotency-Key",
         "If-Match",
@@ -135,10 +134,9 @@ app.add_middleware(
         "X-Request-ID",
         "X-Trip-Edit-Token",
         "X-Trip-Share-Token",
-        "X-Yatra-Account-Token",
         "X-Yatra-Bot-Token",
     ],
-    expose_headers=["X-Request-ID", "X-Trip-Job-ID", "X-Trip-Edit-Token", "X-Yatra-Account-Token", "ETag"],
+    expose_headers=["X-Request-ID", "X-Trip-Job-ID", "X-Trip-Edit-Token", "ETag"],
 )
 
 # Register routers
@@ -147,7 +145,6 @@ from app.api.search import router as search_router
 from app.api.transport import router as transport_router
 from app.api.trip_jobs import router as trip_jobs_router
 from app.api.multi_city import router as multi_city_router
-from app.api.account import router as account_router
 from app.api.analytics import router as analytics_router
 from app.api.collaboration import router as collaboration_router
 
@@ -156,7 +153,6 @@ app.include_router(search_router)
 app.include_router(transport_router)
 app.include_router(trip_jobs_router)
 app.include_router(multi_city_router)
-app.include_router(account_router)
 app.include_router(analytics_router)
 app.include_router(collaboration_router)
 

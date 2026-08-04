@@ -33,7 +33,8 @@ changing the provider-neutral itinerary contract.
 ### Analytics and observability
 
 - Added the eleven allowlisted product events from the implementation plan.
-- Analytics metadata is allowlisted and trip/account identifiers are hashed.
+- Analytics metadata is allowlisted and trip identifiers are hashed; no user
+  identity is collected.
 - Added summary metrics for completion, success, latency, refinement
   acceptance, sharing, export, estimated-data use, freshness, invalid output,
   and estimated cost per completed trip.
@@ -45,8 +46,8 @@ changing the provider-neutral itinerary contract.
 
 ### Security and reliability
 
-- Production durable-storage mode now fails closed for trips, accounts,
-  preferences, collaboration, analytics, and audit logs; it never silently
+- Production durable-storage mode now fails closed for trips, collaboration,
+  analytics, and audit logs; it never silently
   serves process-local persistence.
 - Added Redis-backed rate limits with a distributed-counter requirement when
   `REQUIRE_REDIS=true`.
@@ -56,8 +57,8 @@ changing the provider-neutral itinerary contract.
 - Added SSRF validation for provider-returned image and attribution URLs.
 - Bounded traveller free text before it reaches Gemini and explicitly labels it
   as untrusted data in the planning prompts.
-- Added audit records for trip claims, account deletion, and preference-memory
-  changes.
+- Added audit records for collaboration changes, share-link actions, trip
+  copies, and other sensitive trip actions.
 
 ## Persistence and migration
 
@@ -67,14 +68,16 @@ changing the provider-neutral itinerary contract.
 schema initializer remains useful for local development, but hosted databases
 must apply the ordered migrations before production readiness is enabled.
 
-The migration checker validates all five ordered migration files and the Phase 7
-tables. See [backend/migrations/README.md](../backend/migrations/README.md).
+The migration checker validates all six ordered migration files and the Phase 7
+tables. Migration 006 removes the retired account schema from databases that
+ran the earlier account-based implementation. See
+[backend/migrations/README.md](../backend/migrations/README.md).
 
 ## Production configuration
 
 Before deployment:
 
-1. Apply migrations `001` through `005` to staging, verify the schema, then
+1. Apply migrations `001` through `006` to staging, verify the schema, then
    apply them to production.
 2. Set `APP_ENV=production`, `REQUIRE_DURABLE_STORAGE=true`, and
    `REQUIRE_REDIS=true`.
@@ -109,7 +112,7 @@ errors in older planner modules.
 - `backend/.venv/bin/python -m compileall -q app main.py`: passed.
 - Phase 7 Ruff syntax/undefined-name gate: passed.
 - Phase 7 mypy gate: **17 source files**, no issues.
-- `backend/.venv/bin/python scripts/check_migrations.py`: **5 ordered
+- `backend/.venv/bin/python scripts/check_migrations.py`: **6 ordered
   migrations validated**.
 - `npm run lint`: passed.
 - `npx tsc --noEmit`: passed.

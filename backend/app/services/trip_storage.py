@@ -36,7 +36,6 @@ CREATE TABLE IF NOT EXISTS trips (
     end_date DATE NOT NULL,
     budget INTEGER NOT NULL,
     owner_token_hash TEXT,
-    owner_user_id VARCHAR(36),
     previous_itinerary_json JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )
@@ -51,7 +50,6 @@ CREATE TABLE IF NOT EXISTS multi_city_trips (
     end_date DATE NOT NULL,
     budget INTEGER NOT NULL,
     owner_token_hash TEXT,
-    owner_user_id VARCHAR(36),
     previous_trip_json JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -136,9 +134,7 @@ def _ensure_schema_sync() -> bool:
                     # Existing installations predate edit-token protection.
                     # Keep this migration additive so shared links remain readable.
                     cursor.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS owner_token_hash TEXT")
-                    cursor.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS owner_user_id VARCHAR(36)")
                     cursor.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS previous_itinerary_json JSONB")
-                    cursor.execute("ALTER TABLE multi_city_trips ADD COLUMN IF NOT EXISTS owner_user_id VARCHAR(36)")
                     cursor.execute("ALTER TABLE multi_city_trips ADD COLUMN IF NOT EXISTS previous_trip_json JSONB")
             _schema_ready = True
             logger.info("Connected to Neon PostgreSQL; trips table is ready")
@@ -220,7 +216,6 @@ def _write_multi_city_projections(cursor, trip_id: str, trip: Trip) -> None:
 async def save_trip(
     itinerary: Itinerary,
     owner_token_hash: str | None = None,
-    owner_user_id: str | None = None,
 ) -> str:
     """Save an itinerary and return its stable, shareable ID."""
     trip_id = str(uuid.uuid4())[:12]
@@ -233,11 +228,11 @@ async def save_trip(
                 with _connect() as connection:
                     with connection.cursor() as cursor:
                         cursor.execute(
-                            """INSERT INTO trips (id, itinerary_json, origin, destination, start_date, end_date, budget, owner_token_hash, owner_user_id, previous_itinerary_json, created_at)
-                            VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, NULL, %s)""",
+                            """INSERT INTO trips (id, itinerary_json, origin, destination, start_date, end_date, budget, owner_token_hash, previous_itinerary_json, created_at)
+                            VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, NULL, %s)""",
                             (trip_id, data, itinerary.origin.name, itinerary.destination.name,
                              itinerary.start_date, itinerary.end_date, itinerary.budget.total_estimated,
-                             owner_token_hash, owner_user_id, created_at),
+                             owner_token_hash, created_at),
                         )
             await asyncio.to_thread(insert)
         except Exception as error:
@@ -249,10 +244,9 @@ async def save_trip(
         "itinerary": data,
         "previous_itinerary": None,
         "owner_token_hash": owner_token_hash,
-        "owner_user_id": owner_user_id,
         "created_at": created_at,
     }
-    await record_trip_version(trip_id, TripKind.SINGLE, itinerary.model_dump(mode="json"), action="created", actor_id=owner_user_id)
+    await record_trip_version(trip_id, TripKind.SINGLE, itinerary.model_dump(mode="json"), action="created")
     return trip_id
 
 
@@ -298,26 +292,6 @@ async def get_trip_owner_token_hash(trip_id: str) -> Optional[str]:
     return cached.get("owner_token_hash") if cached else None
 
 
-async def get_trip_owner_user_id(trip_id: str) -> Optional[str]:
-    """Return the account that owns a trip, if it has been claimed/saved."""
-    if await _ensure_schema():
-        try:
-            def fetch() -> Optional[str]:
-                with _connect() as connection:
-                    with connection.cursor() as cursor:
-                        cursor.execute("SELECT owner_user_id FROM trips WHERE id = %s", (trip_id,))
-                        row = cursor.fetchone()
-                        return row[0] if row else None
-            return await asyncio.to_thread(fetch)
-        except Exception as error:
-            _fallback_or_raise("get_trip_owner_user_id")
-            logger.error("Neon owner-user lookup failed; using memory: %s", error)
-    else:
-        _fallback_or_raise("get_trip_owner_user_id")
-    cached = _memory_store.get(trip_id)
-    return cached.get("owner_user_id") if cached else None
-
-
 async def update_trip(itinerary: Itinerary) -> None:
     """Persist refinements and packing-list changes without changing the share URL."""
     data = itinerary.model_dump_json()
@@ -338,7 +312,6 @@ async def update_trip(itinerary: Itinerary) -> None:
         "itinerary": data,
         "previous_itinerary": existing.get("itinerary"),
         "owner_token_hash": existing.get("owner_token_hash"),
-        "owner_user_id": existing.get("owner_user_id"),
         "created_at": datetime.utcnow().isoformat(),
     }
     await record_trip_version(itinerary.id, TripKind.SINGLE, itinerary.model_dump(mode="json"), action="updated")
@@ -381,124 +354,9 @@ async def undo_trip(trip_id: str) -> Optional[Itinerary]:
     return restored
 
 
-async def claim_trip(trip_id: str, owner_token_hash: str, owner_user_id: str) -> bool:
-    """Attach an anonymous itinerary to an account after edit-token proof."""
-    if await _ensure_schema():
-        try:
-            def claim() -> bool:
-                with _connect() as connection:
-                    with connection.cursor() as cursor:
-                        cursor.execute(
-                            "UPDATE trips SET owner_user_id = %s WHERE id = %s AND owner_token_hash = %s",
-                            (owner_user_id, trip_id, owner_token_hash),
-                        )
-                        return cursor.rowcount > 0
-            if await asyncio.to_thread(claim):
-                return True
-        except Exception as error:
-            _fallback_or_raise("claim_trip")
-            logger.error("Neon trip claim failed; using memory: %s", error)
-    else:
-        _fallback_or_raise("claim_trip")
-    cached = _memory_store.get(trip_id)
-    if not cached or cached.get("owner_token_hash") != owner_token_hash:
-        return False
-    cached["owner_user_id"] = owner_user_id
-    return True
-
-
-async def list_saved_trip_summaries(owner_user_id: str) -> list[dict]:
-    """Return owned single- and multi-city trip metadata for history screens."""
-    summaries: list[dict] = []
-    if await _ensure_schema():
-        try:
-            def fetch() -> list[dict]:
-                with _connect() as connection:
-                    with connection.cursor() as cursor:
-                        cursor.execute(
-                            "SELECT id, origin, destination, start_date, end_date, created_at FROM trips WHERE owner_user_id = %s",
-                            (owner_user_id,),
-                        )
-                        single = [
-                            {
-                                "id": row[0], "kind": "single", "origin": row[1], "destination": row[2],
-                                "start_date": str(row[3]), "end_date": str(row[4]), "created_at": str(row[5]),
-                            }
-                            for row in cursor.fetchall()
-                        ]
-                        cursor.execute(
-                            "SELECT id, origin, start_date, end_date, created_at FROM multi_city_trips WHERE owner_user_id = %s",
-                            (owner_user_id,),
-                        )
-                        multi = [
-                            {
-                                "id": row[0], "kind": "multi_city", "origin": row[1], "destination": "multi-city route",
-                                "start_date": str(row[2]), "end_date": str(row[3]), "created_at": str(row[4]),
-                            }
-                            for row in cursor.fetchall()
-                        ]
-                        return single + multi
-            summaries.extend(await asyncio.to_thread(fetch))
-            return summaries
-        except Exception as error:
-            _fallback_or_raise("list_saved_trip_summaries")
-            logger.error("Neon trip history lookup failed; using memory: %s", error)
-    else:
-        _fallback_or_raise("list_saved_trip_summaries")
-    for trip_id, cached in _memory_store.items():
-        if cached.get("owner_user_id") != owner_user_id:
-            continue
-        itinerary = Itinerary.model_validate_json(cached["itinerary"])
-        summaries.append({
-            "id": trip_id,
-            "kind": "single",
-            "origin": itinerary.origin.name,
-            "destination": itinerary.destination.name,
-            "start_date": itinerary.start_date.isoformat(),
-            "end_date": itinerary.end_date.isoformat(),
-            "created_at": cached.get("created_at", ""),
-        })
-    for trip_id, cached in _memory_multi_city_store.items():
-        if cached.get("owner_user_id") != owner_user_id:
-            continue
-        trip = Trip.model_validate_json(cached["trip"])
-        summaries.append({
-            "id": trip_id,
-            "kind": "multi_city",
-            "origin": trip.origin.name,
-            "destination": "multi-city route",
-            "start_date": trip.start_date.isoformat(),
-            "end_date": trip.end_date.isoformat(),
-            "created_at": cached.get("created_at", ""),
-        })
-    return summaries
-
-
-async def delete_saved_trips(owner_user_id: str) -> None:
-    """Delete account-owned saved trips as part of an explicit account delete."""
-    if await _ensure_schema():
-        try:
-            def delete() -> None:
-                with _connect() as connection:
-                    with connection.cursor() as cursor:
-                        cursor.execute("DELETE FROM trips WHERE owner_user_id = %s", (owner_user_id,))
-                        cursor.execute("DELETE FROM multi_city_trips WHERE owner_user_id = %s", (owner_user_id,))
-            await asyncio.to_thread(delete)
-        except Exception as error:
-            _fallback_or_raise("delete_saved_trips")
-            logger.error("Neon saved-trip delete failed; using memory: %s", error)
-    else:
-        _fallback_or_raise("delete_saved_trips")
-    for trip_id in [key for key, value in _memory_store.items() if value.get("owner_user_id") == owner_user_id]:
-        _memory_store.pop(trip_id, None)
-    for trip_id in [key for key, value in _memory_multi_city_store.items() if value.get("owner_user_id") == owner_user_id]:
-        _memory_multi_city_store.pop(trip_id, None)
-
-
 async def save_multi_city_trip(
     trip: Trip,
     owner_token_hash: str | None = None,
-    owner_user_id: str | None = None,
 ) -> str:
     """Persist a canonical multi-city aggregate without changing single-trip JSON."""
     trip_id = str(uuid.uuid4())[:12]
@@ -512,10 +370,10 @@ async def save_multi_city_trip(
                     with connection.cursor() as cursor:
                         cursor.execute(
                             """INSERT INTO multi_city_trips
-                            (id, trip_json, origin, start_date, end_date, budget, owner_token_hash, owner_user_id, previous_trip_json, created_at)
-                            VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, NULL, %s)""",
+                            (id, trip_json, origin, start_date, end_date, budget, owner_token_hash, previous_trip_json, created_at)
+                            VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, NULL, %s)""",
                             (trip_id, data, trip.origin.name, trip.start_date, trip.end_date,
-                             trip.budget.total_estimated, owner_token_hash, owner_user_id, created_at),
+                             trip.budget.total_estimated, owner_token_hash, created_at),
                         )
                         _write_multi_city_projections(cursor, trip_id, trip)
             await asyncio.to_thread(insert)
@@ -528,10 +386,9 @@ async def save_multi_city_trip(
         "trip": data,
         "previous_trip": None,
         "owner_token_hash": owner_token_hash,
-        "owner_user_id": owner_user_id,
         "created_at": created_at,
     }
-    await record_trip_version(trip_id, TripKind.MULTI_CITY, trip.model_dump(mode="json"), action="created", actor_id=owner_user_id)
+    await record_trip_version(trip_id, TripKind.MULTI_CITY, trip.model_dump(mode="json"), action="created")
     return trip_id
 
 
@@ -598,32 +455,6 @@ async def update_multi_city_trip(trip: Trip) -> None:
         "trip": data,
         "previous_trip": existing.get("trip"),
         "owner_token_hash": existing.get("owner_token_hash"),
-        "owner_user_id": existing.get("owner_user_id"),
         "created_at": existing.get("created_at", datetime.utcnow().isoformat()),
     }
     await record_trip_version(trip.id, TripKind.MULTI_CITY, trip.model_dump(mode="json"), action="updated")
-
-
-async def claim_multi_city_trip(trip_id: str, owner_token_hash: str, owner_user_id: str) -> bool:
-    if await _ensure_schema():
-        try:
-            def claim() -> bool:
-                with _connect() as connection:
-                    with connection.cursor() as cursor:
-                        cursor.execute(
-                            "UPDATE multi_city_trips SET owner_user_id = %s WHERE id = %s AND owner_token_hash = %s",
-                            (owner_user_id, trip_id, owner_token_hash),
-                        )
-                        return cursor.rowcount > 0
-            if await asyncio.to_thread(claim):
-                return True
-        except Exception as error:
-            _fallback_or_raise("claim_multi_city_trip")
-            logger.error("Neon multi-city claim failed; using memory: %s", error)
-    else:
-        _fallback_or_raise("claim_multi_city_trip")
-    cached = _memory_multi_city_store.get(trip_id)
-    if not cached or cached.get("owner_token_hash") != owner_token_hash:
-        return False
-    cached["owner_user_id"] = owner_user_id
-    return True

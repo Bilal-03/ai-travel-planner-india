@@ -18,11 +18,9 @@ repository is connected to PostgreSQL in the deployment.
 the trip workspace's one-step undo action. The application also applies this
 column additively when it initializes an existing trips table.
 
-`004_phase6_multi_city_accounts.sql` adds the canonical multi-city aggregate and
-its stay/leg/visit/day/selection projections, optional account/session tables,
-explicit preference memory, and account ownership on saved trips. Apply it after
-the preceding migrations so account deletion can cascade through the normalized
-multi-city projections.
+`004_phase6_multi_city.sql` adds the canonical multi-city aggregate and its
+stay/leg/visit/day/selection projections. Apply it after the preceding
+migrations.
 
 `005_phase7_collaboration_analytics.sql` adds append-only itinerary versions,
 structured trip edits, hashed share grants, collaborator roles, privacy-safe
@@ -30,6 +28,11 @@ analytics events, and sensitive-action audit logs. Apply it before enabling
 `REQUIRE_DURABLE_STORAGE=true` in production. The application creates the same
 tables only as a local-development convenience; the migration remains the
 source of truth for hosted databases.
+
+`006_remove_legacy_account_schema.sql` removes the account/session/preference
+tables and account ownership columns created by the earlier account-based
+implementation. Apply it to any database that has already run that retired
+schema.
 
 Before applying in production, run the migration against a staging database and
 verify the status check constraint and expiry index. Do not hand-edit the live

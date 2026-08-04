@@ -1,11 +1,10 @@
-"""Phase 6 multi-city graph, scoped edits, and explicit memory tests."""
+"""Phase 6 multi-city graph and scoped edit tests."""
 
 from __future__ import annotations
 
 import asyncio
 from datetime import date, timedelta
 
-from app.models.account import AccountRegistrationRequest, PreferenceMemoryUpdate
 from app.models.trip import (
     CityInfo,
     DataProvenance,
@@ -15,7 +14,6 @@ from app.models.trip import (
     TransportMode,
     TransportOption,
 )
-from app.services import account_service
 from app.services import multi_city_planner as planner
 
 
@@ -122,30 +120,4 @@ def test_editing_one_stay_does_not_regenerate_unrelated_visits(monkeypatch):
     for stay in updated.destination_stays[1:]:
         assert {visit.poi.id for visit in updated.visits if visit.stay_id == stay.id} == original_pois[stay.id]
     assert updated.destination_stays[0].id == selected.id
-
-
-def test_preference_memory_is_explicitly_editable_and_deletable():
-    session = asyncio.run(account_service.create_anonymous_session())
-    upgraded = asyncio.run(account_service.register_account(
-        AccountRegistrationRequest(email=f"phase6-{session.account.id}@example.com", display_name="Phase 6"),
-        session.access_token,
-    ))
-    saved = asyncio.run(account_service.update_preferences(
-        upgraded.account.id,
-        PreferenceMemoryUpdate(preferred_transport=TransportMode.TRAIN, typical_budget_min=10_000),
-    ))
-    assert saved.preferred_transport == TransportMode.TRAIN
-    assert saved.typical_budget_min == 10_000
-
-    disabled = asyncio.run(account_service.update_preferences(
-        upgraded.account.id,
-        PreferenceMemoryUpdate(memory_enabled=False),
-    ))
-    assert disabled.memory_enabled is False
-    assert disabled.preferred_transport is None
-
-    deleted = asyncio.run(account_service.delete_preferences(upgraded.account.id))
-    assert deleted.memory_enabled is True
-    asyncio.run(account_service.delete_account(upgraded.account.id))
-    assert asyncio.run(account_service.get_account_for_token(upgraded.access_token)) is None
 

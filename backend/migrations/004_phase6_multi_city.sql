@@ -1,8 +1,4 @@
--- Phase 6: canonical multi-city aggregates, normalized route projections,
--- optional accounts, and explicit preference memory.
-
-ALTER TABLE trips
-    ADD COLUMN IF NOT EXISTS owner_user_id VARCHAR(36);
+-- Phase 6: canonical multi-city aggregates and normalized route projections.
 
 CREATE TABLE IF NOT EXISTS multi_city_trips (
     id VARCHAR(12) PRIMARY KEY,
@@ -12,7 +8,6 @@ CREATE TABLE IF NOT EXISTS multi_city_trips (
     end_date DATE NOT NULL,
     budget INTEGER NOT NULL,
     owner_token_hash TEXT,
-    owner_user_id VARCHAR(36),
     previous_trip_json JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -78,39 +73,5 @@ CREATE TABLE IF NOT EXISTS multi_city_transport_selections (
     PRIMARY KEY (trip_id, leg_id)
 );
 
-CREATE TABLE IF NOT EXISTS yatra_accounts (
-    id VARCHAR(36) PRIMARY KEY,
-    email TEXT UNIQUE,
-    display_name TEXT,
-    is_anonymous BOOLEAN NOT NULL DEFAULT TRUE,
-    memory_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS yatra_account_sessions (
-    token_hash TEXT PRIMARY KEY,
-    account_id VARCHAR(36) NOT NULL REFERENCES yatra_accounts(id) ON DELETE CASCADE,
-    expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS yatra_account_preferences (
-    account_id VARCHAR(36) PRIMARY KEY REFERENCES yatra_accounts(id) ON DELETE CASCADE,
-    memory_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    preferred_transport TEXT,
-    hotel_category TEXT,
-    typical_budget_min INTEGER,
-    typical_budget_max INTEGER,
-    dietary_preference TEXT,
-    travel_pace TEXT,
-    accessibility_requirements TEXT,
-    preferred_departure_times JSONB NOT NULL DEFAULT '[]'::jsonb,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS multi_city_trips_owner_idx
-    ON multi_city_trips (owner_user_id, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS multi_city_stays_route_idx
     ON multi_city_destination_stays (trip_id, position);
-

@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 from app.api.trips import generation_rate_limit
 from app.models.collaboration import AnalyticsEventRequest, TripKind
 from app.models.trip import MultiCityTripRequest, Trip
-from app.services.account_service import get_account_for_token
 from app.services.collaboration_service import VersionConflictError, assert_version, record_analytics, resolve_share_token
 from app.services.observability import capture_exception, monotonic_ms, safe_error_message
 from app.services.multi_city_planner import (
@@ -29,7 +28,6 @@ from app.services.trip_storage import (
 router = APIRouter(prefix="/api/multi-city", tags=["multi-city"])
 EDIT_TOKEN_HEADER = "X-Trip-Edit-Token"
 SHARE_TOKEN_HEADER = "X-Trip-Share-Token"
-ACCOUNT_TOKEN_HEADER = "X-Yatra-Account-Token"
 
 
 class ReorderDestinationRequest(BaseModel):
@@ -72,17 +70,11 @@ async def _current_version(trip_id: str) -> int:
     return await current_version(trip_id, TripKind.MULTI_CITY)
 
 
-async def _optional_account_id(account_token: str | None) -> str | None:
-    account = await get_account_for_token(account_token)
-    return account.id if account else None
-
-
 @router.post("/generate", response_model=Trip)
 async def generate_multi_city(
     request: MultiCityTripRequest,
     response: Response,
     _: None = Depends(generation_rate_limit),
-    account_token: str | None = Header(None, alias=ACCOUNT_TOKEN_HEADER),
 ):
     started = monotonic_ms()
     await _record_analytics(AnalyticsEventRequest(event="planner_started", kind=TripKind.MULTI_CITY))
@@ -90,11 +82,7 @@ async def generate_multi_city(
     try:
         trip = await generate_multi_city_trip(request)
         edit_token = secrets.token_urlsafe(32)
-        trip_id = await save_multi_city_trip(
-            trip,
-            _hash_edit_token(edit_token),
-            await _optional_account_id(account_token),
-        )
+        trip_id = await save_multi_city_trip(trip, _hash_edit_token(edit_token))
         trip.id = trip_id
         response.headers[EDIT_TOKEN_HEADER] = edit_token
         await _record_analytics(AnalyticsEventRequest(event="generation_completed", kind=TripKind.MULTI_CITY, trip_id=trip_id, duration_ms=int(monotonic_ms() - started)))

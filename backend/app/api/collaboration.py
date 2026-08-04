@@ -18,7 +18,6 @@ from app.models.collaboration import (
     TripCopyRequest,
     TripKind,
 )
-from app.services.account_service import get_account_for_token
 from app.services.collaboration_service import (
     add_collaborator,
     create_share_link,
@@ -42,7 +41,6 @@ from app.services.trip_storage import (
 router = APIRouter(prefix="/api/trips", tags=["collaboration"])
 EDIT_TOKEN_HEADER = "X-Trip-Edit-Token"
 SHARE_TOKEN_HEADER = "X-Trip-Share-Token"
-ACCOUNT_TOKEN_HEADER = "X-Yatra-Account-Token"
 
 
 class ShareAccessResponse(BaseModel):
@@ -113,20 +111,17 @@ async def create_trip_share_link(
     response: Response,
     kind: TripKind | None = None,
     edit_token: str | None = Header(None, alias=EDIT_TOKEN_HEADER),
-    account_token: str | None = Header(None, alias=ACCOUNT_TOKEN_HEADER),
 ):
     resolved = await _kind_for_trip(trip_id, kind)
     await _require_owner(trip_id, resolved, edit_token)
     if not await _trip_exists(trip_id, resolved):
         raise HTTPException(status_code=404, detail="Trip not found")
-    account = await get_account_for_token(account_token)
     base_url = f"{settings.frontend_url.rstrip('/')}/trip/{trip_id}"
     link, raw_token = await create_share_link(
         trip_id,
         resolved,
         request.role,
         share_url=base_url,
-        created_by=account.id if account else None,
         invite_email=request.invite_email,
         expires_in_hours=request.expires_in_hours,
     )
@@ -168,12 +163,10 @@ async def invite_trip_collaborator(
     request: CollaboratorInviteRequest,
     kind: TripKind | None = None,
     edit_token: str | None = Header(None, alias=EDIT_TOKEN_HEADER),
-    account_token: str | None = Header(None, alias=ACCOUNT_TOKEN_HEADER),
 ):
     resolved = await _kind_for_trip(trip_id, kind)
     await _require_owner(trip_id, resolved, edit_token)
-    account = await get_account_for_token(account_token)
-    return await add_collaborator(trip_id, resolved, request.email, request.role, account.id if account else None)
+    return await add_collaborator(trip_id, resolved, request.email, request.role, None)
 
 
 @router.get("/{trip_id}/collaborators")
@@ -219,27 +212,25 @@ async def copy_trip(
     kind: TripKind | None = None,
     edit_token: str | None = Header(None, alias=EDIT_TOKEN_HEADER),
     share_token: str | None = Header(None, alias=SHARE_TOKEN_HEADER),
-    account_token: str | None = Header(None, alias=ACCOUNT_TOKEN_HEADER),
 ):
     resolved = await _kind_for_trip(trip_id, request.kind or kind)
     await _require_access(trip_id, resolved, edit_token, share_token)
-    account = await get_account_for_token(account_token)
     owner_token = secrets.token_urlsafe(32)
     owner_hash = _hash_edit_token(owner_token)
     if resolved == TripKind.SINGLE:
         source = await get_trip(trip_id)
         if not source:
             raise HTTPException(status_code=404, detail="Trip not found")
-        new_id = await save_trip(source.model_copy(deep=True), owner_hash, account.id if account else None)
+        new_id = await save_trip(source.model_copy(deep=True), owner_hash)
         copied = await get_trip(new_id)
     else:
         source = await get_multi_city_trip(trip_id)
         if not source:
             raise HTTPException(status_code=404, detail="Multi-city trip not found")
-        new_id = await save_multi_city_trip(source.model_copy(deep=True), owner_hash, account.id if account else None)
+        new_id = await save_multi_city_trip(source.model_copy(deep=True), owner_hash)
         copied = await get_multi_city_trip(new_id)
     if not copied:
         raise HTTPException(status_code=500, detail="Trip copy could not be saved")
     response.headers[EDIT_TOKEN_HEADER] = owner_token
-    await record_audit("trip_copied", trip_id, account.id if account else None, {"kind": resolved.value})
+    await record_audit("trip_copied", trip_id, None, {"kind": resolved.value})
     return {"trip_id": new_id, "kind": resolved, "trip": copied.model_dump(mode="json")}

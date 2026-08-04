@@ -46,7 +46,8 @@ small Zustand workspace store are planned additions, not Phase 0 changes.
 ### FastAPI API layer
 
 The API should validate input, accept and deduplicate jobs, expose job status
-and result resources, enforce authorization and rate limits, and return
+and result resources, enforce scoped edit-token/share-link access and rate
+limits, and return
 provider-neutral domain objects. It should not run the long-lived planner
 inside the web request.
 
@@ -125,7 +126,6 @@ and the constraint engine before persistence.
 The planned stable-UUID entities are:
 
 ```text
-users, user_preferences, consent_records
 trips, trip_travellers, destination_stays, travel_legs
 itinerary_days, itinerary_visits, itinerary_versions
 places, place_provider_links, accommodations
@@ -153,5 +153,5 @@ offers need expiry timestamps, and shared edit tokens must be hashed.
 ## Explicit non-goals for this phase
 
 Phase 0 does not implement job endpoints, workers, Redis event replay,
-PostgreSQL migrations, OR-Tools, provider replacements, authentication,
-multi-city trips, offline access, or the Phase 4 visual redesign.
+PostgreSQL migrations, OR-Tools, provider replacements, multi-city trips,
+offline access, or the Phase 4 visual redesign.

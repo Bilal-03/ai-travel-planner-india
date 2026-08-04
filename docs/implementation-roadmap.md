@@ -14,7 +14,7 @@ complete on `codex/phase-7-production-hardening`.
 | 3 | Deterministic constraint engine and scoped itinerary refinement | Complete on `codex/phase-3-constraint-planner` |
 | 4 | Stardrift-inspired but simple trip workspace UX | Complete on `codex/phase-4-trip-workspace` |
 | 5 | Provider gateway and live travel integrations | Complete on `codex/phase-5-provider-gateway` |
-| 6 | Multi-destination trips, accounts, and explicit preference memory | Complete on `codex/phase-6-multi-city-accounts` |
+| 6 | Multi-destination trips and anonymous edit/share access | Complete on `codex/phase-6-multi-city-accounts` |
 | 7 | Offline access, collaboration, analytics, security, and production hardening | Complete on `codex/phase-7-production-hardening` |
 
 ## Phase 0 exit evidence
@@ -88,12 +88,9 @@ Phase 6 is complete after adding a canonical `Trip` aggregate with explicit
 `DestinationStay`, `TravelLeg`, `ItineraryDay`, `Visit`,
 `AccommodationSelection`, and `TransportSelection` entities; a provider-backed
 three-city generator; scoped stay edits; route reordering with affected-leg
-recalculation; normalized PostgreSQL projections; anonymous session continuity;
-optional account upgrade/claiming; saved-trip history; and visible, editable,
-disableable, and deletable preference memory. Supabase HS256 JWTs are accepted
-when configured, while a signed local-session adapter keeps local development
-usable without provider credentials. See `docs/phase-6-completion-report.md` for
-exit evidence and limitations.
+recalculation; normalized PostgreSQL projections; and anonymous edit-token and
+share-link access. See `docs/phase-6-completion-report.md` for exit evidence
+and limitations.
 
 ## Phase 7 gate
 

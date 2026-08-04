@@ -36,12 +36,6 @@ services:
         sync: false
       - key: TRIP_JOB_SECRET
         sync: false
-      - key: AUTH_PROVIDER
-        value: supabase
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_JWT_SECRET
-        sync: false
       - key: SENTRY_DSN
         sync: false
       - key: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -50,8 +44,6 @@ services:
         sync: false
       - key: ANALYTICS_HASH_SALT
         sync: false
-      - key: ACCOUNT_SESSION_TTL_SECONDS
-        value: "2592000"
       - key: FRONTEND_URL
         sync: false
       - key: FLIGHT_PROVIDER

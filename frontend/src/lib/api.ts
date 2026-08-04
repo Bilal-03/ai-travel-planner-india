@@ -6,8 +6,6 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const EDIT_TOKEN_HEADER = "X-Trip-Edit-Token";
 const SHARE_TOKEN_HEADER = "X-Trip-Share-Token";
-const ACCOUNT_TOKEN_HEADER = "X-Yatra-Account-Token";
-const ACCOUNT_TOKEN_STORAGE_KEY = "yatraai:account-token";
 const BOT_PROTECTION_TOKEN = process.env.NEXT_PUBLIC_BOT_PROTECTION_TOKEN;
 
 export type CollaborationRole = "owner" | "editor" | "viewer";
@@ -59,17 +57,6 @@ function getShareToken(tripId: string): string | null {
   const fromUrl = new URLSearchParams(window.location.search).get("share");
   if (fromUrl) setShareToken(tripId, fromUrl);
   return fromUrl;
-}
-
-function saveAccountToken(token: string | null): void {
-  if (typeof window !== "undefined" && token) {
-    window.localStorage.setItem(ACCOUNT_TOKEN_STORAGE_KEY, token);
-  }
-}
-
-function getAccountToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACCOUNT_TOKEN_STORAGE_KEY);
 }
 
 function editHeaders(tripId: string): HeadersInit | undefined {
@@ -463,56 +450,6 @@ export interface MultiCityTrip {
   created_at: string;
 }
 
-export interface Account {
-  id: string;
-  email: string | null;
-  display_name: string | null;
-  is_anonymous: boolean;
-  memory_enabled: boolean;
-  created_at: string;
-}
-
-export interface AccountSession {
-  access_token: string;
-  expires_at: string;
-  account: Account;
-}
-
-export interface PreferenceMemory {
-  memory_enabled: boolean;
-  preferred_transport: TransportMode | null;
-  hotel_category: AccommodationPreference | null;
-  typical_budget_min: number | null;
-  typical_budget_max: number | null;
-  dietary_preference: DietaryPreference | null;
-  travel_pace: TripPace | null;
-  accessibility_requirements: string | null;
-  preferred_departure_times: string[];
-  updated_at: string;
-}
-
-export interface PreferenceMemoryUpdate {
-  memory_enabled?: boolean;
-  preferred_transport?: TransportMode | null;
-  hotel_category?: AccommodationPreference | null;
-  typical_budget_min?: number | null;
-  typical_budget_max?: number | null;
-  dietary_preference?: DietaryPreference | null;
-  travel_pace?: TripPace | null;
-  accessibility_requirements?: string | null;
-  preferred_departure_times?: string[];
-}
-
-export interface SavedTripSummary {
-  id: string;
-  kind: "single" | "multi_city";
-  origin: string;
-  destination: string;
-  start_date: string;
-  end_date: string;
-  created_at: string;
-}
-
 export interface ShareLink {
   id: string;
   trip_id: string;
@@ -637,14 +574,6 @@ async function request<T>(
         signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
-          ...(getAccountToken()
-            ? {
-                [ACCOUNT_TOKEN_HEADER]: getAccountToken() as string,
-                ...(getAccountToken()?.split(".").length === 3
-                  ? { Authorization: `Bearer ${getAccountToken() as string}` }
-                  : {}),
-              }
-            : {}),
           ...(BOT_PROTECTION_TOKEN ? { "X-Yatra-Bot-Token": BOT_PROTECTION_TOKEN } : {}),
           ...fetchOptions.headers,
         },
@@ -680,91 +609,6 @@ export const api = {
       timeoutMs: 15_000,
       retries: 1,
     }),
-
-  /** Keep anonymous visitors continuous across refreshes without requiring sign-in. */
-  ensureAnonymousSession: async () => {
-    const existing = getAccountToken();
-    if (existing) {
-      try {
-        return await request<Account>("/api/account/me", { timeoutMs: 15_000, retries: 0 });
-      } catch {
-        if (typeof window !== "undefined") window.localStorage.removeItem(ACCOUNT_TOKEN_STORAGE_KEY);
-      }
-    }
-    let sessionToken: string | null = null;
-    const session = await request<AccountSession>("/api/account/anonymous", {
-      method: "POST",
-      timeoutMs: 15_000,
-      retries: 1,
-      onResponse: (response) => {
-        sessionToken = response.headers.get(ACCOUNT_TOKEN_HEADER);
-      },
-    });
-    saveAccountToken(sessionToken || session.access_token);
-    return session.account;
-  },
-
-  registerAccount: async (data: { email: string; display_name?: string }) => {
-    let sessionToken: string | null = null;
-    const session = await request<AccountSession>("/api/account/register", {
-      method: "POST",
-      body: JSON.stringify(data),
-      timeoutMs: 15_000,
-      retries: 0,
-      onResponse: (response) => {
-        sessionToken = response.headers.get(ACCOUNT_TOKEN_HEADER);
-      },
-    });
-    saveAccountToken(sessionToken || session.access_token);
-    return session.account;
-  },
-
-  getAccount: () => request<Account>("/api/account/me", { timeoutMs: 15_000, retries: 0 }),
-
-  getSavedTrips: () => request<SavedTripSummary[]>("/api/account/trips", { timeoutMs: 15_000, retries: 0 }),
-
-  claimTrip: (tripId: string) =>
-    request<{ claimed: boolean; trip_id: string; account_id: string }>("/api/account/claim-trip", {
-      method: "POST",
-      body: JSON.stringify({ trip_id: tripId }),
-      headers: editHeaders(tripId),
-      timeoutMs: 15_000,
-      retries: 0,
-    }),
-
-  getPreferences: () => request<PreferenceMemory>("/api/account/preferences", { timeoutMs: 15_000, retries: 0 }),
-
-  updatePreferences: (update: PreferenceMemoryUpdate) =>
-    request<PreferenceMemory>("/api/account/preferences", {
-      method: "PUT",
-      body: JSON.stringify(update),
-      timeoutMs: 15_000,
-      retries: 0,
-    }),
-
-  disablePreferenceMemory: () =>
-    request<PreferenceMemory>("/api/account/preferences/disable", {
-      method: "POST",
-      timeoutMs: 15_000,
-      retries: 0,
-    }),
-
-  deletePreferences: () =>
-    request<PreferenceMemory>("/api/account/preferences", {
-      method: "DELETE",
-      timeoutMs: 15_000,
-      retries: 0,
-    }),
-
-  deleteAccount: async () => {
-    const result = await request<{ deleted: boolean }>("/api/account/me", {
-      method: "DELETE",
-      timeoutMs: 15_000,
-      retries: 0,
-    });
-    if (typeof window !== "undefined") window.localStorage.removeItem(ACCOUNT_TOKEN_STORAGE_KEY);
-    return result;
-  },
 
   /** Generate a complete AI itinerary */
   generateTrip: async (data: TripRequest, options: GenerationRequestOptions = {}) => {

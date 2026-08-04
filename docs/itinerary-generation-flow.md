@@ -96,8 +96,9 @@ buffer. The model does not accept category totals from Gemini.
 
 The API saves an itinerary with a random edit token whose SHA-256 hash is
 stored. It returns the edit token only in `X-Trip-Edit-Token`, and the browser
-keeps it in session storage. A cache hit creates a new saved trip and a new
-edit capability rather than exposing the cached trip's sharing identity.
+keeps it in session storage. A cache hit creates a new persisted trip record
+and a new edit capability rather than exposing the cached trip's sharing
+identity.
 
 ## Progress semantics
 

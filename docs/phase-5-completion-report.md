@@ -61,5 +61,5 @@ fallback behavior preserved.
 
 ## Phase boundary
 
-Phase 6 is next: multi-destination trips, accounts, and explicit preference
-memory, while preserving the provider gateway and provenance contracts.
+Phase 6 is next: multi-destination trips and anonymous edit/share access, while
+preserving the provider gateway and provenance contracts.

@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.models.collaboration import AnalyticsEventRequest, CollaborationRole, TripKind
 from app.services import collaboration_service as collaboration
-from app.services.account_service import create_anonymous_session
 from app.cache.redis_cache import CacheClient
 from app.services.gemini_planner import _sanitize_prompt_text
 from app.services.trip_storage import ensure_durable_storage_ready
@@ -93,11 +92,10 @@ def test_durable_storage_does_not_silently_fallback(monkeypatch):
         asyncio.run(ensure_durable_storage_ready())
 
 
-def test_account_storage_does_not_silently_fallback(monkeypatch):
-    monkeypatch.setattr(settings, "database_url", None)
-    monkeypatch.setattr(settings, "require_durable_storage", True)
-    with pytest.raises(RuntimeError, match="DATABASE_URL"):
-        asyncio.run(create_anonymous_session())
+def test_account_routes_are_removed():
+    with TestClient(app) as client:
+        assert client.get("/api/account/me").status_code == 404
+        assert client.post("/api/account/anonymous").status_code == 404
 
 
 def test_request_size_limit_returns_413(monkeypatch):
