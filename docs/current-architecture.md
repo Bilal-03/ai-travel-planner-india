@@ -36,7 +36,7 @@ itineraries are saved through the PostgreSQL-compatible trip store.
 
 | Route | Implementation | Responsibility |
 | --- | --- | --- |
-| `/` | `frontend/src/app/page.tsx` | Client-side planning flow, quick natural-language brief, detailed review form, durable generation state, single-destination workspace, multi-city route studio, transport selection, refinement, packing list, map, and sharing controls. |
+| `/` | `frontend/src/app/page.tsx` | Client-side planning flow, quick natural-language brief, detailed review form, durable generation state, single-destination workspace, transport selection, refinement, packing list, map, and sharing controls. |
 | `/trip/[id]` | `frontend/src/app/trip/[id]/page.tsx` | Fetches and renders a saved itinerary as a read-only shared trip. |
 | `/trip/[id]` metadata | `frontend/src/app/trip/[id]/layout.tsx` | Server-side metadata fetch for title, description, and Open Graph data when the backend URL is configured. |
 
@@ -76,18 +76,13 @@ The route modules are mounted by `backend/main.py`:
 | `POST` | `/api/trips/{trip_id}/refine` | Parses common edits into scoped deterministic changes where possible; otherwise constrains Gemini to affected days, then validates and updates the trip. Requires the creator edit token. |
 | `POST` | `/api/trips/{trip_id}/undo` | Restores the previous server-saved itinerary revision and swaps the current version into the revision slot. Requires the creator edit token. |
 | `POST` | `/api/trips/{trip_id}/packing-list` | Generates a packing list and updates the trip. Requires the creator edit token. |
-| `POST` | `/api/multi-city/generate` | Generates a canonical multi-city `Trip` with explicit stays, legs, visits, day shells, selections, and budget. |
-| `GET` | `/api/multi-city/{trip_id}` | Loads a saved multi-city trip. |
-| `POST` | `/api/multi-city/{trip_id}/reorder` | Reorders every destination stay and recalculates the affected travel-leg graph. Requires the creator edit token. |
-| `PATCH` | `/api/multi-city/{trip_id}/stays/{stay_id}` | Changes one stay's nights/notes and shifts only dependent dates and leg dates; destination visits retain stable identities. Requires the creator edit token. |
 | `GET` | `/api/search/cities` | Local Indian-city index first, Nominatim fallback. |
 | `GET` | `/api/search/pois` | Overpass POI discovery around coordinates. |
 | `GET` | `/api/transport/flights` | Skyscanner search or labelled fallback estimates. |
 | `GET` | `/api/transport/trains` | RailRadar schedule search or labelled static/estimated records. |
 
-`TripRequest`, `MultiCityTripRequest`, `TripIntent`, `DataProvenance`,
-`TransportOption`, `POI`, `DayPlan`, `BudgetBreakdown`, `Itinerary`, and the
-canonical multi-city entities are defined in
+`TripRequest`, `TripIntent`, `DataProvenance`, `TransportOption`, `POI`,
+`DayPlan`, `BudgetBreakdown`, and `Itinerary` are defined in
 `backend/app/models/trip.py`.
 `DataProvenance` carries provider, status, retrieval/expiry, confidence, source,
 and disclaimer metadata; expired facts are treated as unavailable by the
@@ -126,14 +121,6 @@ The planner's current sequence is:
    summary claims; retry Gemini repairs up to three times.
 11. Use a deterministic budget calculation and build the Pydantic itinerary.
 
-The Phase 6 multi-city sequence is deliberately separate from the Gemini path:
-resolve the origin and every stay, create dated stays, fetch each destination's
-POIs/weather, build one leg for origin → first stay → … → origin, choose a
-provider-labelled offer, and compose stable visits/day shells. Reordering calls
-the leg builder for the new sequence but shifts existing visit identities;
-editing nights shifts dates and leg dates without rediscovering unrelated
-destination places.
-
 The supporting service boundaries are:
 
 - `geocoding.py` and `india_cities.py`: local city index, Nominatim fallback,
@@ -155,9 +142,6 @@ The supporting service boundaries are:
 - `photos.py`: optional Unsplash destination imagery.
 - `festivals.py`: static festival data exists, but the generation flow
   currently intentionally leaves festival facts empty.
-- `multi_city_planner.py`: deterministic multi-city composition and scoped route
-  edits over provider-backed geocoding, transport, POI, and weather facts.
-
 `constraint_engine.py` also owns `parse_refinement_instruction` and
 `apply_scoped_refinement`. Edits such as “make day two less crowded”, “reduce
 the budget”, “avoid early morning travel”, transport switches, activity moves,
@@ -168,25 +152,22 @@ affected-day merge that preserves unrelated days before server-side validation.
 
 ## Persistence and caching
 
-`trip_storage.py` creates the legacy `trips` table and the Phase 6
-`multi_city_trips` aggregate table at runtime when `DATABASE_URL` is configured.
-The multi-city table stores the aggregate JSON plus queryable stay, leg, visit,
-day, and transport-selection projections. Both trip types retain
-stable short IDs and a SHA-256 hash of the creator edit token. Phase 1 also
+`trip_storage.py` creates the `trips` table at runtime when `DATABASE_URL` is
+configured. It stores stable short IDs and a SHA-256 hash of the creator edit
+token. Phase 1 also
 includes the external migration `backend/migrations/001_phase1_travel_facts.sql`
 for durable fact-level provenance/freshness storage, Phase 2 includes
 `backend/migrations/002_phase2_trip_jobs.sql` for the operational job snapshot
 schema, and Phase 4 includes `backend/migrations/003_phase4_trip_revisions.sql`
-for one-step workspace undo. Phase 6 includes
-`backend/migrations/004_phase6_multi_city.sql` for the multi-city
-aggregate/projections. Phase 7 adds
+for one-step workspace undo. Phase 7 adds
 `backend/migrations/005_phase7_collaboration_analytics.sql` for collaboration,
 analytics, and audit tables. Migration
 `backend/migrations/006_remove_legacy_account_schema.sql` removes the retired
 account schema from databases that used the earlier account-based build.
 `backend/migrations/007_remove_legacy_accommodation_projection.sql` removes a
-retired multi-city projection from databases that used the earlier itinerary
-shape. Those
+retired projection from databases that used the earlier itinerary shape, and
+`backend/migrations/008_remove_retired_route_schema.sql` removes the retired
+multi-stop schema from databases that used the earlier route planner. Those
 migrations are intentionally not executed by the
 application at runtime. The active Phase 2 queue/snapshot/event transport is Redis-first; if
 setup or a write fails, trip storage falls back to a process-local dictionary.
@@ -258,8 +239,6 @@ timeouts, bounded retries, circuit opening, and schedule-only rail behavior.
 The live legacy providers remain
 behind the gateway and preserve their existing provenance/fallback contracts.
 
-Phase 6 adds tests for three-city generation, return-leg composition, reorder
-leg recalculation, and stay-scoped edits that preserve unrelated visit
-identities. The current test surface also verifies anonymous edit-token access,
+The current test surface also verifies anonymous edit-token access,
 collaboration permissions, durable-storage fail-closed behavior, and that the
 removed account routes are no longer registered.

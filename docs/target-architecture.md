@@ -126,8 +126,7 @@ and the constraint engine before persistence.
 The planned stable-UUID entities are:
 
 ```text
-trips, trip_travellers, destination_stays, travel_legs
-itinerary_days, itinerary_visits, itinerary_versions
+trips, itinerary_versions
 places, place_provider_links
 transport_offers, weather_snapshots, route_segments, travel_facts
 trip_jobs, trip_job_events, trip_edits, share_links, collaborators
@@ -153,5 +152,5 @@ offers need expiry timestamps, and shared edit tokens must be hashed.
 ## Explicit non-goals for this phase
 
 Phase 0 does not implement job endpoints, workers, Redis event replay,
-PostgreSQL migrations, OR-Tools, provider replacements, multi-city trips,
+PostgreSQL migrations, OR-Tools, provider replacements,
 offline access, or the Phase 4 visual redesign.

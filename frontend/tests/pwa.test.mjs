@@ -15,5 +15,4 @@ test("service worker never caches map tiles and caches trip GET snapshots", () =
   assert.match(serviceWorker, /isMapTile/);
   assert.match(serviceWorker, /if \(isMapTile\(url\)\) return/);
   assert.match(serviceWorker, /\/api\/trips\//);
-  assert.match(serviceWorker, /\/api\/multi-city\//);
 });

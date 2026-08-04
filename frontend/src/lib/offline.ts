@@ -1,7 +1,7 @@
-import type { Itinerary, MultiCityTrip } from "@/lib/api";
+import type { Itinerary } from "@/lib/api";
 
-export type OfflineTrip = Itinerary | MultiCityTrip;
-export type OfflineTripKind = "single" | "multi_city";
+export type OfflineTrip = Itinerary;
+export type OfflineTripKind = "single";
 
 export interface OfflineTripSnapshot {
   tripId: string;
@@ -22,15 +22,9 @@ function key(tripId: string): string {
 }
 
 function addressesForTrip(trip: OfflineTrip): string[] {
-  if ("destination" in trip) {
-    return [
-      `${trip.origin.name}${trip.origin.state ? `, ${trip.origin.state}` : ""}`,
-      `${trip.destination.name}${trip.destination.state ? `, ${trip.destination.state}` : ""}`,
-    ];
-  }
   return [
     `${trip.origin.name}${trip.origin.state ? `, ${trip.origin.state}` : ""}`,
-    ...trip.destination_stays.map((stay) => `${stay.city.name}${stay.city.state ? `, ${stay.city.state}` : ""}`),
+    `${trip.destination.name}${trip.destination.state ? `, ${trip.destination.state}` : ""}`,
   ];
 }
 

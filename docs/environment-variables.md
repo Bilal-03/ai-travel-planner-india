@@ -50,7 +50,6 @@ build/runtime according to the Vercel environment configuration.
 | `UNSPLASH_ACCESS_KEY` | No destination photos | Cosmetic degradation only. |
 | `DATABASE_URL` | Process-local trips | Trips disappear on restart and are not shared across instances. |
 | Redis URL/token | Process-local cache, jobs, progress, rate limits, and provider caches | No cross-instance coordination; jobs and replay history are not restart-durable and duplicate work is possible. Provider circuit state is process-local by design in Phase 5. |
-| `DATABASE_URL` for multi-city storage | Multi-city and shared-trip data remains process-local | Persisted itineraries and normalized multi-city projections disappear on restart. |
 
 Phase 2 adds `TRIP_JOB_SECRET` and makes Redis strongly recommended for durable
 multi-instance job processing. The application has no account or authentication

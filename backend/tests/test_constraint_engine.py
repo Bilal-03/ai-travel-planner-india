@@ -18,7 +18,7 @@ def _intent(**overrides) -> TripIntent:
     start = date.today() + timedelta(days=30)
     payload = {
         "origin": "Delhi",
-        "destinations": ["Jaipur"],
+        "destination": "Jaipur",
         "start_date": start,
         "end_date": start + timedelta(days=1),
         "travellers": 2,
@@ -60,7 +60,7 @@ def test_trip_request_maps_to_structured_intent():
 
     intent = TripIntent.from_request(request)
 
-    assert intent.destinations == ["Jaipur"]
+    assert intent.destination == "Jaipur"
     assert intent.travellers == 3
     assert intent.senior_travellers == 1
     assert intent.mandatory_places == ["Amber Fort"]

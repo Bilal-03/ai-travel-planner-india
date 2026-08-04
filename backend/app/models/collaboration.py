@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 
 class TripKind(StrEnum):
     SINGLE = "single"
-    MULTI_CITY = "multi_city"
 
 
 class CollaborationRole(StrEnum):

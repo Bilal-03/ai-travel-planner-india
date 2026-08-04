@@ -43,8 +43,8 @@ transport windows, budgets, and refinements receive server-side checks.
 
 ## Known limitations
 
-- The current product remains single-destination. The `destinations` list in
-  `TripIntent` is future-ready, but multi-city movement belongs to Phase 6.
+- The current product remains single-destination; route planning covers one
+  origin and one destination per itinerary.
 - Budget arithmetic covers transport, meals, activities, and local travel; the
   constraint layer does not estimate lodging or booking inventory.
 - Candidate scheduling uses a conservative geometry-based travel estimate. The

@@ -30,11 +30,8 @@ from app.services.collaboration_service import (
     revoke_share_link,
 )
 from app.services.trip_storage import (
-    get_multi_city_trip,
-    get_multi_city_trip_owner_token_hash,
     get_trip,
     get_trip_owner_token_hash,
-    save_multi_city_trip,
     save_trip,
 )
 
@@ -59,17 +56,15 @@ async def _kind_for_trip(trip_id: str, requested: TripKind | None = None) -> Tri
         return requested
     if await get_trip(trip_id):
         return TripKind.SINGLE
-    if await get_multi_city_trip(trip_id):
-        return TripKind.MULTI_CITY
     raise HTTPException(status_code=404, detail="Trip not found")
 
 
 async def _trip_exists(trip_id: str, kind: TripKind) -> bool:
-    return bool(await (get_trip(trip_id) if kind == TripKind.SINGLE else get_multi_city_trip(trip_id)))
+    return bool(await get_trip(trip_id))
 
 
 async def _owner_role(trip_id: str, kind: TripKind, edit_token: str | None) -> CollaborationRole | None:
-    expected = await (get_trip_owner_token_hash(trip_id) if kind == TripKind.SINGLE else get_multi_city_trip_owner_token_hash(trip_id))
+    expected = await get_trip_owner_token_hash(trip_id)
     if expected and edit_token and hmac.compare_digest(expected, _hash_edit_token(edit_token)):
         return CollaborationRole.OWNER
     return None
@@ -217,18 +212,11 @@ async def copy_trip(
     await _require_access(trip_id, resolved, edit_token, share_token)
     owner_token = secrets.token_urlsafe(32)
     owner_hash = _hash_edit_token(owner_token)
-    if resolved == TripKind.SINGLE:
-        source = await get_trip(trip_id)
-        if not source:
-            raise HTTPException(status_code=404, detail="Trip not found")
-        new_id = await save_trip(source.model_copy(deep=True), owner_hash)
-        copied = await get_trip(new_id)
-    else:
-        source = await get_multi_city_trip(trip_id)
-        if not source:
-            raise HTTPException(status_code=404, detail="Multi-city trip not found")
-        new_id = await save_multi_city_trip(source.model_copy(deep=True), owner_hash)
-        copied = await get_multi_city_trip(new_id)
+    source = await get_trip(trip_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    new_id = await save_trip(source.model_copy(deep=True), owner_hash)
+    copied = await get_trip(new_id)
     if not copied:
         raise HTTPException(status_code=500, detail="Trip copy could not be saved")
     response.headers[EDIT_TOKEN_HEADER] = owner_token

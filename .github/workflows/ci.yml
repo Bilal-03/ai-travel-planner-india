@@ -45,7 +45,6 @@ jobs:
           app/api/account.py
           app/api/analytics.py
           app/api/collaboration.py
-          app/api/multi_city.py
           app/api/trips.py
           main.py
           --ignore-missing-imports

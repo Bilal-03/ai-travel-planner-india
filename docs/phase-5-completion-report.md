@@ -57,5 +57,5 @@ fallback behavior preserved.
 
 ## Phase boundary
 
-Phase 6 is next: multi-destination trips and anonymous edit/share access, while
-preserving the provider gateway and provenance contracts.
+The next product work should preserve the provider gateway and provenance
+contracts while extending the single-destination planner.

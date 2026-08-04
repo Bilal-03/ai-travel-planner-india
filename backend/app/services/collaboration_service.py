@@ -69,7 +69,7 @@ _SCHEMA_STATEMENTS = (
     CREATE TABLE IF NOT EXISTS itinerary_versions (
         id UUID PRIMARY KEY,
         trip_id VARCHAR(64) NOT NULL,
-        kind TEXT NOT NULL CHECK (kind IN ('single', 'multi_city')),
+        kind TEXT NOT NULL CHECK (kind = 'single'),
         version INTEGER NOT NULL,
         action TEXT NOT NULL,
         actor_id VARCHAR(128),
@@ -82,7 +82,7 @@ _SCHEMA_STATEMENTS = (
     CREATE TABLE IF NOT EXISTS trip_edits (
         id UUID PRIMARY KEY,
         trip_id VARCHAR(64) NOT NULL,
-        kind TEXT NOT NULL CHECK (kind IN ('single', 'multi_city')),
+        kind TEXT NOT NULL CHECK (kind = 'single'),
         action TEXT NOT NULL,
         actor_id VARCHAR(128),
         version INTEGER,
@@ -94,7 +94,7 @@ _SCHEMA_STATEMENTS = (
     CREATE TABLE IF NOT EXISTS share_links (
         id UUID PRIMARY KEY,
         trip_id VARCHAR(64) NOT NULL,
-        kind TEXT NOT NULL CHECK (kind IN ('single', 'multi_city')),
+        kind TEXT NOT NULL CHECK (kind = 'single'),
         role TEXT NOT NULL CHECK (role IN ('editor', 'viewer')),
         token_hash TEXT NOT NULL UNIQUE,
         invite_email TEXT,
@@ -108,7 +108,7 @@ _SCHEMA_STATEMENTS = (
     CREATE TABLE IF NOT EXISTS collaborators (
         id UUID PRIMARY KEY,
         trip_id VARCHAR(64) NOT NULL,
-        kind TEXT NOT NULL CHECK (kind IN ('single', 'multi_city')),
+        kind TEXT NOT NULL CHECK (kind = 'single'),
         email TEXT NOT NULL,
         role TEXT NOT NULL CHECK (role IN ('editor', 'viewer')),
         created_by VARCHAR(128),

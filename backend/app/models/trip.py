@@ -162,7 +162,7 @@ class TripIntent(BaseModel):
     """Structured, provider-neutral planning intent for the constraint engine."""
 
     origin: str
-    destinations: list[str] = Field(..., min_length=1, max_length=5)
+    destination: str
     start_date: date
     end_date: date
     travellers: int = Field(..., ge=1, le=40)
@@ -194,8 +194,8 @@ class TripIntent(BaseModel):
             raise ValueError(
                 f"Budget is too low for {self.travellers} traveller(s); enter at least ₹{self.travellers * 1_500:,}"
             )
-        if not self.destinations or any(not destination.strip() for destination in self.destinations):
-            raise ValueError("At least one destination is required")
+        if not self.destination.strip():
+            raise ValueError("A destination is required")
         if self.currency != "INR":
             raise ValueError("Only INR planning is currently supported")
         return self
@@ -206,7 +206,7 @@ class TripIntent(BaseModel):
 
         return cls(
             origin=request.origin,
-            destinations=[request.destination],
+            destination=request.destination,
             start_date=request.start_date,
             end_date=request.end_date,
             travellers=request.adults + request.children,
@@ -227,69 +227,6 @@ class TripIntent(BaseModel):
         )
 
 
-# ── Multi-destination request models ──────────────────────────────────
-
-class DestinationStayRequest(BaseModel):
-    """One traveller-authored stop in a multi-city route."""
-
-    destination: str = Field(..., min_length=2, max_length=100)
-    nights: int = Field(1, ge=1, le=14)
-    notes: Optional[str] = Field(None, max_length=500)
-
-
-class MultiCityTripRequest(BaseModel):
-    """Intent for a route with explicit stays instead of a destination array."""
-
-    origin: str = Field(..., min_length=2, max_length=100)
-    stays: list[DestinationStayRequest] = Field(..., min_length=2, max_length=5)
-    start_date: date = Field(..., description="Trip departure date")
-    budget: int = Field(..., ge=1_000, le=1_000_000, description="Total budget in INR")
-    vibes: list[TravelVibe] = Field(default_factory=lambda: [TravelVibe.CULTURE])
-    transport_mode: Optional[TransportMode] = None
-    adults: int = Field(2, ge=1, le=20)
-    children: int = Field(0, ge=0, le=20)
-    travel_preference: TravelPreference = TravelPreference.BALANCED
-    pace: TripPace = TripPace.BALANCED
-    dietary_preference: Optional[DietaryPreference] = None
-    senior_citizens: int = Field(0, ge=0, le=20)
-    accessibility_requirements: Optional[str] = Field(None, max_length=500)
-    mandatory_places: list[str] = Field(default_factory=list, max_length=20)
-    excluded_places: list[str] = Field(default_factory=list, max_length=50)
-    free_text_notes: Optional[str] = Field(None, max_length=2_000)
-    allow_early_morning_travel: bool = False
-    allow_late_night_travel: bool = False
-
-    @model_validator(mode="after")
-    def validate_multi_city_constraints(self) -> "MultiCityTripRequest":
-        origin_key = " ".join(self.origin.casefold().split())
-        destinations = [" ".join(stay.destination.casefold().split()) for stay in self.stays]
-        if origin_key in destinations:
-            raise ValueError("Origin must be different from every destination stay")
-        if len(set(destinations)) != len(destinations):
-            raise ValueError("Destination stays must use different cities")
-        total_nights = sum(stay.nights for stay in self.stays)
-        if total_nights + 1 > 14:
-            raise ValueError("Multi-city trips can be no longer than 14 days")
-        if self.start_date < date.today():
-            raise ValueError("Departure date cannot be in the past")
-        travellers = self.adults + self.children
-        if self.budget < travellers * 1_500:
-            raise ValueError(
-                f"Budget is too low for {travellers} traveller(s); enter at least ₹{travellers * 1_500:,}"
-            )
-        if self.senior_citizens > self.adults:
-            raise ValueError("Senior citizens cannot exceed the number of adults")
-        return self
-
-    @property
-    def end_date(self) -> date:
-        """Return the final return date implied by the requested stay nights."""
-
-        from datetime import timedelta
-
-        return self.start_date + timedelta(days=sum(stay.nights for stay in self.stays))
-
-
 # ── Geo Models ─────────────────────────────────────────────────────────
 
 class GeoPoint(BaseModel):
@@ -304,104 +241,6 @@ class CityInfo(BaseModel):
     iata_code: Optional[str] = None
     station_code: Optional[str] = None
     provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
-
-
-# ── Canonical multi-city trip entities ─────────────────────────────────
-
-class DestinationStay(BaseModel):
-    """A dated stay in one destination, retaining its own identity."""
-
-    id: str = Field(default_factory=lambda: f"stay-{uuid.uuid4().hex[:10]}")
-    city: CityInfo
-    position: int = Field(..., ge=0, le=4)
-    arrival_date: date
-    departure_date: date
-    nights: int = Field(..., ge=1, le=14)
-    notes: Optional[str] = Field(None, max_length=500)
-    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
-
-
-class TravelLeg(BaseModel):
-    """One explicit movement between two stays, including its offer envelope."""
-
-    id: str = Field(default_factory=lambda: f"leg-{uuid.uuid4().hex[:10]}")
-    origin: CityInfo
-    destination: CityInfo
-    date: date
-    mode: TransportMode
-    selected_offer: Optional[TransportOption] = None
-    alternatives: list[TransportOption] = Field(default_factory=list)
-    duration_minutes: int = Field(0, ge=0)
-    fare: int = Field(0, ge=0)
-    origin_stay_id: Optional[str] = None
-    destination_stay_id: Optional[str] = None
-    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
-
-
-class TransportSelection(BaseModel):
-    """The selected offer and alternatives for one travel leg."""
-
-    leg_id: str
-    selected_offer: Optional[TransportOption] = None
-    alternatives: list[TransportOption] = Field(default_factory=list)
-    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
-
-
-class Visit(BaseModel):
-    """A destination-scoped place visit that can move dates without regeneration."""
-
-    id: str = Field(default_factory=lambda: f"visit-{uuid.uuid4().hex[:10]}")
-    stay_id: str
-    date: date
-    poi: POI
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
-    estimated_cost: int = Field(0, ge=0)
-    notes: Optional[str] = None
-    is_backup: bool = False
-    is_locked: bool = False
-
-
-class ItineraryDay(BaseModel):
-    """Day shell for a multi-city trip; visits remain keyed to their stay."""
-
-    day_number: int = Field(..., ge=1)
-    date: date
-    stay_id: Optional[str] = None
-    destination: Optional[CityInfo] = None
-    weather: Optional[DayWeather] = None
-    visits: list[Visit] = Field(default_factory=list)
-    meals: list[MealRecommendation] = Field(default_factory=list)
-    travel_leg_id: Optional[str] = None
-    day_budget: int = Field(0, ge=0)
-    day_spent: int = Field(0, ge=0)
-    notes: Optional[str] = None
-
-
-class Trip(BaseModel):
-    """Canonical multi-city aggregate used by the Phase 6 API."""
-
-    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:12])
-    origin: CityInfo
-    destination_stays: list[DestinationStay] = Field(..., min_length=2, max_length=5)
-    travel_legs: list[TravelLeg] = Field(default_factory=list)
-    itinerary_days: list[ItineraryDay] = Field(default_factory=list)
-    visits: list[Visit] = Field(default_factory=list)
-    transport_selections: list[TransportSelection] = Field(default_factory=list)
-    start_date: date
-    end_date: date
-    total_days: int = Field(..., ge=1, le=14)
-    vibes: list[TravelVibe] = Field(default_factory=list)
-    adults: int = Field(2, ge=1)
-    children: int = Field(0, ge=0)
-    travel_preference: TravelPreference = TravelPreference.BALANCED
-    pace: TripPace = TripPace.BALANCED
-    dietary_preference: Optional[DietaryPreference] = None
-    senior_citizens: int = 0
-    accessibility_requirements: Optional[str] = None
-    budget: BudgetBreakdown
-    generation_notes: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class DestinationPhoto(BaseModel):
@@ -616,14 +455,3 @@ class CitySearchResult(BaseModel):
     state: Optional[str] = None
     display_name: str
     coordinates: GeoPoint
-
-
-# The canonical multi-city entities are declared before a few legacy response
-# models so the public contracts stay grouped by concern. Rebuild their
-# forward references once the legacy POI/weather/meal classes are available.
-DestinationStay.model_rebuild()
-TravelLeg.model_rebuild()
-TransportSelection.model_rebuild()
-Visit.model_rebuild()
-ItineraryDay.model_rebuild()
-Trip.model_rebuild()

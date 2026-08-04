@@ -24,7 +24,6 @@
 | 🌤️ **Weather-Aware Planning** | OpenWeatherMap forecasts with indoor backup activities |
 | 💰 **Budget Tracking** | Deterministic breakdown — outbound/return transport, food, activities, stay, local transport and buffer |
 | 🔗 **Instant Sharing** | View-only links, WhatsApp sharing, and persistent saved itineraries |
-| 🏙️ **Multi-city Routes** | Plan explicit destination stays, travel legs, return legs, and stay-scoped edits |
 | ✨ **Plan Refinement** | The planning browser can update its saved itinerary with a follow-up request |
 | 🧳 **Packing List** | Generates a weather- and vibe-aware checklist on demand |
 | 🖨️ **Print / PDF** | Print any itinerary or save it as a PDF from the browser |
@@ -125,8 +124,9 @@ Copy the included root [`.env.example`](.env.example) to `.env` for the backend,
 
 The app uses built-in provider defaults for Skyscanner, RailRadar, Overpass,
 OSRM, and OpenWeather, with labelled fallbacks when optional keys are absent.
-Phase 6 adds multi-city planning and PostgreSQL-backed durable itinerary/share
-storage for production deployments; the app has no user accounts or login flow.
+The app supports single-destination planning with PostgreSQL-backed durable
+itinerary/share storage for production deployments; it has no user accounts or
+login flow.
 
 Phase 7 production deployments must apply the ordered SQL migrations under
 [`backend/migrations/`](backend/migrations/), set `APP_ENV=production`, enable

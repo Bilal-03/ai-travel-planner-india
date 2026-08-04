@@ -1,8 +1,7 @@
 # YatraAI implementation roadmap
 
 This roadmap mirrors the delivery order in the master implementation plan.
-Phases 0 through 6 are complete on their respective branches. Phase 7 is
-complete on `codex/phase-7-production-hardening`.
+Phases 0 through 5 and Phase 7 are complete on their respective branches.
 
 ## Phase status
 
@@ -14,7 +13,6 @@ complete on `codex/phase-7-production-hardening`.
 | 3 | Deterministic constraint engine and scoped itinerary refinement | Complete on `codex/phase-3-constraint-planner` |
 | 4 | Stardrift-inspired but simple trip workspace UX | Complete on `codex/phase-4-trip-workspace` |
 | 5 | Provider gateway and live travel integrations | Complete on `codex/phase-5-provider-gateway` |
-| 6 | Multi-destination trips and anonymous edit/share access | Complete on `codex/phase-6-multi-city-accounts` |
 | 7 | Offline access, collaboration, analytics, security, and production hardening | Complete on `codex/phase-7-production-hardening` |
 
 ## Phase 0 exit evidence
@@ -81,16 +79,6 @@ safe provenance-labelled fallbacks. Rail remains schedule-only with unavailable
 availability. See `docs/phase-5-completion-report.md` for exit evidence and
 known limitations.
 
-## Phase 6 gate
-
-Phase 6 is complete after adding a canonical `Trip` aggregate with explicit
-`DestinationStay`, `TravelLeg`, `ItineraryDay`, `Visit`, and
-`TransportSelection` entities; a provider-backed
-three-city generator; scoped stay edits; route reordering with affected-leg
-recalculation; normalized PostgreSQL projections; and anonymous edit-token and
-share-link access. See `docs/phase-6-completion-report.md` for exit evidence
-and limitations.
-
 ## Phase 7 gate
 
 Phase 7 is complete after adding the offline PWA shell and local trip
@@ -108,8 +96,8 @@ and known operational boundaries.
    redesign task.
 2. Phase 5 must preserve the current provider until each replacement is
    contract-tested and feature-flagged.
-3. Collaboration, offline access, analytics, and payments stay outside the
-   Phase 6 product scope.
+3. Collaboration, offline access, analytics, and payments remain layered on the
+   single-destination planner.
 
 ## Delivery controls
 

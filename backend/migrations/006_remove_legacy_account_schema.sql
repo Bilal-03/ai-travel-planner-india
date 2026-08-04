@@ -7,6 +7,3 @@ DROP TABLE IF EXISTS yatra_accounts;
 
 ALTER TABLE trips
     DROP COLUMN IF EXISTS owner_user_id;
-
-ALTER TABLE multi_city_trips
-    DROP COLUMN IF EXISTS owner_user_id;

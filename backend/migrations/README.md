@@ -22,7 +22,7 @@ column additively when it initializes an existing trips table.
 stay/leg/visit/day/transport-selection projections. Apply it after the preceding
 migrations.
 
-`005_phase7_collaboration_analytics.sql` adds append-only itinerary versions,
+`005_phase7_collaboration_analytics.sql` adds append-only single-itinerary versions,
 structured trip edits, hashed share grants, collaborator roles, privacy-safe
 analytics events, and sensitive-action audit logs. Apply it before enabling
 `REQUIRE_DURABLE_STORAGE=true` in production. The application creates the same
@@ -34,8 +34,14 @@ tables and account ownership columns created by the earlier account-based
 implementation. Apply it to any database that has already run that retired
 schema.
 
-`007_remove_legacy_accommodation_projection.sql` removes a retired multi-city
-projection from databases that applied the earlier itinerary shape.
+`007_remove_legacy_accommodation_projection.sql` removes a retired projection
+from databases that applied the earlier itinerary shape.
+
+`008_remove_retired_route_schema.sql` removes the retired multi-stop route
+tables and any associated collaboration rows from databases that applied the
+earlier route-planner implementation. The earlier route migration remains in
+the ordered history so existing migration runners stay consistent; the active
+application no longer creates or exposes those tables.
 
 Before applying in production, run the migration against a staging database and
 verify the status check constraint and expiry index. Do not hand-edit the live

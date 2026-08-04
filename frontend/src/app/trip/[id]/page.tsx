@@ -10,13 +10,11 @@ import TransportCard from "@/components/TransportCard";
 import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
 import ConnectivityIndicator from "@/components/ConnectivityIndicator";
-import MultiCitySharedView from "@/components/MultiCitySharedView";
 import OfflineEssentials from "@/components/OfflineEssentials";
 import { DestinationInspiration } from "@/components/TripEnhancements";
 import {
   api,
   Itinerary,
-  MultiCityTrip,
   formatINR,
   formatDate,
   getVibeEmoji,
@@ -31,7 +29,6 @@ export default function TripDetailPage() {
   const tripId = params.id as string;
 
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
-  const [multiCityTrip, setMultiCityTrip] = useState<MultiCityTrip | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offlineSnapshot, setOfflineSnapshot] = useState<OfflineTripSnapshot | null>(null);
@@ -46,25 +43,13 @@ export default function TripDetailPage() {
         saveOfflineTrip(data, "single");
         setOfflineSnapshot(loadOfflineTrip(tripId));
       } catch {
-        try {
-          const data = await api.getMultiCityTrip(tripId);
-          setMultiCityTrip(data);
-          saveOfflineTrip(data, "multi_city");
-          setOfflineSnapshot(loadOfflineTrip(tripId));
+        const cached = loadOfflineTrip(tripId);
+        if (cached?.kind === "single") {
+          setItinerary(cached.trip as Itinerary);
+          setOfflineSnapshot(cached);
           setError(null);
-        } catch {
-          const cached = loadOfflineTrip(tripId);
-          if (cached?.kind === "single") {
-            setItinerary(cached.trip as Itinerary);
-            setOfflineSnapshot(cached);
-            setError(null);
-          } else if (cached?.kind === "multi_city") {
-            setMultiCityTrip(cached.trip as MultiCityTrip);
-            setOfflineSnapshot(cached);
-            setError(null);
-          } else {
-            setError("Trip not found or has expired.");
-          }
+        } else {
+          setError("Trip not found or has expired.");
         }
       } finally {
         setLoading(false);
@@ -90,7 +75,7 @@ export default function TripDetailPage() {
     );
   }
 
-  if (error || (!itinerary && !multiCityTrip)) {
+  if (error || !itinerary) {
     return (
       <main className="min-h-screen flex items-center justify-center gradient-hero">
         <div className="glass p-8 rounded-2xl text-center max-w-md">
@@ -109,9 +94,6 @@ export default function TripDetailPage() {
     );
   }
 
-  if (multiCityTrip) {
-    return <><ConnectivityIndicator savedAt={offlineSnapshot?.savedAt} />{offlineSnapshot && <div className="mx-auto max-w-6xl px-4 pt-6"><OfflineEssentials snapshot={offlineSnapshot} /></div>}<MultiCitySharedView trip={multiCityTrip} /></>;
-  }
   if (!itinerary) return null;
 
   return (

@@ -54,7 +54,7 @@ function cleanMetadata(metadata: AnalyticsMetadata): Record<string, string | num
   return clean;
 }
 
-export function track(event: ProductEvent, options: { tripId?: string; kind?: "single" | "multi_city"; metadata?: AnalyticsMetadata } = {}): void {
+export function track(event: ProductEvent, options: { tripId?: string; kind?: "single"; metadata?: AnalyticsMetadata } = {}): void {
   if (typeof window === "undefined" || !EVENTS.has(event)) return;
   const body = JSON.stringify({
     event,

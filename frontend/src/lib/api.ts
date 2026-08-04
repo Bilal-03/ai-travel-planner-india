@@ -8,7 +8,7 @@ const EDIT_TOKEN_HEADER = "X-Trip-Edit-Token";
 const SHARE_TOKEN_HEADER = "X-Trip-Share-Token";
 
 export type CollaborationRole = "owner" | "editor" | "viewer";
-export type TripKind = "single" | "multi_city";
+export type TripKind = "single";
 
 function editTokenKey(tripId: string): string {
   return `yatraai:trip-edit-token:${tripId}`;
@@ -134,33 +134,6 @@ export interface TripRequest {
   destination: string;
   start_date: string;
   end_date: string;
-  budget: number;
-  vibes: TravelVibe[];
-  transport_mode?: TransportMode;
-  adults: number;
-  children: number;
-  travel_preference: TravelPreference;
-  pace: TripPace;
-  dietary_preference?: DietaryPreference;
-  senior_citizens: number;
-  accessibility_requirements?: string;
-  mandatory_places?: string[];
-  excluded_places?: string[];
-  free_text_notes?: string;
-  allow_early_morning_travel: boolean;
-  allow_late_night_travel: boolean;
-}
-
-export interface DestinationStayRequest {
-  destination: string;
-  nights: number;
-  notes?: string | null;
-}
-
-export interface MultiCityTripRequest {
-  origin: string;
-  stays: DestinationStayRequest[];
-  start_date: string;
   budget: number;
   vibes: TravelVibe[];
   transport_mode?: TransportMode;
@@ -346,90 +319,6 @@ export interface Itinerary {
   generation_notes: string[];
 }
 
-export interface DestinationStay {
-  id: string;
-  city: CityInfo;
-  position: number;
-  arrival_date: string;
-  departure_date: string;
-  nights: number;
-  notes: string | null;
-  provenance?: DataProvenance;
-}
-
-export interface TravelLeg {
-  id: string;
-  origin: CityInfo;
-  destination: CityInfo;
-  date: string;
-  mode: TransportMode;
-  selected_offer: TransportOption | null;
-  alternatives: TransportOption[];
-  duration_minutes: number;
-  fare: number;
-  origin_stay_id: string | null;
-  destination_stay_id: string | null;
-  provenance?: DataProvenance;
-}
-
-export interface TransportSelection {
-  leg_id: string;
-  selected_offer: TransportOption | null;
-  alternatives: TransportOption[];
-  provenance?: DataProvenance;
-}
-
-export interface Visit {
-  id: string;
-  stay_id: string;
-  date: string;
-  poi: POI;
-  start_time: string | null;
-  end_time: string | null;
-  estimated_cost: number;
-  notes: string | null;
-  is_backup: boolean;
-  is_locked: boolean;
-}
-
-export interface ItineraryDay {
-  day_number: number;
-  date: string;
-  stay_id: string | null;
-  destination: CityInfo | null;
-  weather: DayWeather | null;
-  visits: Visit[];
-  meals: MealRecommendation[];
-  travel_leg_id: string | null;
-  day_budget: number;
-  day_spent: number;
-  notes: string | null;
-}
-
-export interface MultiCityTrip {
-  id: string;
-  origin: CityInfo;
-  destination_stays: DestinationStay[];
-  travel_legs: TravelLeg[];
-  itinerary_days: ItineraryDay[];
-  visits: Visit[];
-  transport_selections: TransportSelection[];
-  start_date: string;
-  end_date: string;
-  total_days: number;
-  vibes: TravelVibe[];
-  adults: number;
-  children: number;
-  travel_preference: TravelPreference;
-  pace: TripPace;
-  dietary_preference: DietaryPreference | null;
-  senior_citizens: number;
-  accessibility_requirements: string | null;
-  budget: BudgetBreakdown;
-  generation_notes: string[];
-  created_at: string;
-}
-
 export interface ShareLink {
   id: string;
   trip_id: string;
@@ -607,50 +496,6 @@ export const api = {
     return itinerary;
   },
 
-  /** Generate a canonical multi-city route with explicit stays and legs. */
-  generateMultiCityTrip: async (data: MultiCityTripRequest) => {
-    let editToken: string | null = null;
-    const trip = await request<MultiCityTrip>("/api/multi-city/generate", {
-      method: "POST",
-      body: JSON.stringify(data),
-      timeoutMs: 90_000,
-      retries: 1,
-      onResponse: (response) => {
-        editToken = response.headers.get(EDIT_TOKEN_HEADER);
-      },
-    });
-    saveEditToken(trip.id, editToken);
-    return trip;
-  },
-
-  getMultiCityTrip: (tripId: string) =>
-    request<MultiCityTrip>(`/api/multi-city/${encodeURIComponent(tripId)}`, {
-      headers: shareHeaders(tripId),
-      onResponse: (response) => saveRevision(tripId, response),
-    }),
-
-  reorderMultiCityTrip: async (tripId: string, destinationStayIds: string[]) => {
-    const trip = await request<MultiCityTrip>(`/api/multi-city/${encodeURIComponent(tripId)}/reorder`, {
-      method: "POST",
-      body: JSON.stringify({ destination_stay_ids: destinationStayIds }),
-      headers: editHeaders(tripId),
-      timeoutMs: 90_000,
-      retries: 0,
-      onResponse: (response) => saveRevision(tripId, response),
-    });
-    return trip;
-  },
-
-  updateMultiCityStay: (tripId: string, stayId: string, update: { nights?: number; notes?: string | null }) =>
-    request<MultiCityTrip>(`/api/multi-city/${encodeURIComponent(tripId)}/stays/${encodeURIComponent(stayId)}`, {
-      method: "PATCH",
-      body: JSON.stringify(update),
-      headers: editHeaders(tripId),
-      timeoutMs: 30_000,
-      retries: 0,
-      onResponse: (response) => saveRevision(tripId, response),
-    }),
-
   /** Accept a durable asynchronous trip-generation job. */
   createTripJob: (data: TripRequest, idempotencyKey: string, signal?: AbortSignal) =>
     request<TripJob>("/api/trip-jobs", {
@@ -775,7 +620,7 @@ export const api = {
 
   copyTrip: async (tripId: string, kind: TripKind = "single") => {
     let editToken: string | null = null;
-    const result = await request<{ trip_id: string; kind: TripKind; trip: Itinerary | MultiCityTrip }>(`/api/trips/${encodeURIComponent(tripId)}/copy`, {
+    const result = await request<{ trip_id: string; kind: TripKind; trip: Itinerary }>(`/api/trips/${encodeURIComponent(tripId)}/copy`, {
       method: "POST",
       body: JSON.stringify({ kind }),
       headers: editHeaders(tripId),

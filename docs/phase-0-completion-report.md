@@ -85,7 +85,7 @@ documents rather than duplicated here.
 
 The following were not started: Phase 1 provenance work, Phase 2 jobs and
 durable progress, OR-Tools/constraint-engine replacement, UI redesign, live
-provider replacement, database migrations, multi-city trips,
+provider replacement, database migrations,
 collaboration, offline access, analytics, and production hardening.
 
 ## Recommended next step

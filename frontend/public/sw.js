@@ -21,7 +21,7 @@ function isMapTile(url) {
 }
 
 function isTripSnapshot(url) {
-  return url.pathname.startsWith("/api/trips/") || url.pathname.startsWith("/api/multi-city/");
+  return url.pathname.startsWith("/api/trips/");
 }
 
 async function networkFirst(request, cacheName) {
