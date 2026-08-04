@@ -24,6 +24,7 @@ from app.services.gemini_planner import (
     generate_itinerary,
     generate_packing_list,
     refine_itinerary,
+    select_plan_for_itinerary,
     select_transport_for_itinerary,
 )
 from app.services.collaboration_service import VersionConflictError, assert_version, record_analytics, resolve_share_token
@@ -48,6 +49,10 @@ class TransportSelectionRequest(BaseModel):
     mode: TransportMode
     provider: str = Field(..., min_length=1)
     code: str | None = None
+
+
+class PlanSelectionRequest(BaseModel):
+    plan_id: str = Field(..., min_length=1, max_length=40)
 
 
 def _hash_edit_token(token: str) -> str:
@@ -257,6 +262,36 @@ async def select_trip_transport(
         )
         await update_trip(updated)
         await _record_analytics(AnalyticsEventRequest(event="transport_selected", kind=TripKind.SINGLE, trip_id=trip_id, metadata={"provider": request.provider}))
+        response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
+        return updated
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"ETag": f'W/"{exc.current}"'}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{trip_id}/plan", response_model=Itinerary)
+async def select_trip_plan(
+    trip_id: str,
+    request: PlanSelectionRequest,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
+    _: None = Depends(require_trip_owner),
+):
+    """Select one of the generated itinerary alternatives."""
+    itinerary = await get_trip(trip_id)
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    try:
+        await assert_version(trip_id, TripKind.SINGLE, if_match)
+        updated = select_plan_for_itinerary(itinerary, request.plan_id)
+        await update_trip(updated)
+        await _record_analytics(AnalyticsEventRequest(
+            event="plan_selected",
+            kind=TripKind.SINGLE,
+            trip_id=trip_id,
+            metadata={"plan_id": request.plan_id},
+        ))
         response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
         return updated
     except VersionConflictError as exc:

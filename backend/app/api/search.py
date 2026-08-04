@@ -32,13 +32,13 @@ async def search_cities_endpoint(
 async def search_pois_endpoint(
     lat: float = Query(..., description="Latitude"),
     lng: float = Query(..., description="Longitude"),
-    vibe: Optional[str] = Query("culture", description="Travel vibe"),
+    focus: Optional[str] = Query(None, description="Optional prompt focus"),
     radius: int = Query(10000, description="Search radius in meters"),
 ):
     """Search for points of interest around a location."""
     try:
-        vibes = [v.strip() for v in vibe.split(",")]
-        pois = await discover_pois(lat=lat, lng=lng, vibes=vibes, radius=radius)
+        focus_terms = [term.strip() for term in (focus or "").split(",") if term.strip()]
+        pois = await discover_pois(lat=lat, lng=lng, focus_terms=focus_terms, radius=radius)
         return pois
     except Exception as e:
         logger.error(f"POI search failed: {e}")

@@ -5,7 +5,6 @@ import { motion } from "framer-motion";
 import HomeHero from "@/components/HomeHero";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import TripForm from "@/components/TripForm";
 import QuickPlanner from "@/components/QuickPlanner";
 import FeaturesRail from "@/components/FeaturesRail";
 import DestinationPostcards from "@/components/DestinationPostcards";
@@ -78,7 +77,6 @@ export default function Home() {
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastRequest, setLastRequest] = useState<TripRequest | null>(null);
-  const [plannerDraft, setPlannerDraft] = useState<Partial<TripRequest> | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const stopJobEventsRef = useRef<(() => void) | null>(null);
@@ -287,15 +285,7 @@ export default function Home() {
     clearPersistedJob();
     setItinerary(null);
     setError(null);
-    setPlannerDraft(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const handleQuickReview = (draft: Partial<TripRequest>, prompt: string) => {
-    setPlannerDraft({ ...draft, free_text_notes: prompt });
-    window.setTimeout(() => {
-      document.getElementById("trip-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
   };
 
   const handleTransportSelect = async (option: Itinerary["transport_options"][number]) => {
@@ -324,11 +314,7 @@ export default function Home() {
           <HomeHero />
 
           <section id="plan" className="px-7 pt-[30px] pb-[90px]">
-            <QuickPlanner onReview={handleQuickReview} isLoading={isGenerating} />
-            <div className="mx-auto mb-3 max-w-[1180px] px-1">
-              <p className="font-[family-name:var(--font-space-mono)] text-[11px] uppercase tracking-[0.16em] text-foreground-muted">Detailed planning · review every field</p>
-            </div>
-            <TripForm key={plannerDraft?.free_text_notes || "detailed-plan"} onSubmit={handleSubmit} isLoading={isGenerating} initialData={plannerDraft || undefined} />
+            <QuickPlanner onGenerate={handleSubmit} isLoading={isGenerating} />
             {isGenerating && <LoadingState waitingForBackend={!backendReady} status={generationStatus} onCancel={cancelGeneration} onRetry={retryGeneration} />}
 
             {error && (

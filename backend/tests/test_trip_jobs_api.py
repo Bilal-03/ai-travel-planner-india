@@ -9,7 +9,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.api import trip_jobs as trip_jobs_api
-from app.models.trip import BudgetBreakdown, CityInfo, GeoPoint, Itinerary, TravelVibe, TripRequest
+from app.models.trip import BudgetBreakdown, CityInfo, GeoPoint, Itinerary, TripRequest
 from app.services import trip_jobs
 from main import app
 
@@ -22,7 +22,8 @@ def _request() -> TripRequest:
         start_date=start,
         end_date=start,
         budget=10_000,
-        vibes=[TravelVibe.CULTURE],
+        members=2,
+        planning_notes="heritage places",
     )
 
 
@@ -41,7 +42,8 @@ def _itinerary(request: TripRequest) -> Itinerary:
         start_date=request.start_date,
         end_date=request.end_date,
         total_days=1,
-        vibes=request.vibes,
+        members=request.members,
+        planning_notes=request.planning_notes,
         budget=BudgetBreakdown(total_estimated=1_000, remaining=9_000),
     )
 

@@ -228,7 +228,7 @@ def test_baseline_request_fixtures_are_valid(case_id: str):
     assert request.origin != request.destination
     assert request.end_date == request.start_date + timedelta(days=expected_days - 1)
     assert (request.end_date - request.start_date).days + 1 <= 14
-    assert request.budget >= (request.adults + request.children) * 1_500
+    assert request.budget >= request.members * 1_500
 
 
 @pytest.mark.parametrize("case_id", sorted(REQUESTS_BY_ID))
@@ -258,6 +258,8 @@ def test_baseline_generation_matches_response_fixture(
     assert all(option.is_fallback for option in itinerary.transport_options)
     assert all(option.field_provenance for option in itinerary.transport_options)
     assert itinerary.budget.total_estimated > 0
+    assert [option.id for option in itinerary.plan_options] == ["plan-1", "plan-2", "plan-3"]
+    assert itinerary.selected_plan_id == "plan-2"
     assert (
         itinerary.budget.remaining == request.budget - itinerary.budget.total_estimated
     )

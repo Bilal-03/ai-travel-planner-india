@@ -22,17 +22,13 @@ from pydantic import BaseModel, Field
 from app.models.trip import (
     GeoPoint,
     TripIntent,
-    TripPace,
     TransportOption,
-    TravelVibe,
 )
 from app.services.geocoding import haversine_distance
 
 DAY_START_MINUTES = 9 * 60
-EARLY_DAY_START_MINUTES = 8 * 60
 DAY_END_MINUTES = 20 * 60
 TRANSFER_BUFFER_MINUTES = 10
-SENIOR_TRAVEL_BUFFER_MINUTES = 20
 ARRIVAL_BUFFER_MINUTES = 45
 DEPARTURE_BUFFER_MINUTES = 90
 MEAL_BREAKS = (
@@ -40,13 +36,44 @@ MEAL_BREAKS = (
     ("dinner", 19 * 60, 20 * 60),
 )
 
-PACE_RULES: dict[TripPace, dict[str, int]] = {
-    TripPace.RELAXED: {"max_activities": 2, "max_hours": 8},
-    TripPace.BALANCED: {"max_activities": 3, "max_hours": 10},
-    TripPace.PACKED: {"max_activities": 5, "max_hours": 12},
-}
-
 MEAL_ALLOWANCE_PER_TRAVELLER_PER_DAY = 1_000
+
+
+@dataclass(frozen=True)
+class PlanProfile:
+    """A result-page itinerary shape, rather than a hidden form setting."""
+
+    id: str
+    title: str
+    description: str
+    max_activities: int
+    max_hours: int
+
+
+PLAN_PROFILES: tuple[PlanProfile, ...] = (
+    PlanProfile(
+        id="plan-1",
+        title="Essential highlights",
+        description="A focused route for the destination-defining places and plenty of breathing room.",
+        max_activities=2,
+        max_hours=8,
+    ),
+    PlanProfile(
+        id="plan-2",
+        title="Classic experience",
+        description="A balanced day-by-day route with the best-known sights and local discoveries.",
+        max_activities=3,
+        max_hours=10,
+    ),
+    PlanProfile(
+        id="plan-3",
+        title="Full destination",
+        description="A fuller route that uses the available time for more places and neighbourhoods.",
+        max_activities=5,
+        max_hours=12,
+    ),
+)
+DEFAULT_PLAN_PROFILE = PLAN_PROFILES[1]
 
 
 class ConstraintSeverity(str, Enum):
@@ -273,19 +300,12 @@ def _score_candidate(candidate: Mapping[str, Any], intent: TripIntent, index: in
         _candidate_category(candidate),
         str(candidate.get("description") or ""),
     ]))
-    vibe_tokens: dict[TravelVibe, tuple[str, ...]] = {
-        TravelVibe.ADVENTURE: ("fort", "trek", "hike", "outdoor", "beach", "water"),
-        TravelVibe.CULTURE: ("museum", "fort", "palace", "heritage", "temple", "gallery"),
-        TravelVibe.FOOD: ("market", "bazaar", "food", "restaurant"),
-        TravelVibe.RELAXATION: ("beach", "garden", "lake", "park", "spa"),
-        TravelVibe.SPIRITUAL: ("temple", "mosque", "church", "ashram", "shrine"),
-        TravelVibe.NIGHTLIFE: ("night", "club", "bar", "market"),
+    note_tokens = {
+        token for token in _normalize(intent.planning_notes).split()
+        if len(token) > 3
     }
-    interest_score = sum(
-        1 for vibe in intent.interests
-        if any(token in text for token in vibe_tokens.get(vibe, ()))
-    )
-    return (-interest_score, _candidate_cost(candidate), index)
+    relevance_score = sum(1 for token in note_tokens if token in text)
+    return (-relevance_score, _candidate_cost(candidate), index)
 
 
 def _matches_place(candidate: Mapping[str, Any], requested: str) -> bool:
@@ -315,13 +335,14 @@ class _DayState:
         return sum(activity.estimated_cost for activity in self.activities)
 
 
-def _make_day_states(intent: TripIntent, transport: Optional[TransportOption]) -> list[_DayState]:
+def _make_day_states(
+    intent: TripIntent,
+    transport: Optional[TransportOption],
+    profile: PlanProfile = DEFAULT_PLAN_PROFILE,
+) -> list[_DayState]:
     total_days = (intent.end_date - intent.start_date).days + 1
-    rules = PACE_RULES[intent.pace]
-    start = EARLY_DAY_START_MINUTES if intent.early_departure_allowed else DAY_START_MINUTES
+    start = DAY_START_MINUTES
     end = DAY_END_MINUTES
-    if intent.senior_travellers:
-        rules = {"max_activities": max(1, rules["max_activities"] - 1), "max_hours": min(9, rules["max_hours"])}
 
     arrival = _parse_minutes(_transport_value(transport, "arrival_time")) if transport else None
     departure = _parse_minutes(_transport_value(transport, "departure_time")) if transport else None
@@ -331,13 +352,13 @@ def _make_day_states(intent: TripIntent, transport: Optional[TransportOption]) -
         day_start = start
         day_end = end
         if day_number == 1 and arrival is not None:
-            if arrival > day_end and not intent.late_arrival_allowed:
+            if arrival > day_end:
                 # Keep the day available for validation so the reason is machine-readable.
                 day_start = day_end
             else:
                 day_start = max(day_start, arrival + ARRIVAL_BUFFER_MINUTES)
         if day_number == total_days and departure is not None:
-            if departure < day_start and not intent.early_departure_allowed:
+            if departure < day_start:
                 day_end = day_start
             day_end = min(day_end, departure - DEPARTURE_BUFFER_MINUTES)
         states.append(_DayState(
@@ -345,8 +366,8 @@ def _make_day_states(intent: TripIntent, transport: Optional[TransportOption]) -
             day_date=intent.start_date + timedelta(days=day_number - 1),
             start_minute=day_start,
             end_minute=day_end,
-            max_activities=rules["max_activities"],
-            max_hours=rules["max_hours"],
+            max_activities=profile.max_activities,
+            max_hours=profile.max_hours,
             cursor=day_start,
             activities=[],
             meal_breaks=[MealBreak(meal_type=name, start_minute=begin, end_minute=finish) for name, begin, finish in MEAL_BREAKS],
@@ -354,11 +375,13 @@ def _make_day_states(intent: TripIntent, transport: Optional[TransportOption]) -
     return states
 
 
-def max_activities_for_intent(intent: TripIntent) -> int:
-    """Return the deterministic per-day pace cap, including senior pacing."""
+def max_activities_for_intent(
+    intent: TripIntent,
+    profile: PlanProfile = DEFAULT_PLAN_PROFILE,
+) -> int:
+    """Return the activity cap for the selected result-page plan."""
 
-    limit = PACE_RULES[intent.pace]["max_activities"]
-    return max(1, limit - 1) if intent.senior_travellers else limit
+    return profile.max_activities
 
 
 def _weather_suitable(candidate: Mapping[str, Any], severity: Optional[str]) -> bool:
@@ -376,7 +399,7 @@ def estimate_plan_cost(
 ) -> int:
     """Estimate complete trip cost using only deterministic inputs."""
 
-    travellers = intent.travellers
+    travellers = intent.members
     transport_cost = int(_transport_value(selected_transport, "price") or 0) * travellers * 2
     activity_cost = sum(day.estimated_activity_cost for day in plan.days) * travellers
     meal_cost = MEAL_ALLOWANCE_PER_TRAVELLER_PER_DAY * travellers * len(plan.days)
@@ -430,17 +453,17 @@ class ConstraintEngine:
         *,
         weather: Iterable[object] = (),
         selected_transport: Optional[TransportOption] = None,
+        profile: PlanProfile = DEFAULT_PLAN_PROFILE,
     ) -> ConstraintPlan:
         issues: list[ConstraintIssue] = []
-        states = _make_day_states(intent, selected_transport)
-        excluded = intent.excluded_places
+        states = _make_day_states(intent, selected_transport, profile)
         normalized_candidates: list[dict[str, Any]] = []
         seen: set[str] = set()
         for index, raw_candidate in enumerate(candidates):
             candidate = _as_dict(raw_candidate)
             name = _candidate_name(candidate)
             coordinates = _candidate_coordinates(candidate)
-            if not coordinates or not name or any(_matches_place(candidate, item) for item in excluded):
+            if not coordinates or not name:
                 continue
             key = _normalize(name)
             if key in seen:
@@ -451,25 +474,11 @@ class ConstraintEngine:
             seen.add(key)
             normalized_candidates.append(candidate)
 
-        mandatory: list[dict[str, Any]] = []
-        for requested in intent.mandatory_places:
-            match = next((candidate for candidate in normalized_candidates if _matches_place(candidate, requested)), None)
-            if not match:
-                issues.append(ConstraintIssue(
-                    code="mandatory_place_unavailable",
-                    message=f"Mandatory place '{requested}' is not available in the reviewed candidate data.",
-                    poi_name=requested,
-                ))
-            elif match not in mandatory:
-                mandatory.append(match)
-
-        optional = [candidate for candidate in normalized_candidates if candidate not in mandatory]
-        optional.sort(key=lambda candidate: _score_candidate(candidate, intent, int(candidate["_index"])))
-        candidates_in_order = [(candidate, True) for candidate in mandatory] + [(candidate, False) for candidate in optional]
+        normalized_candidates.sort(key=lambda candidate: _score_candidate(candidate, intent, int(candidate["_index"])))
+        candidates_in_order = [(candidate, False) for candidate in normalized_candidates]
 
         for candidate, is_mandatory in candidates_in_order:
             name = _candidate_name(candidate)
-            accessible = _candidate_is_accessible(candidate)
             severity_by_day = [
                 _weather_for_day(weather, state.day_date)
                 for state in states
@@ -478,15 +487,6 @@ class ConstraintEngine:
                 _weather_suitable(candidate, severity)
                 for severity in severity_by_day
             ]
-            if intent.accessibility_requirements and not accessible:
-                if is_mandatory:
-                    issues.append(ConstraintIssue(
-                        code="mandatory_place_accessibility_unknown",
-                        message=f"Mandatory place '{name}' has no confirmed accessibility evidence.",
-                        poi_name=name,
-                    ))
-                continue
-
             candidate_scheduled = False
             # Spread optional activities across the least-loaded days first.
             ordered_states = sorted(states, key=lambda state: (len(state.activities), state.day_number))
@@ -500,7 +500,7 @@ class ConstraintEngine:
                     {"id": previous.poi_id, "name": previous.poi_name, "coordinates": previous.coordinates.model_dump()} if previous else candidate,
                     candidate,
                 ) if previous else 0
-                buffer = SENIOR_TRAVEL_BUFFER_MINUTES if intent.senior_travellers else TRANSFER_BUFFER_MINUTES
+                buffer = TRANSFER_BUFFER_MINUTES
                 start = state.cursor + (travel + buffer if previous else 0)
                 start = _fits_meal_break(start, _candidate_duration(candidate), state.meal_breaks)
                 window = _opening_window(candidate.get("opening_hours"))
@@ -526,7 +526,7 @@ class ConstraintEngine:
                     opening_hours=candidate.get("opening_hours"),
                     mandatory=is_mandatory,
                     weather_suitable=suitable_by_day[state.day_number - 1],
-                    accessible=accessible,
+                    accessible=_candidate_is_accessible(candidate),
                     travel_from_previous_minutes=travel,
                 )
                 state.activities.append(stop)
@@ -596,7 +596,7 @@ class ConstraintEngine:
             draft.estimated_total_cost = estimate_plan_cost(draft, intent, selected_transport)
         plan = ConstraintPlan(days=days, issues=issues, daily_budget=int(intent.budget / len(days)))
         plan.estimated_total_cost = estimate_plan_cost(plan, intent, selected_transport)
-        plan.issues.extend(validate_constraint_plan(plan, intent, selected_transport, include_existing=False))
+        plan.issues.extend(validate_constraint_plan(plan, intent, selected_transport, include_existing=False, profile=profile))
         plan.feasible = not any(issue.severity == ConstraintSeverity.ERROR for issue in plan.issues)
         return plan
 
@@ -607,6 +607,7 @@ def validate_constraint_plan(
     selected_transport: Optional[TransportOption] = None,
     *,
     include_existing: bool = True,
+    profile: PlanProfile = DEFAULT_PLAN_PROFILE,
 ) -> list[ConstraintIssue]:
     """Validate a machine schedule without asking Gemini to repair it."""
 
@@ -620,8 +621,8 @@ def validate_constraint_plan(
     for day in plan.days:
         if len(day.activities) > day.max_activities:
             issues.append(ConstraintIssue(
-                code="pace_limit_exceeded",
-                message=f"Day {day.day_number} exceeds the {intent.pace.value} pace limit.",
+                code="activity_limit_exceeded",
+                message=f"Day {day.day_number} exceeds the {profile.title.lower()} activity limit.",
                 day_number=day.day_number,
             ))
         previous: Optional[ScheduledStop] = None
@@ -658,25 +659,18 @@ def validate_constraint_plan(
                     day_number=day.day_number,
                     poi_name=activity.poi_name,
                 ))
-            if intent.accessibility_requirements and not activity.accessible:
-                issues.append(ConstraintIssue(
-                    code="accessibility_unverified",
-                    message=f"Accessibility is not confirmed for '{activity.poi_name}'.",
-                    day_number=day.day_number,
-                    poi_name=activity.poi_name,
-                ))
             previous = activity
         if day.activities:
             span = day.activities[-1].end_minute - day.activities[0].start_minute
             if span > day.max_hours * 60:
                 issues.append(ConstraintIssue(
                     code="day_window_exceeded",
-                    message=f"Day {day.day_number} exceeds its {day.max_hours}-hour pace window.",
+                    message=f"Day {day.day_number} exceeds its {day.max_hours}-hour plan window.",
                     day_number=day.day_number,
                 ))
         daily_cost = (
-            day.estimated_activity_cost * intent.travellers
-            + MEAL_ALLOWANCE_PER_TRAVELLER_PER_DAY * intent.travellers
+            day.estimated_activity_cost * intent.members
+            + MEAL_ALLOWANCE_PER_TRAVELLER_PER_DAY * intent.members
             + day.estimated_local_transport_cost
         )
         if daily_cost > plan.daily_budget:
@@ -694,13 +688,13 @@ def validate_constraint_plan(
         ))
     arrival = _parse_minutes(_transport_value(selected_transport, "arrival_time")) if selected_transport else None
     departure = _parse_minutes(_transport_value(selected_transport, "departure_time")) if selected_transport else None
-    if arrival is not None and arrival > DAY_END_MINUTES and not intent.late_arrival_allowed:
+    if arrival is not None and arrival > DAY_END_MINUTES:
         issues.append(ConstraintIssue(
             code="late_arrival_not_allowed",
             message="The selected transport arrives after the allowed sightseeing window.",
             day_number=1,
         ))
-    if departure is not None and departure < EARLY_DAY_START_MINUTES and not intent.early_departure_allowed:
+    if departure is not None and departure < DAY_START_MINUTES:
         issues.append(ConstraintIssue(
             code="early_departure_not_allowed",
             message="The selected transport departs before the allowed travel window.",
@@ -720,13 +714,13 @@ def validate_transport_window(
     issues: list[ConstraintIssue] = []
     arrival = _parse_minutes(_transport_value(selected_transport, "arrival_time"))
     departure = _parse_minutes(_transport_value(selected_transport, "departure_time"))
-    if arrival is not None and arrival + ARRIVAL_BUFFER_MINUTES >= DAY_END_MINUTES and not intent.late_arrival_allowed:
+    if arrival is not None and arrival + ARRIVAL_BUFFER_MINUTES >= DAY_END_MINUTES:
         issues.append(ConstraintIssue(
             code="late_arrival_not_allowed",
             message="The selected transport arrives too late for the allowed first-day travel window.",
             day_number=1,
         ))
-    if departure is not None and departure - DEPARTURE_BUFFER_MINUTES < EARLY_DAY_START_MINUTES and not intent.early_departure_allowed:
+    if departure is not None and departure - DEPARTURE_BUFFER_MINUTES < DAY_START_MINUTES:
         issues.append(ConstraintIssue(
             code="early_departure_not_allowed",
             message="The selected transport departs too early for the allowed last-day travel window.",

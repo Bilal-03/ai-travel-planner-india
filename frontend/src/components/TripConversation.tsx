@@ -15,8 +15,8 @@ interface TripConversationProps {
 const SUGGESTIONS = [
   "Make day 2 less crowded",
   "Reduce the trip budget",
-  "Avoid early morning travel",
   "Regenerate day 1",
+  "Add a food-focused stop",
 ];
 
 export default function TripConversation({
@@ -48,7 +48,7 @@ export default function TripConversation({
           <span className="rounded-full bg-success/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-success">Server checked</span>
         </div>
         <p className="mt-3 text-sm leading-relaxed text-foreground-secondary">
-          Ask for a change in plain language. YatraAI updates only the affected day or travel leg, then validates timing, opening hours, pace, and budget before saving.
+          Ask for a change in plain language. YatraAI updates only the affected day or travel leg, then validates timing, opening hours, and budget before saving.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           {SUGGESTIONS.map((suggestion) => (
@@ -86,9 +86,9 @@ export default function TripConversation({
           </button>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-lg bg-background/45 p-2.5"><span className="block text-foreground-muted">Pace</span><strong className="capitalize text-foreground">{itinerary.pace}</strong></div>
+          <div className="rounded-lg bg-background/45 p-2.5"><span className="block text-foreground-muted">Plan</span><strong className="text-foreground">{(itinerary.plan_options || []).find((option) => option.id === itinerary.selected_plan_id)?.title || "Selected"}</strong></div>
           <div className="rounded-lg bg-background/45 p-2.5"><span className="block text-foreground-muted">Budget left</span><strong className="text-foreground">{formatINR(itinerary.budget.remaining)}</strong></div>
-          <div className="rounded-lg bg-background/45 p-2.5"><span className="block text-foreground-muted">Must visit</span><strong className="text-foreground">{itinerary.mandatory_places?.length || "None"}</strong></div>
+          <div className="rounded-lg bg-background/45 p-2.5"><span className="block text-foreground-muted">Members</span><strong className="text-foreground">{itinerary.members || 2}</strong></div>
           <div className="rounded-lg bg-background/45 p-2.5"><span className="block text-foreground-muted">Data mode</span><strong className="text-foreground">Live + estimates</strong></div>
         </div>
       </div>

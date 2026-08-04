@@ -3,7 +3,7 @@
 import asyncio
 from datetime import date, timedelta
 
-from app.models.trip import GeoPoint, RouteSegment, TripRequest, TravelVibe
+from app.models.trip import GeoPoint, RouteSegment, TripRequest
 from app.services import gemini_planner, routing
 
 
@@ -40,7 +40,7 @@ def test_plan_validation_rejects_overlap_opening_hour_and_summary_mismatch(monke
         start_date=start,
         end_date=start,
         budget=10_000,
-        vibes=[TravelVibe.CULTURE],
+        members=2,
     )
     poi_a = {
         "name": "City Museum",

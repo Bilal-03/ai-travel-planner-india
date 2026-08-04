@@ -11,7 +11,6 @@ from app.models.trip import (
     CityInfo,
     GeoPoint,
     Itinerary,
-    TravelVibe,
     TripRequest,
 )
 from app.services import trip_jobs
@@ -25,7 +24,8 @@ def _request(day_offset: int = 10) -> TripRequest:
         start_date=start,
         end_date=start,
         budget=10_000,
-        vibes=[TravelVibe.CULTURE],
+        members=2,
+        planning_notes="heritage places",
     )
 
 
@@ -46,7 +46,8 @@ def _itinerary(request: TripRequest) -> Itinerary:
         start_date=request.start_date,
         end_date=request.end_date,
         total_days=1,
-        vibes=request.vibes,
+        members=request.members,
+        planning_notes=request.planning_notes,
         budget=BudgetBreakdown(total_estimated=1_000, remaining=9_000),
     )
 

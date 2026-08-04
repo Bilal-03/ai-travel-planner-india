@@ -88,18 +88,7 @@ export interface CitySearchResult {
   coordinates: GeoPoint;
 }
 
-export type TravelVibe =
-  | "adventure"
-  | "culture"
-  | "food"
-  | "relaxation"
-  | "spiritual"
-  | "nightlife";
-
 export type TransportMode = "flight" | "train" | "road";
-export type TravelPreference = "cheapest" | "fastest" | "balanced";
-export type TripPace = "relaxed" | "balanced" | "packed";
-export type DietaryPreference = "vegetarian" | "non_vegetarian";
 
 export type DataStatus =
   | "live"
@@ -135,20 +124,49 @@ export interface TripRequest {
   start_date: string;
   end_date: string;
   budget: number;
-  vibes: TravelVibe[];
   transport_mode?: TransportMode;
-  adults: number;
-  children: number;
-  travel_preference: TravelPreference;
-  pace: TripPace;
-  dietary_preference?: DietaryPreference;
-  senior_citizens: number;
-  accessibility_requirements?: string;
-  mandatory_places?: string[];
-  excluded_places?: string[];
-  free_text_notes?: string;
-  allow_early_morning_travel: boolean;
-  allow_late_night_travel: boolean;
+  members: number;
+  planning_notes?: string;
+}
+
+export type ClarificationInput = "choice" | "text" | "date_range" | "number";
+
+export interface ClarificationOption {
+  id: string;
+  label: string;
+  description?: string | null;
+}
+
+export interface ClarificationQuestion {
+  id: string;
+  prompt: string;
+  input_type: ClarificationInput;
+  options: ClarificationOption[];
+  allow_custom: boolean;
+}
+
+export interface PlannerAnswer {
+  question_id: string;
+  option_id?: string | null;
+  answer: string;
+}
+
+export interface PlanningBrief {
+  origin: string | null;
+  destination: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  budget: number | null;
+  members: number | null;
+  transport_mode: TransportMode | null;
+  planning_notes: string;
+}
+
+export interface PlannerClarificationResponse {
+  status: "questions" | "ready";
+  brief: PlanningBrief;
+  questions: ClarificationQuestion[];
+  trip_request: TripRequest | null;
 }
 
 export interface TransportOption {
@@ -293,29 +311,30 @@ export interface Itinerary {
   start_date: string;
   end_date: string;
   total_days: number;
-  vibes: TravelVibe[];
-  adults: number;
-  children: number;
-  travel_preference: TravelPreference;
-  pace: TripPace;
-  dietary_preference: DietaryPreference | null;
-  senior_citizens: number;
-  accessibility_requirements: string | null;
-  mandatory_places?: string[];
-  excluded_places?: string[];
-  free_text_notes?: string | null;
-  allow_early_morning_travel: boolean;
-  allow_late_night_travel: boolean;
+  members: number;
+  planning_notes: string | null;
   transport_options: TransportOption[];
   selected_transport: TransportOption | null;
   day_plans: DayPlan[];
   budget: BudgetBreakdown;
   route_segments: RouteSegment[];
+  plan_options: PlanOption[];
+  selected_plan_id: string;
   weather_forecast: DayWeather[];
   destination_photos: DestinationPhoto[];
   festivals: FestivalEvent[];
   packing_list: PackingItem[];
   share_url: string | null;
+  generation_notes: string[];
+}
+
+export interface PlanOption {
+  id: string;
+  title: string;
+  description: string;
+  day_plans: DayPlan[];
+  budget: BudgetBreakdown;
+  route_segments: RouteSegment[];
   generation_notes: string[];
 }
 
@@ -475,6 +494,16 @@ export const api = {
     request<CitySearchResult[]>(`/api/search/cities?q=${encodeURIComponent(query)}`, {
       signal,
       timeoutMs: 15_000,
+      retries: 1,
+    }),
+
+  /** Extract a trip request or return the next small set of questions. */
+  clarifyPlanner: (data: { prompt: string; answers: PlannerAnswer[] }, signal?: AbortSignal) =>
+    request<PlannerClarificationResponse>("/api/planner/clarify", {
+      method: "POST",
+      body: JSON.stringify(data),
+      signal,
+      timeoutMs: 45_000,
       retries: 1,
     }),
 
@@ -661,6 +690,14 @@ export const api = {
       onResponse: (response) => saveRevision(tripId, response),
     }),
 
+  selectPlan: (tripId: string, planId: string) =>
+    request<Itinerary>(`/api/trips/${tripId}/plan`, {
+      method: "POST",
+      body: JSON.stringify({ plan_id: planId }),
+      headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
+    }),
+
   generatePackingList: (tripId: string) =>
     request<PackingItem[]>(`/api/trips/${tripId}/packing-list`, {
       method: "POST",
@@ -739,19 +776,6 @@ export function getWeatherColor(severity: string): string {
     default:
       return "var(--foreground-muted)";
   }
-}
-
-/** Get vibe emoji */
-export function getVibeEmoji(vibe: TravelVibe): string {
-  const map: Record<TravelVibe, string> = {
-    adventure: "🏔️",
-    culture: "🏛️",
-    food: "🍛",
-    relaxation: "🧘",
-    spiritual: "🛕",
-    nightlife: "🌃",
-  };
-  return map[vibe] || "✨";
 }
 
 export { ApiError };

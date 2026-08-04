@@ -16,7 +16,6 @@ import {
   TransportOption,
   formatDate,
   formatINR,
-  getVibeEmoji,
 } from "@/lib/api";
 import { track } from "@/lib/analytics";
 
@@ -35,6 +34,8 @@ interface WorkspaceContentProps {
   itinerary: Itinerary;
   onUpdate: (itinerary: Itinerary) => void;
   onTransportSelect: (option: TransportOption) => Promise<void>;
+  onPlanSelect: (planId: string) => Promise<void>;
+  isPlanSelecting: boolean;
   onActivityEdit: (instruction: string) => Promise<void>;
   isEditing: boolean;
 }
@@ -97,17 +98,43 @@ function JourneySummary({ itinerary }: { itinerary: Itinerary }) {
       </div>
       <div className="mt-3 flex items-start gap-2 rounded-lg border border-glass-border bg-background/30 p-3 text-xs leading-relaxed text-foreground-secondary">
         <span aria-hidden="true">✦</span>
-        <p><strong className="text-foreground">Why this option?</strong> It remains within the working budget, keeps the journey aligned with your {itinerary.travel_preference} preference, and is the most balanced available option for these dates. Verify live fares and availability before booking.</p>
+        <p><strong className="text-foreground">Why this option?</strong> It keeps the selected plan within the working budget while using the transport option that best fits the route. Verify live fares and availability before booking.</p>
       </div>
     </section>
   );
 }
 
-function PlanContent({ itinerary, onUpdate, onTransportSelect, onActivityEdit, isEditing }: WorkspaceContentProps) {
+function PlanOptions({ itinerary, onPlanSelect, isPlanSelecting }: Pick<WorkspaceContentProps, "itinerary" | "onPlanSelect" | "isPlanSelecting">) {
+  const options = itinerary.plan_options || [];
+  if (options.length <= 1) return null;
+  return (
+    <section aria-labelledby="plan-options-heading" className="rounded-xl border border-marigold/30 bg-marigold/5 p-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div><p className="font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-[0.14em] text-marigold">Choose your day shape</p><h2 id="plan-options-heading" className="mt-1 text-xl font-bold text-foreground">Three ways to experience the trip</h2></div>
+        <span className="text-xs text-foreground-muted">Members: {itinerary.members || 2}</span>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        {options.map((option) => {
+          const selected = itinerary.selected_plan_id === option.id;
+          return (
+            <button key={option.id} type="button" onClick={() => void onPlanSelect(option.id)} disabled={isPlanSelecting || selected} className={`rounded-lg border p-3 text-left transition ${selected ? "border-marigold bg-marigold/15" : "border-glass-border bg-background/25 hover:border-marigold/70"} disabled:cursor-not-allowed disabled:opacity-80`}>
+              <div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-foreground">{option.title}</span>{selected && <span className="text-[10px] font-bold uppercase tracking-wide text-marigold">Selected</span>}</div>
+              <p className="mt-2 text-xs leading-relaxed text-foreground-secondary">{option.description}</p>
+              <p className="mt-3 text-xs font-semibold text-foreground">{formatINR(option.budget.total_estimated)} estimated</p>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function PlanContent({ itinerary, onUpdate, onTransportSelect, onPlanSelect, isPlanSelecting, onActivityEdit, isEditing }: WorkspaceContentProps) {
   const alternatives = itinerary.transport_options.filter((option) => option.provider !== itinerary.selected_transport?.provider || option.code !== itinerary.selected_transport?.code);
 
   return (
     <div className="space-y-5">
+      <PlanOptions itinerary={itinerary} onPlanSelect={onPlanSelect} isPlanSelecting={isPlanSelecting} />
       <JourneySummary itinerary={itinerary} />
       <TravelTips itinerary={itinerary} />
       <DestinationInspiration itinerary={itinerary} />
@@ -158,8 +185,8 @@ function OverviewRail({ itinerary }: { itinerary: Itinerary }) {
       <div className="workspace-panel rounded-xl border border-glass-border bg-glass-bg p-4">
         <h2 className="text-sm font-semibold text-foreground">Trip snapshot</h2>
         <dl className="mt-3 space-y-2 text-xs">
-          <div className="flex justify-between gap-3"><dt className="text-foreground-muted">Travellers</dt><dd className="font-medium text-foreground">{itinerary.adults + itinerary.children}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-foreground-muted">Vibe</dt><dd className="text-foreground">{itinerary.vibes.map((vibe) => getVibeEmoji(vibe)).join(" ") || "—"}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="text-foreground-muted">Members</dt><dd className="font-medium text-foreground">{itinerary.members || 2}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="text-foreground-muted">Plan</dt><dd className="text-right text-foreground">{(itinerary.plan_options || []).find((option) => option.id === itinerary.selected_plan_id)?.title || "Selected route"}</dd></div>
           <div className="flex justify-between gap-3"><dt className="text-foreground-muted">Data note</dt><dd className="text-right text-foreground-secondary">Live where available; estimates are labelled</dd></div>
         </dl>
       </div>
@@ -172,6 +199,7 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
   const [isEditing, setIsEditing] = useState(false);
   const [refinementError, setRefinementError] = useState<string | null>(null);
   const [previousItinerary, setPreviousItinerary] = useState<Itinerary | null>(null);
+  const [isPlanSelecting, setIsPlanSelecting] = useState(false);
 
   const refine = async (instruction: string) => {
     setIsEditing(true);
@@ -206,6 +234,20 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
     }
   };
 
+  const selectPlan = async (planId: string) => {
+    if (planId === itinerary.selected_plan_id) return;
+    setIsPlanSelecting(true);
+    setRefinementError(null);
+    try {
+      onUpdate(await api.selectPlan(itinerary.id, planId));
+      track("plan_selected", { tripId: itinerary.id, kind: "single", metadata: { plan_id: planId } });
+    } catch (error) {
+      setRefinementError(error instanceof ApiError ? error.message : "Couldn’t switch plans. Please try again.");
+    } finally {
+      setIsPlanSelecting(false);
+    }
+  };
+
   const conversation = (
     <TripConversation
       itinerary={itinerary}
@@ -234,12 +276,12 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
 
         <div className="mt-5 hidden items-start gap-5 lg:grid lg:grid-cols-[250px_minmax(0,1fr)_330px] xl:grid-cols-[270px_minmax(0,1fr)_360px]">
           {conversation}
-          <main className="min-w-0"><PlanContent itinerary={itinerary} onUpdate={onUpdate} onTransportSelect={onTransportSelect} onActivityEdit={refine} isEditing={isEditing} /></main>
+          <main className="min-w-0"><PlanContent itinerary={itinerary} onUpdate={onUpdate} onTransportSelect={onTransportSelect} onPlanSelect={selectPlan} isPlanSelecting={isPlanSelecting} onActivityEdit={refine} isEditing={isEditing} /></main>
           <OverviewRail itinerary={itinerary} />
         </div>
 
         <div className="mt-5 lg:hidden">
-          {activeTab === "plan" && <PlanContent itinerary={itinerary} onUpdate={onUpdate} onTransportSelect={onTransportSelect} onActivityEdit={refine} isEditing={isEditing} />}
+          {activeTab === "plan" && <PlanContent itinerary={itinerary} onUpdate={onUpdate} onTransportSelect={onTransportSelect} onPlanSelect={selectPlan} isPlanSelecting={isPlanSelecting} onActivityEdit={refine} isEditing={isEditing} />}
           {activeTab === "map" && <div className="rounded-xl border border-glass-border bg-glass-bg p-1"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div>}
           {activeTab === "budget" && <div className="space-y-4"><BudgetBreakdown budget={itinerary.budget} totalBudget={itinerary.budget.total_estimated + itinerary.budget.remaining} />{itinerary.selected_transport && <TransportCard option={itinerary.selected_transport} travelDate={itinerary.start_date} isSelected />}</div>}
           {activeTab === "chat" && conversation}

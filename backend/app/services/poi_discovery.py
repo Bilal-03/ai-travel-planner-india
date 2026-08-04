@@ -1,6 +1,6 @@
 """
 POI discovery service — Overpass API (OpenStreetMap).
-Finds points of interest around a destination, filtered by travel vibe.
+Finds points of interest around a destination, grounded in the travel prompt.
 Results cached for 7 days to respect fair-use policies.
 """
 
@@ -13,7 +13,7 @@ import httpx
 
 from app.cache.redis_cache import cached
 from app.data.landmark_catalogue import LANDMARK_CATALOGUE
-from app.models.trip import DataProvenance, DataStatus, GeoPoint, POI, TravelVibe
+from app.models.trip import DataProvenance, DataStatus, GeoPoint, POI
 from app.providers.contracts import PlaceSearchRequest
 from app.providers.gateway import get_provider_gateway
 
@@ -44,43 +44,43 @@ async def _rate_limit():
         _last_request_time = asyncio.get_event_loop().time()
 
 
-# ── Vibe-to-OSM tag mapping ──────────────────────────────────────────
+# ── Prompt-focus-to-OSM tag mapping ──────────────────────────────────
 
-VIBE_QUERIES: dict[TravelVibe, list[str]] = {
-    TravelVibe.ADVENTURE: [
+FOCUS_QUERIES: dict[str, list[str]] = {
+    "outdoors": [
         'node["sport"](around:{radius},{lat},{lng});',
         'node["leisure"="park"](around:{radius},{lat},{lng});',
         'node["natural"](around:{radius},{lat},{lng});',
         'way["leisure"="park"](around:{radius},{lat},{lng});',
         'node["tourism"="viewpoint"](around:{radius},{lat},{lng});',
     ],
-    TravelVibe.CULTURE: [
+    "culture": [
         'node["tourism"="museum"](around:{radius},{lat},{lng});',
         'node["historic"](around:{radius},{lat},{lng});',
         'node["tourism"="attraction"](around:{radius},{lat},{lng});',
         'way["tourism"="attraction"](around:{radius},{lat},{lng});',
         'node["amenity"="theatre"](around:{radius},{lat},{lng});',
     ],
-    TravelVibe.FOOD: [
+    "food": [
         'node["amenity"="restaurant"](around:{radius},{lat},{lng});',
         'node["amenity"="cafe"](around:{radius},{lat},{lng});',
         'node["amenity"="fast_food"](around:{radius},{lat},{lng});',
         'node["shop"="bakery"](around:{radius},{lat},{lng});',
     ],
-    TravelVibe.RELAXATION: [
+    "relaxation": [
         'node["leisure"="spa"](around:{radius},{lat},{lng});',
         'node["leisure"="garden"](around:{radius},{lat},{lng});',
         'way["leisure"="garden"](around:{radius},{lat},{lng});',
         'node["natural"="beach"](around:{radius},{lat},{lng});',
         'way["natural"="beach"](around:{radius},{lat},{lng});',
     ],
-    TravelVibe.SPIRITUAL: [
+    "spiritual": [
         'node["amenity"="place_of_worship"](around:{radius},{lat},{lng});',
         'way["amenity"="place_of_worship"](around:{radius},{lat},{lng});',
         'node["historic"="temple"](around:{radius},{lat},{lng});',
         'node["building"="temple"](around:{radius},{lat},{lng});',
     ],
-    TravelVibe.NIGHTLIFE: [
+    "nightlife": [
         'node["amenity"="bar"](around:{radius},{lat},{lng});',
         'node["amenity"="nightclub"](around:{radius},{lat},{lng});',
         'node["amenity"="pub"](around:{radius},{lat},{lng});',
@@ -88,9 +88,9 @@ VIBE_QUERIES: dict[TravelVibe, list[str]] = {
     ],
 }
 
-# Always include a broad, map-sourced landmark baseline. Vibe filters enrich
-# this list; they must not cause major heritage, arts, or public places to be
-# excluded before the planner sees them.
+# Always include a broad, map-sourced landmark baseline. Prompt focus terms
+# enrich this list; they must not cause major heritage, arts, or public places
+# to be excluded before the planner sees them.
 LANDMARK_BASELINE_QUERIES = [
     'nwr["tourism"="attraction"](around:{radius},{lat},{lng});',
     'nwr["tourism"="museum"](around:{radius},{lat},{lng});',
@@ -192,7 +192,7 @@ def _priority_landmarks(city: Optional[str]) -> list[dict]:
                 expires_at=review_due_at,
                 confidence=0.65,
                 source_reference="app://poi-estimates",
-                disclaimer="Visit duration is a planning estimate and can vary with queues and personal pace.",
+                disclaimer="Visit duration is a planning estimate and can vary with queues and personal schedule.",
             ),
             "estimated_cost": DataProvenance(
                 provider="YatraAI planning estimate",
@@ -226,13 +226,13 @@ def _priority_landmarks(city: Optional[str]) -> list[dict]:
 async def _discover_pois_legacy(
     lat: float,
     lng: float,
-    vibes: list[str],
+    focus_terms: list[str],
     radius: int = 10000,
     limit: int = 30,
     city: Optional[str] = None,
 ) -> list[dict]:
     """
-    Discover POIs around a location based on travel vibes.
+    Discover POIs around a location based on the user's planning prompt.
     Returns list of dicts for caching.
     """
     priority_pois = _priority_landmarks(city)
@@ -242,13 +242,10 @@ async def _discover_pois_legacy(
         template.format(radius=radius, lat=lat, lng=lng)
         for template in LANDMARK_BASELINE_QUERIES
     ]
-    for vibe_str in vibes:
-        try:
-            vibe = TravelVibe(vibe_str)
-        except ValueError:
-            continue
-        for template in VIBE_QUERIES.get(vibe, []):
-            query_parts.append(template.format(radius=radius, lat=lat, lng=lng))
+    normalized_focus = " ".join(focus_terms).casefold()
+    for focus, templates in FOCUS_QUERIES.items():
+        if focus in normalized_focus:
+            query_parts.extend(template.format(radius=radius, lat=lat, lng=lng) for template in templates)
 
     union_body = "\n".join(query_parts)
     overpass_query = f"""
@@ -323,7 +320,7 @@ async def _discover_pois_legacy(
                 expires_at=retrieved_at + timedelta(days=7),
                 confidence=0.55,
                 source_reference="app://poi-estimates",
-                disclaimer="Visit duration is a planning estimate and can vary with queues and personal pace.",
+                disclaimer="Visit duration is a planning estimate and can vary with queues and personal schedule.",
             ),
             "estimated_cost": DataProvenance(
                 provider="YatraAI planning estimate",
@@ -362,7 +359,7 @@ async def _discover_pois_legacy(
             },
         })
 
-    logger.info(f"Discovered {len(pois)} POIs for vibes={vibes} at ({lat}, {lng})")
+    logger.info(f"Discovered {len(pois)} POIs for prompt focus at ({lat}, {lng})")
     return pois
 
 
@@ -370,7 +367,7 @@ async def _discover_pois_legacy(
 async def discover_pois(
     lat: float,
     lng: float,
-    vibes: list[str],
+    focus_terms: list[str] | None = None,
     radius: int = 10000,
     limit: int = 30,
     city: Optional[str] = None,
@@ -379,7 +376,7 @@ async def discover_pois(
 
     request = PlaceSearchRequest(
         coordinates=GeoPoint(lat=lat, lng=lng),
-        vibes=vibes,
+        focus_terms=focus_terms or [],
         radius=radius,
         limit=limit,
         city=city,
@@ -389,7 +386,7 @@ async def discover_pois(
         return await _discover_pois_legacy(
             provider_request.coordinates.lat,
             provider_request.coordinates.lng,
-            provider_request.vibes,
+            provider_request.focus_terms,
             provider_request.radius,
             provider_request.limit,
             provider_request.city,

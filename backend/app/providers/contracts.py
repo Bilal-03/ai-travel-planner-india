@@ -40,7 +40,7 @@ class RailSearchRequest(BaseModel):
 
 class PlaceSearchRequest(BaseModel):
     coordinates: GeoPoint
-    vibes: list[str] = Field(default_factory=list, max_length=20)
+    focus_terms: list[str] = Field(default_factory=list, max_length=20)
     radius: int = Field(default=10_000, ge=100, le=50_000)
     limit: int = Field(default=30, ge=1, le=100)
     city: str | None = Field(default=None, max_length=120)

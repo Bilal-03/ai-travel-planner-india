@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.models.trip import TripRequest, TravelVibe
+from app.models.trip import TripRequest
 
 
 def _payload(**overrides):
@@ -15,9 +15,7 @@ def _payload(**overrides):
         "start_date": start,
         "end_date": start + timedelta(days=2),
         "budget": 10_000,
-        "vibes": [TravelVibe.CULTURE],
-        "adults": 2,
-        "children": 0,
+        "members": 2,
     }
     payload.update(overrides)
     return payload
@@ -31,7 +29,6 @@ def _payload(**overrides):
         ({"end_date": date.today()}, "before departure"),
         ({"end_date": date.today() + timedelta(days=15)}, "14 days"),
         ({"budget": 2_999}, "too low"),
-        ({"senior_citizens": 3}, "cannot exceed"),
     ],
 )
 def test_invalid_trip_constraints_are_rejected(overrides, message):

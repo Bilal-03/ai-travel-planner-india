@@ -38,16 +38,8 @@ function itinerary() {
     start_date: start,
     end_date: end,
     total_days: 3,
-    vibes: ["culture"],
-    adults: 2,
-    children: 0,
-    travel_preference: "balanced",
-    pace: "balanced",
-    dietary_preference: null,
-    senior_citizens: 0,
-    accessibility_requirements: null,
-    allow_early_morning_travel: false,
-    allow_late_night_travel: false,
+    members: 2,
+    planning_notes: "heritage places",
     transport_options: [train],
     selected_transport: train,
     day_plans: [{
@@ -66,6 +58,8 @@ function itinerary() {
     }],
     budget: { outbound_transport: 1800, return_transport: 1800, transport: 3600, food: 600, activities: 1000, local_transport: 500, taxes_buffer: 285, miscellaneous: 0, total_estimated: 5985, remaining: 4015, provenance: { provider: "YatraAI deterministic budget calculator", status: "estimated", retrieved_at: "2026-08-03T00:00:00Z", expires_at: null, confidence: 0.9, source_reference: "app://budget-calculator", disclaimer: "Verify live prices, taxes, and booking fees before purchase." } },
     route_segments: [],
+    plan_options: [{ id: "plan-1", title: "Essential highlights", description: "A focused route.", day_plans: [], budget: { outbound_transport: 1800, return_transport: 1800, transport: 3600, food: 600, activities: 1000, local_transport: 500, taxes_buffer: 285, miscellaneous: 0, total_estimated: 5985, remaining: 4015 }, route_segments: [], generation_notes: [] }],
+    selected_plan_id: "plan-1",
     weather_forecast: [],
     destination_photos: [],
     festivals: [],
@@ -99,6 +93,12 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
       : { name: "Delhi", state: "Delhi", display_name: "Delhi, Delhi", coordinates: { lat: 28.6139, lng: 77.209 } };
     return route.fulfill({ json: [result] });
   });
+  await page.route("**/api/planner/clarify", (route) => route.fulfill({ json: {
+    status: "ready",
+    brief: { origin: "Delhi", destination: "Jaipur", start_date: trip.start_date, end_date: trip.end_date, budget: 10000, members: 2, transport_mode: "train", planning_notes: "heritage places" },
+    questions: [],
+    trip_request: { origin: "Delhi", destination: "Jaipur", start_date: trip.start_date, end_date: trip.end_date, budget: 10000, transport_mode: "train", members: 2, planning_notes: "heritage places" },
+  }}));
   await page.route("**/api/trip-jobs", (route) => route.fulfill({ json: job, status: 202 }));
   await page.route("**/api/trip-jobs/e2e-job-123", (route) => route.fulfill({ json: { ...job, status: "completed", step: "completed", message: "Your itinerary is ready.", progress: 100, result_trip_id: trip.id } }));
   await page.route("**/api/trip-jobs/e2e-job-123/events**", (route) => route.fulfill({
@@ -110,13 +110,8 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
   await page.route("**/api/trips/e2e-trip-123", (route) => route.fulfill({ json: trip }));
 
   await page.goto("/");
-  await page.locator("#origin-city").fill("Delhi");
-  await page.getByRole("button", { name: "Delhi" }).click();
-  await page.locator("#destination-city").fill("Jaipur");
-  await page.getByRole("button", { name: "Jaipur" }).click();
-  await page.locator("#start-date").fill(trip.start_date);
-  await page.locator("#end-date").fill(trip.end_date);
-  await page.locator("#generate-trip-btn").click();
+  await page.locator("#quick-plan-prompt").fill("Plan three heritage days from Delhi to Jaipur for two people.");
+  await page.getByRole("button", { name: "Plan this trip" }).click();
 
   await expect(page.getByRole("heading", { name: "Delhi → Jaipur" })).toBeVisible();
   await expect(page.getByText("Plan conversation")).toBeVisible();

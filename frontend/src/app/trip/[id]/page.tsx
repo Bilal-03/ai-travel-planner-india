@@ -17,7 +17,6 @@ import {
   Itinerary,
   formatINR,
   formatDate,
-  getVibeEmoji,
   setShareToken,
 } from "@/lib/api";
 import { loadOfflineTrip, saveOfflineTrip, type OfflineTripSnapshot } from "@/lib/offline";
@@ -131,7 +130,7 @@ export default function TripDetailPage() {
                 <span>•</span>
                 <span>💰 {formatINR(itinerary.budget.total_estimated)}</span>
                 <span>•</span>
-                <span>{itinerary.vibes.map((v) => getVibeEmoji(v)).join(" ")}</span>
+                <span>👥 {itinerary.members || 2} members</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -149,6 +148,16 @@ export default function TripDetailPage() {
       {/* Content */}
       <div className="px-4 py-8 max-w-6xl mx-auto">
         {offlineSnapshot && <OfflineEssentials snapshot={offlineSnapshot} />}
+        {(itinerary.plan_options || []).length > 1 && (
+          <section className="mb-8 rounded-xl border border-marigold/30 bg-marigold/5 p-4">
+            <p className="font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-[0.14em] text-marigold">Selected itinerary shape</p>
+            <h2 className="mt-1 text-xl font-bold text-foreground">{(itinerary.plan_options || []).find((option) => option.id === itinerary.selected_plan_id)?.title || "Selected plan"}</h2>
+            <p className="mt-1 text-sm text-foreground-secondary">This shared view is read-only. Create your own trip to choose another plan.</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {(itinerary.plan_options || []).map((option) => <div key={option.id} className={`rounded-lg border p-3 ${option.id === itinerary.selected_plan_id ? "border-marigold bg-marigold/15" : "border-glass-border bg-background/20"}`}><div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-foreground">{option.title}</span>{option.id === itinerary.selected_plan_id && <span className="text-[10px] font-bold uppercase text-marigold">Selected</span>}</div><p className="mt-2 text-xs text-foreground-secondary">{option.description}</p><p className="mt-3 text-xs font-semibold text-foreground">{formatINR(option.budget.total_estimated)} estimated</p></div>)}
+            </div>
+          </section>
+        )}
         {/* Generation Notes */}
         {itinerary.generation_notes.length > 0 && (
           <div className="glass p-4 rounded-xl mb-6">

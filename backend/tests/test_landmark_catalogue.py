@@ -3,7 +3,7 @@
 from datetime import date
 
 from app.data.landmark_catalogue import LANDMARK_CATALOGUE
-from app.models.trip import CityInfo, GeoPoint, TripRequest, TravelVibe
+from app.models.trip import CityInfo, GeoPoint, TripRequest
 from app.services.gemini_planner import _build_planning_prompt
 from app.services.poi_discovery import _priority_landmarks
 
@@ -86,7 +86,8 @@ def test_prompt_keeps_every_reviewed_landmark_in_context():
             start_date=date(2026, 10, 1),
             end_date=date(2026, 10, 5),
             budget=30_000,
-            vibes=[TravelVibe.CULTURE],
+            members=2,
+            planning_notes="heritage places",
         ),
         origin=CityInfo(name="Bengaluru", coordinates=GeoPoint(lat=12.9716, lng=77.5946)),
         destination=destination,

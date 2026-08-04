@@ -15,7 +15,6 @@ from app.models.trip import (
     MealRecommendation,
     POI,
     RouteSegment,
-    TravelVibe,
 )
 from app.services import gemini_planner
 
@@ -53,7 +52,8 @@ def _itinerary() -> Itinerary:
         start_date=start,
         end_date=start + timedelta(days=1),
         total_days=2,
-        vibes=[TravelVibe.CULTURE],
+        members=2,
+        planning_notes="heritage places",
         day_plans=[
             DayPlan(day_number=1, date=start, activities=[activity("City Museum", 26.90, "09:00")], meals=meals),
             DayPlan(

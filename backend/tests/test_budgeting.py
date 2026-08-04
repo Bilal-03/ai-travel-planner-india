@@ -10,7 +10,6 @@ from app.models.trip import (
     POI,
     TransportMode,
     TransportOption,
-    TravelVibe,
     TripRequest,
 )
 from app.services.gemini_planner import _calculate_budget, _select_transport
@@ -24,8 +23,8 @@ def _request() -> TripRequest:
         start_date=start,
         end_date=start + timedelta(days=2),
         budget=20_000,
-        vibes=[TravelVibe.CULTURE],
         transport_mode=TransportMode.TRAIN,
+        members=2,
     )
 
 

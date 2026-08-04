@@ -3,7 +3,7 @@
 import asyncio
 from datetime import date, timedelta
 
-from app.models.trip import GeoPoint, RouteSegment, TripRequest, TravelVibe
+from app.models.trip import GeoPoint, RouteSegment, TripRequest
 from app.services import gemini_planner
 
 
@@ -15,7 +15,7 @@ def _request(days: int = 4) -> TripRequest:
         start_date=start,
         end_date=start + timedelta(days=days - 1),
         budget=40_000,
-        vibes=[TravelVibe.CULTURE],
+        members=2,
     )
 
 

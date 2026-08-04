@@ -15,36 +15,10 @@ from pydantic import BaseModel, Field, model_validator
 
 # ── Enums ──────────────────────────────────────────────────────────────
 
-class TravelVibe(str, Enum):
-    ADVENTURE = "adventure"
-    CULTURE = "culture"
-    FOOD = "food"
-    RELAXATION = "relaxation"
-    SPIRITUAL = "spiritual"
-    NIGHTLIFE = "nightlife"
-
-
 class TransportMode(str, Enum):
     FLIGHT = "flight"
     TRAIN = "train"
     ROAD = "road"
-
-
-class TravelPreference(str, Enum):
-    CHEAPEST = "cheapest"
-    FASTEST = "fastest"
-    BALANCED = "balanced"
-
-
-class TripPace(str, Enum):
-    RELAXED = "relaxed"
-    BALANCED = "balanced"
-    PACKED = "packed"
-
-
-class DietaryPreference(str, Enum):
-    VEGETARIAN = "vegetarian"
-    NON_VEGETARIAN = "non_vegetarian"
 
 
 class WeatherSeverity(str, Enum):
@@ -117,26 +91,16 @@ class TripRequest(BaseModel):
     start_date: date = Field(..., description="Trip start date")
     end_date: date = Field(..., description="Trip end date")
     budget: int = Field(..., ge=1000, le=1000000, description="Total budget in INR")
-    vibes: list[TravelVibe] = Field(
-        default=[TravelVibe.CULTURE],
-        description="Travel vibes/preferences",
-    )
     transport_mode: Optional[TransportMode] = Field(
         None,
-        description="Transport mode selected by the traveller; omit to use the recommendation",
+        description="Transport mode requested in the traveller's prompt, when any",
     )
-    adults: int = Field(2, ge=1, le=20, description="Number of adult travellers")
-    children: int = Field(0, ge=0, le=20, description="Number of child travellers")
-    travel_preference: TravelPreference = TravelPreference.BALANCED
-    pace: TripPace = TripPace.BALANCED
-    dietary_preference: Optional[DietaryPreference] = None
-    senior_citizens: int = Field(0, ge=0, le=20)
-    accessibility_requirements: Optional[str] = Field(None, max_length=500)
-    mandatory_places: list[str] = Field(default_factory=list, max_length=20)
-    excluded_places: list[str] = Field(default_factory=list, max_length=50)
-    free_text_notes: Optional[str] = Field(None, max_length=2_000)
-    allow_early_morning_travel: bool = False
-    allow_late_night_travel: bool = False
+    members: int = Field(2, ge=1, le=40, description="Total number of travellers")
+    planning_notes: Optional[str] = Field(
+        None,
+        max_length=4_000,
+        description="Original prompt and clarification answers supplied by the traveller",
+    )
 
     @model_validator(mode="after")
     def validate_trip_constraints(self) -> "TripRequest":
@@ -148,13 +112,10 @@ class TripRequest(BaseModel):
             raise ValueError("Return date cannot be before departure date")
         if (self.end_date - self.start_date).days + 1 > 14:
             raise ValueError("Trips can be no longer than 14 days")
-        travellers = self.adults + self.children
-        if self.budget < travellers * 1_500:
+        if self.budget < self.members * 1_500:
             raise ValueError(
-                f"Budget is too low for {travellers} traveller(s); enter at least ₹{travellers * 1_500:,}"
+                f"Budget is too low for {self.members} traveller(s); enter at least ₹{self.members * 1_500:,}"
             )
-        if self.senior_citizens > self.adults:
-            raise ValueError("Senior citizens cannot exceed the number of adults")
         return self
 
 
@@ -165,22 +126,11 @@ class TripIntent(BaseModel):
     destination: str
     start_date: date
     end_date: date
-    travellers: int = Field(..., ge=1, le=40)
-    children: int = Field(0, ge=0, le=20)
-    senior_travellers: int = Field(0, ge=0, le=20)
+    members: int = Field(..., ge=1, le=40)
     budget: int = Field(..., ge=1_000, le=1_000_000)
     currency: str = Field("INR", min_length=3, max_length=3)
-    travel_style: list[TravelVibe] = Field(default_factory=list)
-    pace: TripPace = TripPace.BALANCED
-    interests: list[TravelVibe] = Field(default_factory=list)
-    diet: Optional[DietaryPreference] = None
-    accessibility_requirements: Optional[str] = Field(None, max_length=500)
     preferred_transport: Optional[TransportMode] = None
-    early_departure_allowed: bool = False
-    late_arrival_allowed: bool = False
-    mandatory_places: list[str] = Field(default_factory=list, max_length=20)
-    excluded_places: list[str] = Field(default_factory=list, max_length=50)
-    free_text_notes: str = Field("", max_length=2_000)
+    planning_notes: str = Field("", max_length=4_000)
 
     @model_validator(mode="after")
     def validate_intent(self) -> "TripIntent":
@@ -188,11 +138,9 @@ class TripIntent(BaseModel):
             raise ValueError("Return date cannot be before departure date")
         if (self.end_date - self.start_date).days + 1 > 14:
             raise ValueError("Trips can be no longer than 14 days")
-        if self.children + self.senior_travellers > self.travellers:
-            raise ValueError("Children and senior travellers cannot exceed total travellers")
-        if self.budget < self.travellers * 1_500:
+        if self.budget < self.members * 1_500:
             raise ValueError(
-                f"Budget is too low for {self.travellers} traveller(s); enter at least ₹{self.travellers * 1_500:,}"
+                f"Budget is too low for {self.members} traveller(s); enter at least ₹{self.members * 1_500:,}"
             )
         if not self.destination.strip():
             raise ValueError("A destination is required")
@@ -209,21 +157,10 @@ class TripIntent(BaseModel):
             destination=request.destination,
             start_date=request.start_date,
             end_date=request.end_date,
-            travellers=request.adults + request.children,
-            children=request.children,
-            senior_travellers=request.senior_citizens,
+            members=request.members,
             budget=request.budget,
-            travel_style=list(request.vibes),
-            pace=request.pace,
-            interests=list(request.vibes),
-            diet=request.dietary_preference,
-            accessibility_requirements=request.accessibility_requirements,
             preferred_transport=request.transport_mode,
-            early_departure_allowed=request.allow_early_morning_travel,
-            late_arrival_allowed=request.allow_late_night_travel,
-            mandatory_places=list(request.mandatory_places),
-            excluded_places=list(request.excluded_places),
-            free_text_notes=request.free_text_notes or "",
+            planning_notes=request.planning_notes or "",
         )
 
 
@@ -397,6 +334,18 @@ class BudgetBreakdown(BaseModel):
     provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
 
 
+class PlanOption(BaseModel):
+    """One validated itinerary alternative shown on the result page."""
+
+    id: str = Field(..., min_length=1, max_length=40)
+    title: str = Field(..., min_length=1, max_length=120)
+    description: str = Field(..., min_length=1, max_length=500)
+    day_plans: list[DayPlan] = Field(default_factory=list)
+    budget: BudgetBreakdown
+    route_segments: list[RouteSegment] = Field(default_factory=list)
+    generation_notes: list[str] = Field(default_factory=list)
+
+
 class Itinerary(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     origin: CityInfo
@@ -404,24 +353,15 @@ class Itinerary(BaseModel):
     start_date: date
     end_date: date
     total_days: int
-    vibes: list[TravelVibe]
-    adults: int = 2
-    children: int = 0
-    travel_preference: TravelPreference = TravelPreference.BALANCED
-    pace: TripPace = TripPace.BALANCED
-    dietary_preference: Optional[DietaryPreference] = None
-    senior_citizens: int = 0
-    accessibility_requirements: Optional[str] = None
-    mandatory_places: list[str] = Field(default_factory=list)
-    excluded_places: list[str] = Field(default_factory=list)
-    free_text_notes: Optional[str] = None
-    allow_early_morning_travel: bool = False
-    allow_late_night_travel: bool = False
+    members: int = Field(2, ge=1, le=40)
+    planning_notes: Optional[str] = None
     transport_options: list[TransportOption] = []
     selected_transport: Optional[TransportOption] = None
     day_plans: list[DayPlan] = []
     budget: BudgetBreakdown
     route_segments: list[RouteSegment] = []
+    plan_options: list[PlanOption] = Field(default_factory=list)
+    selected_plan_id: str = "plan-1"
     weather_forecast: list[DayWeather] = []
     destination_photos: list[DestinationPhoto] = []
     festivals: list[FestivalEvent] = []
@@ -432,6 +372,25 @@ class Itinerary(BaseModel):
         default=[],
         description="Notes about the generation process (e.g., API fallbacks used)",
     )
+
+    @model_validator(mode="after")
+    def ensure_plan_selection(self) -> "Itinerary":
+        """Keep older single-plan payloads usable while new plans gain options."""
+
+        if not self.plan_options and self.day_plans:
+            self.plan_options = [PlanOption(
+                id="plan-1",
+                title="Plan 1 · Essential highlights",
+                description="A focused itinerary built from the selected destination highlights.",
+                day_plans=self.day_plans,
+                budget=self.budget,
+                route_segments=self.route_segments,
+                generation_notes=self.generation_notes,
+            )]
+        option_ids = {option.id for option in self.plan_options}
+        if self.plan_options and self.selected_plan_id not in option_ids:
+            self.selected_plan_id = self.plan_options[0].id
+        return self
 
 
 # ── Share Models ───────────────────────────────────────────────────────

@@ -34,7 +34,7 @@
   --weather-okay: #f59e0b;
   --weather-indoor: #ef4444;
 
-  /* India homepage accent palette (Hero / TripForm / FeaturesRail / DestinationPostcards) */
+  /* India homepage accent palette (Hero / planner / FeaturesRail / DestinationPostcards) */
   --marigold: #f2a93b;
   --marigold-2: #e8901f;
   --rust: #c4522b;
@@ -108,7 +108,7 @@
   --font-sans: var(--font-manrope);
   --font-display: var(--font-outfit);
 
-  /* India homepage palette — used by Hero/TripForm/FeaturesRail/
+  /* India homepage palette — used by Hero/planner/FeaturesRail/
      DestinationPostcards. Kept as separate tokens (rather than
      overwriting --primary/--accent) so the post-itinerary result
      view is untouched by this pass. */
