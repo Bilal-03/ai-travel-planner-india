@@ -20,7 +20,6 @@ from app.cache.redis_cache import cached
 from app.config import settings
 from app.models.trip import (
     Activity,
-    AccommodationPreference,
     BudgetBreakdown,
     DataProvenance,
     DataStatus,
@@ -85,12 +84,6 @@ def _planner_estimate_provenance(
         disclaimer=disclaimer,
     )
 
-STAY_RATE_PER_NIGHT = {
-    AccommodationPreference.BUDGET: 1200,
-    AccommodationPreference.STANDARD: 2500,
-    AccommodationPreference.COMFORT: 5000,
-}
-
 SYSTEM_PROMPT = """You are an expert India domestic travel planner. You create detailed, practical, 
 budget-conscious day-by-day itineraries for travelers within India.
 
@@ -105,7 +98,7 @@ IMPORTANT RULES:
 8. First and last days may have reduced activities due to travel.
 9. Suggest specific, real places — not generic "visit a temple".
 10. Include estimated costs for every activity and meal. Do NOT calculate totals,
-    category budgets, transport, hotel, local transport, or taxes: the backend calculates them.
+    category budgets, transport, local transport, or taxes: the backend calculates them.
 11. Only name a restaurant when it appears in supplied place data. Otherwise use
     "Suggested meal type: <dish or food area>" — never invent a generic restaurant.
 12. Match the requested pace: relaxed means fewer, longer stops; packed means more
@@ -171,7 +164,6 @@ TRIP DETAILS:
 - Early-morning travel accepted: {'yes' if request.allow_early_morning_travel else 'no'}
 - Late-night travel accepted: {'yes' if request.allow_late_night_travel else 'no'}
 - Selected transport (budgeted both ways by the server): {json.dumps(selected_transport_data, default=str)}
-- Accommodation preference: {request.accommodation_preference.value}
 - Vibes: {', '.join(v.value for v in request.vibes)}
 - Distance: {distance_km:.0f} km
 
@@ -800,17 +792,14 @@ def _calculate_budget(
     activities = sum(activity.estimated_cost for day in day_plans for activity in day.activities) * travellers
     between_stop_transport = sum(day.local_transport_cost for day in day_plans)
     # Return terminal transfers are not represented by POI-to-POI routes, but
-    # are part of a credible trip total (station/airport/hotel pickup and drop).
+    # are part of a credible trip total (station/airport pickup and drop).
     transfer_per_leg = {
         TransportMode.FLIGHT: 500,
         TransportMode.TRAIN: 250,
         TransportMode.ROAD: 150,
     }.get(selected_transport.mode if selected_transport else TransportMode.ROAD, 0)
     local_transport = between_stop_transport + transfer_per_leg * 2
-    nights = max((request.end_date - request.start_date).days, 0)
-    rooms = math.ceil(request.adults / 2)
-    accommodation = nights * STAY_RATE_PER_NIGHT[request.accommodation_preference] * rooms
-    subtotal = outbound + returning + accommodation + food + activities + local_transport
+    subtotal = outbound + returning + food + activities + local_transport
     taxes_buffer = math.ceil(subtotal * 0.05)
     total = subtotal + taxes_buffer
     return BudgetBreakdown(
@@ -819,14 +808,13 @@ def _calculate_budget(
         transport=outbound + returning,
         food=food,
         activities=activities,
-        accommodation=accommodation,
         local_transport=local_transport,
         taxes_buffer=taxes_buffer,
         miscellaneous=0,
         total_estimated=total,
         remaining=request.budget - total,
         provenance=_planner_estimate_provenance(
-            "Budget totals are planning estimates assembled from transport, lodging, meal, activity, and local-transport inputs. Verify live prices, taxes, and booking fees before purchase.",
+            "Budget totals are planning estimates assembled from transport, meal, activity, and local-transport inputs. Verify live prices, taxes, and booking fees before purchase.",
             provider="YatraAI deterministic budget calculator",
             confidence=0.9,
         ),
@@ -860,7 +848,6 @@ def select_transport_for_itinerary(
         budget=itinerary.budget.total_estimated + itinerary.budget.remaining,
         vibes=itinerary.vibes,
         transport_mode=mode,
-        accommodation_preference=itinerary.accommodation_preference,
         adults=itinerary.adults,
         children=itinerary.children,
         travel_preference=itinerary.travel_preference,
@@ -1032,7 +1019,6 @@ def _plan_to_itinerary(
         end_date=request.end_date,
         total_days=total_days,
         vibes=request.vibes,
-        accommodation_preference=request.accommodation_preference,
         adults=request.adults,
         children=request.children,
         travel_preference=request.travel_preference,
@@ -1446,7 +1432,6 @@ async def refine_itinerary(itinerary: Itinerary, instruction: str) -> Itinerary:
         budget=itinerary.budget.total_estimated + itinerary.budget.remaining,
         vibes=itinerary.vibes,
         transport_mode=itinerary.selected_transport.mode if itinerary.selected_transport else None,
-        accommodation_preference=itinerary.accommodation_preference,
         adults=itinerary.adults,
         children=itinerary.children,
         travel_preference=itinerary.travel_preference,
@@ -1636,7 +1621,7 @@ Include 8–14 specific, practical items; avoid generic filler."""
         else PackingItem(item="Sunscreen and cap", reason="Useful for long daytime sightseeing.", category="health")
     )
     return [
-        PackingItem(item="Government photo ID", reason="Required for transport and many hotels."),
+        PackingItem(item="Government photo ID", reason="Required for transport and many travel services."),
         PackingItem(item="Reusable water bottle", reason="Stay hydrated while sightseeing."),
         PackingItem(item="Comfortable walking shoes", reason="Most itineraries involve substantial walking.", category="clothing"),
         PackingItem(item="Power bank and charging cable", reason="Maps, tickets, and photos use battery.", category="essentials"),

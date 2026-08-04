@@ -85,7 +85,7 @@ stage that failed.
 
 ### Provider gateway
 
-Flight, hotel, rail, bus, route, weather, and place adapters should expose
+Flight, rail, route, weather, and place adapters should expose
 provider-neutral interfaces. Provider identifiers and raw responses remain
 inside the adapter boundary. Every result should carry the common
 `DataProvenance` contract:
@@ -128,7 +128,7 @@ The planned stable-UUID entities are:
 ```text
 trips, trip_travellers, destination_stays, travel_legs
 itinerary_days, itinerary_visits, itinerary_versions
-places, place_provider_links, accommodations
+places, place_provider_links
 transport_offers, weather_snapshots, route_segments, travel_facts
 trip_jobs, trip_job_events, trip_edits, share_links, collaborators
 ```

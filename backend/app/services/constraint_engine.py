@@ -20,7 +20,6 @@ from typing import Any, Iterable, Mapping, Optional
 from pydantic import BaseModel, Field
 
 from app.models.trip import (
-    AccommodationPreference,
     GeoPoint,
     TripIntent,
     TripPace,
@@ -47,11 +46,6 @@ PACE_RULES: dict[TripPace, dict[str, int]] = {
     TripPace.PACKED: {"max_activities": 5, "max_hours": 12},
 }
 
-STAY_RATE_PER_NIGHT = {
-    AccommodationPreference.BUDGET: 1_200,
-    AccommodationPreference.STANDARD: 2_500,
-    AccommodationPreference.COMFORT: 5_000,
-}
 MEAL_ALLOWANCE_PER_TRAVELLER_PER_DAY = 1_000
 
 
@@ -386,11 +380,8 @@ def estimate_plan_cost(
     transport_cost = int(_transport_value(selected_transport, "price") or 0) * travellers * 2
     activity_cost = sum(day.estimated_activity_cost for day in plan.days) * travellers
     meal_cost = MEAL_ALLOWANCE_PER_TRAVELLER_PER_DAY * travellers * len(plan.days)
-    nights = max(len(plan.days) - 1, 0)
-    rooms = math.ceil(max(intent.travellers - intent.children, 1) / 2)
-    hotel_cost = nights * STAY_RATE_PER_NIGHT[intent.hotel_preference] * rooms
     local_cost = sum(day.estimated_local_transport_cost for day in plan.days)
-    return transport_cost + activity_cost + meal_cost + hotel_cost + local_cost
+    return transport_cost + activity_cost + meal_cost + local_cost
 
 
 def _fits_meal_break(start: int, duration: int, meal_breaks: list[MealBreak]) -> int:

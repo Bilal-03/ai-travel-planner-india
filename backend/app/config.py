@@ -21,11 +21,9 @@ class Settings(BaseSettings):
     # Defaults preserve the current integrations. Unsupported live choices
     # fail closed and let the service-level fallback respond safely.
     flight_provider: str = Field(default="legacy", validation_alias="FLIGHT_PROVIDER")
-    hotel_provider: str = Field(default="none", validation_alias="HOTEL_PROVIDER")
     places_provider: str = Field(default="overpass", validation_alias="PLACES_PROVIDER")
     routes_provider: str = Field(default="osrm", validation_alias="ROUTES_PROVIDER")
     rail_provider: str = Field(default="legacy", validation_alias="RAIL_PROVIDER")
-    bus_provider: str = Field(default="none", validation_alias="BUS_PROVIDER")
     weather_provider: str = Field(default="openweather", validation_alias="WEATHER_PROVIDER")
     provider_timeout_seconds: float = Field(default=20.0, ge=0.1, le=120, validation_alias="PROVIDER_TIMEOUT_SECONDS")
     provider_max_retries: int = Field(default=1, ge=0, le=5, validation_alias="PROVIDER_MAX_RETRIES")

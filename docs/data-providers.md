@@ -70,17 +70,15 @@ following feature flags select the adapter family:
 | Flag | Default | Current adapter | Safe behavior for an unsupported value |
 | --- | --- | --- | --- |
 | `FLIGHT_PROVIDER` | `legacy` | Existing Skyscanner adapter, then labelled fare fallback | No upstream call; labelled fallback |
-| `HOTEL_PROVIDER` | `none` | Explicit unavailable adapter; no hotel inventory is fabricated | Empty results |
 | `PLACES_PROVIDER` | `overpass` | Reviewed catalogue plus Overpass adapter | Reviewed catalogue fallback |
 | `ROUTES_PROVIDER` | `osrm` | OSRM driving adapter | Deterministic route estimate in feasibility |
 | `RAIL_PROVIDER` | `legacy` | Existing RailRadar schedule adapter | Static schedule/estimated fare fallback |
-| `BUS_PROVIDER` | `none` | Explicit unavailable adapter; no operators or schedules are invented | Empty results |
 | `WEATHER_PROVIDER` | `openweather` | Existing OpenWeather forecast adapter | Weather unavailable; planning continues |
 
 The legacy choices are compatibility adapters, not a booking guarantee. Rail
 remains schedule-only, while flight search results do not confirm seats or a
-final fare. A future Amadeus or Duffel flight/hotel adapter, contracted bus
-source, and authorised rail source can be added behind the same contracts.
+final fare. A future Amadeus or Duffel flight adapter and authorised rail source
+can be added behind the same contracts.
 
 Every callback adapter is wrapped by a bounded timeout, configurable retry
 policy, and a per-domain in-process circuit breaker. The current HTTP clients
@@ -90,10 +88,9 @@ production hardening.
 
 ## Target provider boundary
 
-The gateway now exposes interfaces for flights, hotels, rail, buses, places,
-routes, and weather. Responses are normalized into `TransportOption`, `POI`,
-`RouteSegment`, and `DayWeather` (or the new provider-neutral hotel/bus/rail
-contracts) before crossing the service boundary. Provider failures never
+The gateway now exposes interfaces for flights, rail, places, routes, and
+weather. Responses are normalized into `TransportOption`, `POI`,
+`RouteSegment`, and `DayWeather` before crossing the service boundary. Provider failures never
 escape into trip generation; existing provenance and fallback labels remain the
 source of truth for freshness and booking limitations.
 

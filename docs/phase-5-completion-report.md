@@ -8,20 +8,17 @@ fallback behavior preserved.
 
 ## Delivered
 
-- Added provider-neutral request/result contracts and protocols for flights,
-  hotels, rail schedules/availability, buses, places, routes, and weather.
+- Added provider-neutral request/result contracts and protocols for flights, rail
+  schedules/availability, places, routes, and weather.
 - Added `ProviderGateway` with the required `FLIGHT_PROVIDER`,
-  `HOTEL_PROVIDER`, `PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`,
-  `BUS_PROVIDER`, and `WEATHER_PROVIDER` switches.
+  `PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`, and
+  `WEATHER_PROVIDER` switches.
 - Routed the current Skyscanner, RailRadar, Overpass, OSRM, and OpenWeather
   adapters through normalized callback providers. Provider payloads do not cross
   into itinerary or UI models.
 - Added bounded per-attempt timeout, configurable retry/backoff, and a
   per-domain circuit breaker. Service boundaries catch provider failures and
   retain the existing labelled fallbacks.
-- Added explicit empty hotel and bus adapters. No hotel inventory, bus
-  operators, schedules, or fares are fabricated while those providers remain
-  `none`.
 - Kept Indian rail schedule results schedule-only; availability returns an
   empty result until an authorised/commercially supportable source is wired.
 - Added normalized weather advisories for wet/severe weather and heat. The
@@ -47,9 +44,9 @@ fallback behavior preserved.
 
 ## Known limitations
 
-- Amadeus, Duffel, Google Places/Routes, Mapbox, contracted hotel inventory,
-  contracted bus inventory, and authorised rail availability are interfaces and
-  evaluation targets only; none is enabled by default in this phase.
+- Amadeus, Duffel, Google Places/Routes, Mapbox, and authorised rail availability
+  are interfaces and evaluation targets only; none is enabled by default in
+  this phase.
 - Circuit state is process-local. Redis-backed shared provider health belongs to
   production hardening.
 - Weather advisories are derived planning signals, not official emergency

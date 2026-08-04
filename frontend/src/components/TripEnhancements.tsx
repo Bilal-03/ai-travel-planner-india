@@ -47,28 +47,21 @@ export function RefineItineraryAction({ itinerary, onUpdate }: TripUpdateProps) 
   );
 }
 
-export function StaySuggestions({ itinerary }: Pick<TripUpdateProps, "itinerary">) {
-  const hotelSearch = `https://www.google.com/travel/search?q=${encodeURIComponent(`Hotels in ${itinerary.destination.name} ${itinerary.start_date} ${itinerary.end_date}`)}`;
-  const bookingSearch = `https://www.booking.com/searchresults.html?${new URLSearchParams({ ss: `${itinerary.destination.name}, India`, checkin: itinerary.start_date, checkout: itinerary.end_date }).toString()}`;
+export function DestinationInspiration({ itinerary }: Pick<TripUpdateProps, "itinerary">) {
+  const photo = itinerary.destination_photos[0];
+  if (!photo) return null;
 
   return (
     <section className="rounded-xl border border-glass-border bg-glass-bg p-4">
-      <h3 className="font-semibold text-foreground">🏨 Stay suggestions</h3>
-      <p className="mt-1 text-xs text-foreground-muted">Compare accommodation for your dates and chosen hotel level.</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <a href={hotelSearch} target="_blank" rel="noreferrer" onClick={() => track("provider_link_clicked", { tripId: itinerary.id, kind: "single", metadata: { provider: "google_hotels" } })} className="rounded-lg border border-primary/50 px-3 py-2 text-xs font-medium text-primary">Google Hotels ↗</a>
-        <a href={bookingSearch} target="_blank" rel="noreferrer" onClick={() => track("provider_link_clicked", { tripId: itinerary.id, kind: "single", metadata: { provider: "booking" } })} className="rounded-lg border border-primary/50 px-3 py-2 text-xs font-medium text-primary">Booking.com ↗</a>
-      </div>
-      {itinerary.destination_photos[0] && (
-        <figure className="destination-frame relative mt-4 h-44 overflow-hidden rounded-xl bg-surface">
-          {/* Destination providers return dynamic remote URLs; using a plain image avoids an unsafe allowlist bypass. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={itinerary.destination_photos[0].url} alt={itinerary.destination_photos[0].alt} className="h-full w-full object-cover" />
-          <figcaption className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-2 text-xs text-white">
-            {itinerary.destination_photos[0].photographer_url ? <a className="underline" href={itinerary.destination_photos[0].photographer_url} target="_blank" rel="noreferrer">Photo by {itinerary.destination_photos[0].photographer_name || "Unsplash"} on Unsplash</a> : "Destination inspiration"}
-          </figcaption>
-        </figure>
-      )}
+      <h3 className="font-semibold text-foreground">📸 Destination inspiration</h3>
+      <figure className="destination-frame relative mt-3 h-44 overflow-hidden rounded-xl bg-surface">
+        {/* Destination providers return dynamic remote URLs; using a plain image avoids an unsafe allowlist bypass. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={photo.url} alt={photo.alt} className="h-full w-full object-cover" />
+        <figcaption className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-2 text-xs text-white">
+          {photo.photographer_url ? <a className="underline" href={photo.photographer_url} target="_blank" rel="noreferrer">Photo by {photo.photographer_name || "Unsplash"} on Unsplash</a> : "Destination inspiration"}
+        </figcaption>
+      </figure>
     </section>
   );
 }

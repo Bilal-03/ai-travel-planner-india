@@ -16,7 +16,7 @@ for path in files:
         raise SystemExit(f"Migration filename is not ordered: {path.name}")
     numbers.append(int(match.group(1)))
     text = path.read_text(encoding="utf-8").strip()
-    if not text or not re.search(r"\b(CREATE|ALTER|INSERT|UPDATE|DELETE)\b", text, re.IGNORECASE):
+    if not text or not re.search(r"\b(CREATE|ALTER|INSERT|UPDATE|DELETE|DROP)\b", text, re.IGNORECASE):
         raise SystemExit(f"Migration is empty or contains no SQL operation: {path.name}")
 
 if len(numbers) != len(set(numbers)):

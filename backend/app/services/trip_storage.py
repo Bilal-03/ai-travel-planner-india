@@ -95,13 +95,6 @@ CREATE TABLE IF NOT EXISTS multi_city_itinerary_days (
     day_json JSONB NOT NULL,
     PRIMARY KEY (trip_id, day_number)
 );
-CREATE TABLE IF NOT EXISTS multi_city_accommodation_selections (
-    trip_id VARCHAR(12) NOT NULL REFERENCES multi_city_trips(id) ON DELETE CASCADE,
-    selection_id VARCHAR(64) NOT NULL,
-    stay_id VARCHAR(64) NOT NULL,
-    selection_json JSONB NOT NULL,
-    PRIMARY KEY (trip_id, selection_id)
-);
 CREATE TABLE IF NOT EXISTS multi_city_transport_selections (
     trip_id VARCHAR(12) NOT NULL REFERENCES multi_city_trips(id) ON DELETE CASCADE,
     leg_id VARCHAR(64) NOT NULL,
@@ -168,7 +161,6 @@ def _write_multi_city_projections(cursor, trip_id: str, trip: Trip) -> None:
         "multi_city_travel_legs",
         "multi_city_visits",
         "multi_city_itinerary_days",
-        "multi_city_accommodation_selections",
         "multi_city_transport_selections",
     )
     for table in projection_tables:
@@ -200,11 +192,6 @@ def _write_multi_city_projections(cursor, trip_id: str, trip: Trip) -> None:
         cursor.execute(
             "INSERT INTO multi_city_itinerary_days (trip_id, day_number, day_date, day_json) VALUES (%s, %s, %s, %s::jsonb)",
             (trip_id, day.day_number, day.date, json.dumps(day.model_dump(mode="json"))),
-        )
-    for selection in trip.accommodation_selections:
-        cursor.execute(
-            "INSERT INTO multi_city_accommodation_selections (trip_id, selection_id, stay_id, selection_json) VALUES (%s, %s, %s, %s::jsonb)",
-            (trip_id, selection.id, selection.stay_id, json.dumps(selection.model_dump(mode="json"))),
         )
     for selection in trip.transport_selections:
         cursor.execute(

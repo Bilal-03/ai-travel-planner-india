@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
 
 import pytest
 
 from app.config import Settings
 from app.providers.contracts import (
-    BusSearchRequest,
     FlightSearchRequest,
-    HotelSearchRequest,
     RailSearchRequest,
 )
 from app.providers.gateway import ProviderGateway
@@ -151,37 +148,25 @@ def test_rail_callback_exposes_schedule_only_contract():
 def test_unsupported_live_choices_fail_closed_and_return_no_invented_inventory():
     config = Settings()
     config.flight_provider = "amadeus"
-    config.hotel_provider = "amadeus"
-    config.bus_provider = "redbus"
     gateway = ProviderGateway(config)
 
     async def callback(_request: FlightSearchRequest) -> list[dict]:
         raise AssertionError("unsupported provider must not call the legacy adapter")
 
     flight_provider = gateway.flight_provider(callback)
-    hotels = gateway.hotel_provider()
-    buses = gateway.bus_provider()
 
     assert asyncio.run(flight_provider.search(FlightSearchRequest(
         origin="Delhi",
         destination="Mumbai",
         departure_date="2026-08-20",
     ))) == []
-    hotel_request = HotelSearchRequest(
-        destination="Mumbai",
-        check_in=date(2026, 8, 20),
-        check_out=date(2026, 8, 22),
-    )
-    bus_request = BusSearchRequest(origin="Delhi", destination="Jaipur")
-    assert asyncio.run(hotels.search(hotel_request)) == []
-    assert asyncio.run(buses.search(bus_request)) == []
 
 
 def test_gateway_exposes_all_feature_flag_domains():
     selected = ProviderGateway(Settings()).selected_providers()
 
     assert set(selected) == {
-        "flight", "hotel", "places", "routes", "rail", "bus", "weather",
+        "flight", "places", "routes", "rail", "weather",
     }
 
 

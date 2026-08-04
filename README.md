@@ -126,14 +126,13 @@ Copy the included root [`.env.example`](.env.example) to `.env` for the backend,
 > **Note:** The app works without optional keys — it degrades gracefully. Only `GEMINI_API_KEY` is required.
 
 Provider selections are controlled through `FLIGHT_PROVIDER`,
-`HOTEL_PROVIDER`, `PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`,
-`BUS_PROVIDER`, and `WEATHER_PROVIDER`. The checked-in defaults preserve the
-current Skyscanner, RailRadar, Overpass, OSRM, and OpenWeather paths; hotels
-and buses remain unavailable until a contracted adapter is configured. Gateway
-timeouts, retries, and circuit-breaker thresholds are also configurable in the
-root `.env.example`. Phase 6 adds multi-city planning and PostgreSQL-backed
-durable itinerary/share storage for production deployments; the app has no
-user accounts or login flow.
+`PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`, and
+`WEATHER_PROVIDER`. The checked-in defaults preserve the current Skyscanner,
+RailRadar, Overpass, OSRM, and OpenWeather paths. Gateway timeouts, retries,
+and circuit-breaker thresholds are also configurable in the root
+`.env.example`. Phase 6 adds multi-city planning and PostgreSQL-backed durable
+itinerary/share storage for production deployments; the app has no user
+accounts or login flow.
 
 Phase 7 production deployments must apply the ordered SQL migrations under
 [`backend/migrations/`](backend/migrations/), set `APP_ENV=production`, enable

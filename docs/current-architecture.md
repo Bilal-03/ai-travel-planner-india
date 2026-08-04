@@ -149,10 +149,9 @@ The supporting service boundaries are:
 - `routing.py`: OSRM driving routes, route geometry, and deterministic
   fallback segments used in feasibility and local-transport budgeting.
 - `providers/contracts.py`: provider-neutral request/result models and adapter
-  protocols for flights, hotels, rail, buses, places, routes, and weather.
+  protocols for flights, rail, places, routes, and weather.
 - `providers/gateway.py` and `providers/resilience.py`: feature-flagged adapter
-  selection, bounded timeout/retry execution, circuit breakers, and empty
-  fail-closed adapters for uncontracted hotel/bus providers.
+  selection, bounded timeout/retry execution, and circuit breakers.
 - `photos.py`: optional Unsplash destination imagery.
 - `festivals.py`: static festival data exists, but the generation flow
   currently intentionally leaves festival facts empty.
@@ -172,7 +171,7 @@ affected-day merge that preserves unrelated days before server-side validation.
 `trip_storage.py` creates the legacy `trips` table and the Phase 6
 `multi_city_trips` aggregate table at runtime when `DATABASE_URL` is configured.
 The multi-city table stores the aggregate JSON plus queryable stay, leg, visit,
-day, accommodation, and transport-selection projections. Both trip types retain
+day, and transport-selection projections. Both trip types retain
 stable short IDs and a SHA-256 hash of the creator edit token. Phase 1 also
 includes the external migration `backend/migrations/001_phase1_travel_facts.sql`
 for durable fact-level provenance/freshness storage, Phase 2 includes
@@ -184,7 +183,10 @@ aggregate/projections. Phase 7 adds
 `backend/migrations/005_phase7_collaboration_analytics.sql` for collaboration,
 analytics, and audit tables. Migration
 `backend/migrations/006_remove_legacy_account_schema.sql` removes the retired
-account schema from databases that used the earlier account-based build. Those
+account schema from databases that used the earlier account-based build.
+`backend/migrations/007_remove_legacy_accommodation_projection.sql` removes a
+retired multi-city projection from databases that used the earlier itinerary
+shape. Those
 migrations are intentionally not executed by the
 application at runtime. The active Phase 2 queue/snapshot/event transport is Redis-first; if
 setup or a write fails, trip storage falls back to a process-local dictionary.
@@ -216,9 +218,9 @@ the frontend uses the new job endpoints.
 - External services: Gemini, Skyscanner RapidAPI, RailRadar, OpenWeatherMap,
   Nominatim, Overpass, OSRM, and Unsplash as configured.
 - Provider replacement is controlled by `FLIGHT_PROVIDER`,
-  `HOTEL_PROVIDER`, `PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`,
-  `BUS_PROVIDER`, and `WEATHER_PROVIDER`; unsupported selections degrade to
-  the existing labelled fallback or unavailable state.
+  `PLACES_PROVIDER`, `ROUTES_PROVIDER`, `RAIL_PROVIDER`, and
+  `WEATHER_PROVIDER`; unsupported selections degrade to the existing labelled
+  fallback or unavailable state.
 
 Environment loading is implemented by `pydantic-settings` in
 `backend/app/config.py` with `.env` and `../.env` lookup. The complete audit
@@ -254,8 +256,8 @@ mobile tabs, and conversation surface. Backend test execution still requires
 the repository's Python test dependencies to be installed in the environment.
 
 Phase 5 adds adapter normalization and provider-gateway contract tests for
-timeouts, bounded retries, circuit opening, schedule-only rail behavior, and
-fail-closed unsupported hotel/bus choices. The live legacy providers remain
+timeouts, bounded retries, circuit opening, and schedule-only rail behavior.
+The live legacy providers remain
 behind the gateway and preserve their existing provenance/fallback contracts.
 
 Phase 6 adds tests for three-city generation, return-leg composition, reorder

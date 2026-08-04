@@ -89,7 +89,7 @@ infeasible.
 `_plan_to_itinerary` converts approved activities into Pydantic `Activity` and
 `POI` objects, attaches the same route segments used in validation, and
 calculates a `BudgetBreakdown` from selected transport, meal costs, activity
-costs, local route estimates, transfers, accommodation, and a five-percent
+costs, local route estimates, transfers, and a five-percent
 buffer. The model does not accept category totals from Gemini.
 
 ### 7. Save and client handoff

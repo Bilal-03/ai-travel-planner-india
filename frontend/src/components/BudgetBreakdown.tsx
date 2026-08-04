@@ -16,7 +16,6 @@ const CATEGORIES = [
   { key: "return_transport" as const, label: "Return transport", color: "#a78bfa", icon: "⬅️" },
   { key: "food" as const, label: "Food & Dining", color: "#f59e0b", icon: "🍛" },
   { key: "activities" as const, label: "Activities", color: "#06b6d4", icon: "🎯" },
-  { key: "accommodation" as const, label: "Accommodation", color: "#22c55e", icon: "🏨" },
   { key: "local_transport" as const, label: "Local transport & transfers", color: "#ec4899", icon: "🚕" },
   { key: "taxes_buffer" as const, label: "Taxes & buffer", color: "#f97316", icon: "🧾" },
 ];

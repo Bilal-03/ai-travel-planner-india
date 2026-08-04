@@ -42,8 +42,8 @@ confidence, source, and disclosure metadata.
 
 ## Known limitations
 
-- Hotels and buses do not yet have provider adapters in the current application,
-  so no live hotel/bus facts were added in this phase.
+- The planner currently focuses on flights, rail schedules, places, routes, and
+  weather facts; additional travel services remain outside this phase.
 - Durable `travel_facts` persistence and refresh jobs are migration-ready but
   intentionally deferred; Phase 2 owns durable jobs, Redis events, resumability,
   and idempotency.

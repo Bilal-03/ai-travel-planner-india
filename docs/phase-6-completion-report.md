@@ -7,8 +7,8 @@ Audit/implementation date: 2026-08-04
 
 Phase 6 adds a real multi-destination aggregate alongside the stable legacy
 single-destination flow. A route is represented with explicit
-`DestinationStay`, `TravelLeg`, `ItineraryDay`, `Visit`,
-`AccommodationSelection`, and `TransportSelection` entities.
+`DestinationStay`, `TravelLeg`, `ItineraryDay`, `Visit`, and
+`TransportSelection` entities.
 
 The `POST /api/multi-city/generate` path composes a three-city route with an
 automatic return leg. Each stay and visit retains a stable identity. Route
@@ -33,8 +33,7 @@ share links provide read or edit access to the persisted itinerary.
 `backend/migrations/004_phase6_multi_city.sql` adds:
 
 - the `multi_city_trips` aggregate;
-- normalized stay, leg, visit, day, accommodation-selection, and
-  transport-selection projections;
+- normalized stay, leg, visit, day, and transport-selection projections;
 - the anonymous edit-token hash and previous-trip revision fields needed for
   shared-trip editing and undo.
 
@@ -56,7 +55,6 @@ deployments and retains an in-memory fallback for local development.
 - The multi-city route uses deterministic composition and transparent
   provider/fallback facts; Gemini narration remains scoped to the existing
   single-destination planner.
-- Hotel inventory remains fail-closed per Phase 5. Accommodation selections
-  are category estimates, not bookable property offers.
+- Lodging and booking inventory are outside the current planner scope.
 - Backend test dependencies are available in `backend/.venv`; a system
   `python3` without the project dependencies can only run compile checks.

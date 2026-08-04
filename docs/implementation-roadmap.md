@@ -74,19 +74,18 @@ known limitations.
 ## Phase 5 gate
 
 Phase 5 is complete after introducing provider-neutral interfaces for flights,
-hotels, rail, buses, places, routes, and weather; routing the existing live
+rail, places, routes, and weather; routing the existing live
 providers through feature flags and normalized adapters; adding bounded
 timeouts, controlled retries, and per-domain circuit breakers; and preserving
-safe provenance-labelled fallbacks. Hotels and buses fail closed until a
-contracted inventory source is available, and rail remains schedule-only with
-unavailable availability. See `docs/phase-5-completion-report.md` for exit
-evidence and known limitations.
+safe provenance-labelled fallbacks. Rail remains schedule-only with unavailable
+availability. See `docs/phase-5-completion-report.md` for exit evidence and
+known limitations.
 
 ## Phase 6 gate
 
 Phase 6 is complete after adding a canonical `Trip` aggregate with explicit
-`DestinationStay`, `TravelLeg`, `ItineraryDay`, `Visit`,
-`AccommodationSelection`, and `TransportSelection` entities; a provider-backed
+`DestinationStay`, `TravelLeg`, `ItineraryDay`, `Visit`, and
+`TransportSelection` entities; a provider-backed
 three-city generator; scoped stay edits; route reordering with affected-leg
 recalculation; normalized PostgreSQL projections; and anonymous edit-token and
 share-link access. See `docs/phase-6-completion-report.md` for exit evidence

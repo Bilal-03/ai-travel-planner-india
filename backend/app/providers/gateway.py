@@ -13,16 +13,10 @@ from typing import Awaitable, Callable, Optional
 from app.config import Settings, settings
 from app.models.trip import DayWeather, POI, RouteSegment
 from app.providers.contracts import (
-    BusOption,
-    BusProvider,
-    BusSearchRequest,
     ConfirmedOffer,
     FlightOffer,
     FlightProvider,
     FlightSearchRequest,
-    HotelOffer,
-    HotelProvider,
-    HotelSearchRequest,
     PlaceProvider,
     PlaceSearchRequest,
     RailAvailability,
@@ -117,24 +111,11 @@ class EmptyFlightProvider:
         return None
 
 
-class EmptyHotelProvider:
-    async def search(self, request: HotelSearchRequest) -> list[HotelOffer]:
-        return []
-
-    async def confirm(self, offer_id: str) -> ConfirmedOffer | None:
-        return None
-
-
 class EmptyRailProvider:
     async def search_schedules(self, request: RailSearchRequest) -> list[RailOption]:
         return []
 
     async def search_availability(self, request: RailSearchRequest) -> list[RailAvailability]:
-        return []
-
-
-class EmptyBusProvider:
-    async def search(self, request: BusSearchRequest) -> list[BusOption]:
         return []
 
 
@@ -172,17 +153,15 @@ class ProviderGateway:
                 ),
                 name=domain,
             )
-            for domain in ("flight", "hotel", "rail", "bus", "places", "routes", "weather")
+            for domain in ("flight", "rail", "places", "routes", "weather")
         }
 
     def selected_providers(self) -> dict[str, str]:
         return {
             "flight": _normalise_provider(self.config.flight_provider, "legacy"),
-            "hotel": _normalise_provider(self.config.hotel_provider),
             "places": _normalise_provider(self.config.places_provider, "overpass"),
             "routes": _normalise_provider(self.config.routes_provider, "osrm"),
             "rail": _normalise_provider(self.config.rail_provider, "legacy"),
-            "bus": _normalise_provider(self.config.bus_provider),
             "weather": _normalise_provider(self.config.weather_provider, "openweather"),
         }
 
@@ -192,19 +171,11 @@ class ProviderGateway:
             return CallbackFlightProvider(callback, self._executors["flight"])
         return EmptyFlightProvider()
 
-    def hotel_provider(self) -> HotelProvider:
-        # No hotel inventory is shown until a contracted adapter is added.
-        return EmptyHotelProvider()
-
     def rail_provider(self, callback: Callable[[RailSearchRequest], Awaitable[list[dict]]]) -> RailProvider:
         selected = self.selected_providers()["rail"]
         if selected in {"legacy", "railradar"}:
             return CallbackRailProvider(callback, self._executors["rail"])
         return EmptyRailProvider()
-
-    def bus_provider(self) -> BusProvider:
-        # Do not invent operators or schedules while BUS_PROVIDER is unset.
-        return EmptyBusProvider()
 
     def places_provider(self, callback: Callable[[PlaceSearchRequest], Awaitable[list[dict]]]) -> PlaceProvider:
         selected = self.selected_providers()["places"]

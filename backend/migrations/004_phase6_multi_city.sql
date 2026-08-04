@@ -58,14 +58,6 @@ CREATE TABLE IF NOT EXISTS multi_city_itinerary_days (
     PRIMARY KEY (trip_id, day_number)
 );
 
-CREATE TABLE IF NOT EXISTS multi_city_accommodation_selections (
-    trip_id VARCHAR(12) NOT NULL REFERENCES multi_city_trips(id) ON DELETE CASCADE,
-    selection_id VARCHAR(64) NOT NULL,
-    stay_id VARCHAR(64) NOT NULL,
-    selection_json JSONB NOT NULL,
-    PRIMARY KEY (trip_id, selection_id)
-);
-
 CREATE TABLE IF NOT EXISTS multi_city_transport_selections (
     trip_id VARCHAR(12) NOT NULL REFERENCES multi_city_trips(id) ON DELETE CASCADE,
     leg_id VARCHAR(64) NOT NULL,

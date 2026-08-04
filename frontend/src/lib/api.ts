@@ -98,7 +98,6 @@ export type TravelVibe =
   | "nightlife";
 
 export type TransportMode = "flight" | "train" | "road";
-export type AccommodationPreference = "budget" | "standard" | "comfort";
 export type TravelPreference = "cheapest" | "fastest" | "balanced";
 export type TripPace = "relaxed" | "balanced" | "packed";
 export type DietaryPreference = "vegetarian" | "non_vegetarian";
@@ -139,7 +138,6 @@ export interface TripRequest {
   budget: number;
   vibes: TravelVibe[];
   transport_mode?: TransportMode;
-  accommodation_preference: AccommodationPreference;
   adults: number;
   children: number;
   travel_preference: TravelPreference;
@@ -167,7 +165,6 @@ export interface MultiCityTripRequest {
   budget: number;
   vibes: TravelVibe[];
   transport_mode?: TransportMode;
-  accommodation_preference: AccommodationPreference;
   adults: number;
   children: number;
   travel_preference: TravelPreference;
@@ -268,7 +265,6 @@ export interface BudgetBreakdown {
   transport: number;
   food: number;
   activities: number;
-  accommodation: number;
   local_transport: number;
   taxes_buffer: number;
   miscellaneous: number;
@@ -326,7 +322,6 @@ export interface Itinerary {
   end_date: string;
   total_days: number;
   vibes: TravelVibe[];
-  accommodation_preference: AccommodationPreference;
   adults: number;
   children: number;
   travel_preference: TravelPreference;
@@ -378,18 +373,6 @@ export interface TravelLeg {
   provenance?: DataProvenance;
 }
 
-export interface AccommodationSelection {
-  id: string;
-  stay_id: string;
-  destination: CityInfo;
-  category: AccommodationPreference;
-  nights: number;
-  provider: string;
-  name: string;
-  estimated_total: number;
-  provenance?: DataProvenance;
-}
-
 export interface TransportSelection {
   leg_id: string;
   selected_offer: TransportOption | null;
@@ -431,13 +414,11 @@ export interface MultiCityTrip {
   travel_legs: TravelLeg[];
   itinerary_days: ItineraryDay[];
   visits: Visit[];
-  accommodation_selections: AccommodationSelection[];
   transport_selections: TransportSelection[];
   start_date: string;
   end_date: string;
   total_days: number;
   vibes: TravelVibe[];
-  accommodation_preference: AccommodationPreference;
   adults: number;
   children: number;
   travel_preference: TravelPreference;

@@ -12,7 +12,7 @@ transport windows, budgets, and refinements receive server-side checks.
 
 - Added `TripIntent` to the backend model contract, including destinations,
   traveller types, budget/currency, pace, interests, diet, accessibility,
-  transport/hotel preferences, travel windows, mandatory/excluded places, and
+  transport preferences, travel windows, mandatory/excluded places, and
   free-text notes.
 - Added the deterministic `ConstraintEngine` in
   `backend/app/services/constraint_engine.py`.
@@ -45,8 +45,8 @@ transport windows, budgets, and refinements receive server-side checks.
 
 - The current product remains single-destination. The `destinations` list in
   `TripIntent` is future-ready, but multi-city movement belongs to Phase 6.
-- Hotel candidates do not yet come from a provider; the constraint layer uses
-  the existing accommodation preference and deterministic stay-rate estimate.
+- Budget arithmetic covers transport, meals, activities, and local travel; the
+  constraint layer does not estimate lodging or booking inventory.
 - Candidate scheduling uses a conservative geometry-based travel estimate. The
   existing OSRM path still supplies final route segments and validation when
   available, with a labelled fallback when it is not.

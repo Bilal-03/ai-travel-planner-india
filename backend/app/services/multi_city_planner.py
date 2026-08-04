@@ -16,8 +16,6 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from app.models.trip import (
-    AccommodationPreference,
-    AccommodationSelection,
     BudgetBreakdown,
     CityInfo,
     DataProvenance,
@@ -43,13 +41,6 @@ from app.services.weather import get_forecast
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, str, int], Awaitable[None] | None]
-
-STAY_RATE_PER_NIGHT = {
-    AccommodationPreference.BUDGET: 1_200,
-    AccommodationPreference.STANDARD: 2_500,
-    AccommodationPreference.COMFORT: 5_000,
-}
-
 
 def _estimate_provenance(disclaimer: str) -> DataProvenance:
     return DataProvenance(
@@ -226,7 +217,6 @@ def _build_days(
     legs: list[TravelLeg],
     visits: list[Visit],
     weather_by_stay_date: dict[tuple[str, date], DayWeather],
-    accommodation_rate: int,
     travellers: int,
 ) -> list[ItineraryDay]:
     days: list[ItineraryDay] = []
@@ -252,7 +242,7 @@ def _build_days(
                 provenance=_estimate_provenance("Meal pricing is a planning estimate; verify menus locally."),
             )
         ]
-        day_budget = food_cost + activity_cost + (accommodation_rate if stay else 0)
+        day_budget = food_cost + activity_cost
         days.append(
             ItineraryDay(
                 day_number=index + 1,
@@ -276,21 +266,16 @@ def _build_days(
 
 def _build_budget(
     request: MultiCityTripRequest,
-    stays: list[DestinationStay],
     legs: list[TravelLeg],
     visits: list[Visit],
 ) -> BudgetBreakdown:
     travellers = request.adults + request.children
-    accommodation = sum(
-        STAY_RATE_PER_NIGHT[request.accommodation_preference] * stay.nights
-        for stay in stays
-    )
     transport = sum(leg.fare for leg in legs)
     activities = sum(visit.estimated_cost for visit in visits)
     food = request.adults + request.children
     food *= ((request.end_date - request.start_date).days + 1) * 400
     local_transport = ((request.end_date - request.start_date).days + 1) * travellers * 150
-    subtotal = transport + accommodation + activities + food + local_transport
+    subtotal = transport + activities + food + local_transport
     taxes_buffer = round(subtotal * 0.05)
     total = subtotal + taxes_buffer
     return BudgetBreakdown(
@@ -299,13 +284,12 @@ def _build_budget(
         transport=transport,
         food=food,
         activities=activities,
-        accommodation=accommodation,
         local_transport=local_transport,
         taxes_buffer=taxes_buffer,
         total_estimated=total,
         remaining=request.budget - total,
         provenance=_estimate_provenance(
-            "Multi-city transport, stay, food, and activity amounts are planning estimates; verify live prices before booking."
+            "Multi-city transport, food, activity, and local-travel amounts are planning estimates; verify live prices before booking."
         ),
     )
 
@@ -350,19 +334,6 @@ async def generate_multi_city_trip(
     visits, weather = _make_visits_and_weather(stays, facts)
     await _report(progress, "fetching_places", "Collected destination-scoped places and weather…", 60)
 
-    rate = STAY_RATE_PER_NIGHT[request.accommodation_preference]
-    accommodations = [
-        AccommodationSelection(
-            stay_id=stay.id,
-            destination=stay.city,
-            category=request.accommodation_preference,
-            nights=stay.nights,
-            name=f"{stay.city.name} {request.accommodation_preference.value} stay estimate",
-            estimated_total=rate * stay.nights,
-            provenance=_estimate_provenance("Accommodation is a category estimate; no property or availability was verified."),
-        )
-        for stay in stays
-    ]
     days = _build_days(
         request.start_date,
         request.end_date,
@@ -370,10 +341,9 @@ async def generate_multi_city_trip(
         legs,
         visits,
         weather,
-        rate,
         request.adults + request.children,
     )
-    budget = _build_budget(request, stays, legs, visits)
+    budget = _build_budget(request, legs, visits)
     await _report(progress, "optimising", "Assembled independently editable stays, visits, and legs…", 80)
 
     return Trip(
@@ -382,13 +352,11 @@ async def generate_multi_city_trip(
         travel_legs=legs,
         itinerary_days=days,
         visits=visits,
-        accommodation_selections=accommodations,
         transport_selections=transport_selections,
         start_date=request.start_date,
         end_date=request.end_date,
         total_days=(request.end_date - request.start_date).days + 1,
         vibes=request.vibes,
-        accommodation_preference=request.accommodation_preference,
         adults=request.adults,
         children=request.children,
         travel_preference=request.travel_preference,
@@ -399,7 +367,7 @@ async def generate_multi_city_trip(
         budget=budget,
         generation_notes=[
             "Each destination stay has a stable identity; changing the route does not require rebuilding unrelated place visits.",
-            "Transport and accommodation values are estimates or provider references and must be verified before booking.",
+            "Transport values are estimates or provider references and must be verified before booking.",
         ],
     )
 
@@ -432,7 +400,6 @@ def _preserved_weather(trip: Trip, old_stays: dict[str, DestinationStay]) -> dic
 
 def _rebuild_days_without_regenerating_visits(trip: Trip, old_stays: dict[str, DestinationStay]) -> None:
     weather = _preserved_weather(trip, old_stays)
-    rate = STAY_RATE_PER_NIGHT[trip.accommodation_preference]
     trip.itinerary_days = _build_days(
         trip.start_date,
         trip.end_date,
@@ -440,26 +407,23 @@ def _rebuild_days_without_regenerating_visits(trip: Trip, old_stays: dict[str, D
         trip.travel_legs,
         trip.visits,
         weather,
-        rate,
         trip.adults + trip.children,
     )
 
 
 def _reprice_after_edit(trip: Trip, old_budget_limit: int) -> None:
     transport = sum(leg.fare for leg in trip.travel_legs)
-    accommodation = sum(selection.estimated_total for selection in trip.accommodation_selections)
     activities = sum(visit.estimated_cost for visit in trip.visits)
     food = trip.adults + trip.children
     food *= trip.total_days * 400
     local_transport = trip.total_days * (trip.adults + trip.children) * 150
-    subtotal = transport + accommodation + activities + food + local_transport
+    subtotal = transport + activities + food + local_transport
     taxes = round(subtotal * 0.05)
     total = subtotal + taxes
     trip.budget = trip.budget.model_copy(update={
         "outbound_transport": trip.travel_legs[0].fare if trip.travel_legs else 0,
         "return_transport": trip.travel_legs[-1].fare if trip.travel_legs else 0,
         "transport": transport,
-        "accommodation": accommodation,
         "activities": activities,
         "food": food,
         "local_transport": local_transport,
@@ -497,7 +461,6 @@ async def reorder_multi_city_trip(trip: Trip, destination_stay_ids: list[str]) -
         budget=max(1_000, trip.budget.total_estimated + max(0, trip.budget.remaining)),
         vibes=trip.vibes,
         transport_mode=None,
-        accommodation_preference=trip.accommodation_preference,
         adults=trip.adults,
         children=trip.children,
         travel_preference=trip.travel_preference,
@@ -543,13 +506,6 @@ def update_multi_city_stay(
     updated.end_date = cursor
     updated.total_days = (updated.end_date - updated.start_date).days + 1
     _shift_visit_dates(updated, old_stays)
-    selected_accommodation = next(
-        (selection for selection in updated.accommodation_selections if selection.stay_id == selected.id),
-        None,
-    )
-    if selected_accommodation:
-        selected_accommodation.nights = selected.nights
-        selected_accommodation.estimated_total = STAY_RATE_PER_NIGHT[updated.accommodation_preference] * selected.nights
     leg_dates = [updated.start_date] + [stay.arrival_date for stay in updated.destination_stays[1:]] + [updated.end_date]
     for leg, leg_date in zip(updated.travel_legs, leg_dates):
         leg.date = leg_date

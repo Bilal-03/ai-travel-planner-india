@@ -27,11 +27,9 @@ lowercase `Settings` fields. Never commit actual `.env` or `.env.local` files.
 | `OVERPASS_RPS` | No | `config.py` | Configured setting exists, but the current POI service uses its own limiter. |
 | `OSRM_RPS` | No | `config.py` | Configured setting exists, but the current routing service uses its own limiter. |
 | `FLIGHT_PROVIDER` | No | `providers/gateway.py` | Defaults to `legacy` (Skyscanner adapter); unsupported values fail closed to labelled fallback. |
-| `HOTEL_PROVIDER` | No | `providers/gateway.py` | Defaults to `none`; no hotel inventory is shown until a contracted adapter is enabled. |
 | `PLACES_PROVIDER` | No | `providers/gateway.py` | Defaults to `overpass`; unsupported values fall back to the reviewed catalogue. |
 | `ROUTES_PROVIDER` | No | `providers/gateway.py` | Defaults to `osrm`; unsupported values let feasibility use its deterministic estimate. |
 | `RAIL_PROVIDER` | No | `providers/gateway.py` | Defaults to `legacy` (RailRadar schedule adapter); fares and seats remain unverified. |
-| `BUS_PROVIDER` | No | `providers/gateway.py` | Defaults to `none`; operators and schedules are never invented. |
 | `WEATHER_PROVIDER` | No | `providers/gateway.py` | Defaults to `openweather`; unsupported values leave weather unavailable. |
 | `PROVIDER_TIMEOUT_SECONDS` | No | `providers/resilience.py` | Gateway timeout per attempt; default `20`. Provider HTTP clients retain their own shorter timeouts. |
 | `PROVIDER_MAX_RETRIES` | No | `providers/resilience.py` | Number of bounded retries after the first attempt; default `1`. |

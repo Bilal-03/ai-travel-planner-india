@@ -30,12 +30,6 @@ class TransportMode(str, Enum):
     ROAD = "road"
 
 
-class AccommodationPreference(str, Enum):
-    BUDGET = "budget"
-    STANDARD = "standard"
-    COMFORT = "comfort"
-
-
 class TravelPreference(str, Enum):
     CHEAPEST = "cheapest"
     FASTEST = "fastest"
@@ -131,10 +125,6 @@ class TripRequest(BaseModel):
         None,
         description="Transport mode selected by the traveller; omit to use the recommendation",
     )
-    accommodation_preference: AccommodationPreference = Field(
-        AccommodationPreference.BUDGET,
-        description="Estimated stay tier used for the trip budget",
-    )
     adults: int = Field(2, ge=1, le=20, description="Number of adult travellers")
     children: int = Field(0, ge=0, le=20, description="Number of child travellers")
     travel_preference: TravelPreference = TravelPreference.BALANCED
@@ -186,7 +176,6 @@ class TripIntent(BaseModel):
     diet: Optional[DietaryPreference] = None
     accessibility_requirements: Optional[str] = Field(None, max_length=500)
     preferred_transport: Optional[TransportMode] = None
-    hotel_preference: AccommodationPreference = AccommodationPreference.BUDGET
     early_departure_allowed: bool = False
     late_arrival_allowed: bool = False
     mandatory_places: list[str] = Field(default_factory=list, max_length=20)
@@ -230,7 +219,6 @@ class TripIntent(BaseModel):
             diet=request.dietary_preference,
             accessibility_requirements=request.accessibility_requirements,
             preferred_transport=request.transport_mode,
-            hotel_preference=request.accommodation_preference,
             early_departure_allowed=request.allow_early_morning_travel,
             late_arrival_allowed=request.allow_late_night_travel,
             mandatory_places=list(request.mandatory_places),
@@ -258,7 +246,6 @@ class MultiCityTripRequest(BaseModel):
     budget: int = Field(..., ge=1_000, le=1_000_000, description="Total budget in INR")
     vibes: list[TravelVibe] = Field(default_factory=lambda: [TravelVibe.CULTURE])
     transport_mode: Optional[TransportMode] = None
-    accommodation_preference: AccommodationPreference = AccommodationPreference.BUDGET
     adults: int = Field(2, ge=1, le=20)
     children: int = Field(0, ge=0, le=20)
     travel_preference: TravelPreference = TravelPreference.BALANCED
@@ -351,20 +338,6 @@ class TravelLeg(BaseModel):
     provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
 
 
-class AccommodationSelection(BaseModel):
-    """The stay-level accommodation estimate and its provenance."""
-
-    id: str = Field(default_factory=lambda: f"accommodation-{uuid.uuid4().hex[:10]}")
-    stay_id: str
-    destination: CityInfo
-    category: AccommodationPreference
-    nights: int = Field(..., ge=1)
-    provider: str = "YatraAI stay estimate"
-    name: str
-    estimated_total: int = Field(0, ge=0)
-    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
-
-
 class TransportSelection(BaseModel):
     """The selected offer and alternatives for one travel leg."""
 
@@ -414,13 +387,11 @@ class Trip(BaseModel):
     travel_legs: list[TravelLeg] = Field(default_factory=list)
     itinerary_days: list[ItineraryDay] = Field(default_factory=list)
     visits: list[Visit] = Field(default_factory=list)
-    accommodation_selections: list[AccommodationSelection] = Field(default_factory=list)
     transport_selections: list[TransportSelection] = Field(default_factory=list)
     start_date: date
     end_date: date
     total_days: int = Field(..., ge=1, le=14)
     vibes: list[TravelVibe] = Field(default_factory=list)
-    accommodation_preference: AccommodationPreference = AccommodationPreference.BUDGET
     adults: int = Field(2, ge=1)
     children: int = Field(0, ge=0)
     travel_preference: TravelPreference = TravelPreference.BALANCED
@@ -579,7 +550,6 @@ class BudgetBreakdown(BaseModel):
     transport: int = 0
     food: int = 0
     activities: int = 0
-    accommodation: int = 0
     local_transport: int = 0
     taxes_buffer: int = 0
     miscellaneous: int = 0
@@ -596,7 +566,6 @@ class Itinerary(BaseModel):
     end_date: date
     total_days: int
     vibes: list[TravelVibe]
-    accommodation_preference: AccommodationPreference = AccommodationPreference.BUDGET
     adults: int = 2
     children: int = 0
     travel_preference: TravelPreference = TravelPreference.BALANCED
@@ -654,7 +623,6 @@ class CitySearchResult(BaseModel):
 # forward references once the legacy POI/weather/meal classes are available.
 DestinationStay.model_rebuild()
 TravelLeg.model_rebuild()
-AccommodationSelection.model_rebuild()
 TransportSelection.model_rebuild()
 Visit.model_rebuild()
 ItineraryDay.model_rebuild()

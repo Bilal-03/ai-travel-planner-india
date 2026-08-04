@@ -19,7 +19,7 @@ the trip workspace's one-step undo action. The application also applies this
 column additively when it initializes an existing trips table.
 
 `004_phase6_multi_city.sql` adds the canonical multi-city aggregate and its
-stay/leg/visit/day/selection projections. Apply it after the preceding
+stay/leg/visit/day/transport-selection projections. Apply it after the preceding
 migrations.
 
 `005_phase7_collaboration_analytics.sql` adds append-only itinerary versions,
@@ -33,6 +33,9 @@ source of truth for hosted databases.
 tables and account ownership columns created by the earlier account-based
 implementation. Apply it to any database that has already run that retired
 schema.
+
+`007_remove_legacy_accommodation_projection.sql` removes a retired multi-city
+projection from databases that applied the earlier itinerary shape.
 
 Before applying in production, run the migration against a staging database and
 verify the status check constraint and expiry index. Do not hand-edit the live

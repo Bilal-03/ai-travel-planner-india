@@ -4,7 +4,6 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import CityAutocomplete from "./CityAutocomplete";
 import {
-  AccommodationPreference,
   DietaryPreference,
   TravelPreference,
   TravelVibe,
@@ -40,7 +39,6 @@ export default function TripForm({ onSubmit, isLoading, initialData }: TripFormP
   const [pace, setPace] = useState<TripPace>(initialData?.pace || "balanced");
   const [selectedVibes, setSelectedVibes] = useState<TravelVibe[]>(initialData?.vibes?.length ? initialData.vibes : ["culture"]);
   const [transportMode, setTransportMode] = useState<TransportMode | undefined>(initialData?.transport_mode);
-  const [accommodationPreference, setAccommodationPreference] = useState<AccommodationPreference>(initialData?.accommodation_preference || "budget");
   const [dietaryPreference, setDietaryPreference] = useState<DietaryPreference | undefined>(initialData?.dietary_preference);
   const [seniorCitizens, setSeniorCitizens] = useState(initialData?.senior_citizens ?? 0);
   const [accessibilityRequirements, setAccessibilityRequirements] = useState(initialData?.accessibility_requirements || "");
@@ -87,7 +85,6 @@ export default function TripForm({ onSubmit, isLoading, initialData }: TripFormP
       budget,
       vibes: selectedVibes,
       transport_mode: transportMode,
-      accommodation_preference: accommodationPreference,
       adults,
       children,
       travel_preference: travelPreference,
@@ -278,15 +275,6 @@ export default function TripForm({ onSubmit, isLoading, initialData }: TripFormP
                 <button type="button" onClick={() => setTransportMode(undefined)} className={`rounded border px-2 py-2 text-xs ${!transportMode ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted"}`}>Any</button>
                 {(["train", "flight", "road"] as TransportMode[]).map((mode) => (
                   <button key={mode} type="button" onClick={() => setTransportMode(mode)} className={`rounded border px-2 py-2 text-xs capitalize ${transportMode === mode ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted"}`}>{mode}</button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <span className="block text-xs text-foreground-secondary mb-2">Hotel level</span>
-              <div className="grid grid-cols-3 gap-2">
-                {(["budget", "standard", "comfort"] as AccommodationPreference[]).map((tier) => (
-                  <button key={tier} type="button" onClick={() => setAccommodationPreference(tier)} className={`rounded border px-2 py-2 text-xs capitalize ${accommodationPreference === tier ? "border-marigold bg-marigold text-[#24160a]" : "border-glass-border text-foreground-muted"}`}>{tier}</button>
                 ))}
               </div>
             </div>

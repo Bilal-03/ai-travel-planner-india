@@ -8,7 +8,7 @@ import TransportCard from "@/components/TransportCard";
 import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
 import TripConversation from "@/components/TripConversation";
-import { PackingAndPrint, StaySuggestions } from "@/components/TripEnhancements";
+import { DestinationInspiration, PackingAndPrint } from "@/components/TripEnhancements";
 import {
   api,
   ApiError,
@@ -110,6 +110,7 @@ function PlanContent({ itinerary, onUpdate, onTransportSelect, onActivityEdit, i
     <div className="space-y-5">
       <JourneySummary itinerary={itinerary} />
       <TravelTips itinerary={itinerary} />
+      <DestinationInspiration itinerary={itinerary} />
       <section aria-labelledby="workspace-itinerary-heading">
         <ItineraryTimeline
           dayPlans={itinerary.day_plans}
@@ -131,7 +132,6 @@ function PlanContent({ itinerary, onUpdate, onTransportSelect, onActivityEdit, i
           </div>
         </section>
       )}
-      <StaySuggestions itinerary={itinerary} />
       <section className="grid gap-3 print:hidden sm:grid-cols-2">
         <PackingAndPrint itinerary={itinerary} onUpdate={onUpdate} />
       </section>
@@ -159,7 +159,6 @@ function OverviewRail({ itinerary }: { itinerary: Itinerary }) {
         <h2 className="text-sm font-semibold text-foreground">Trip snapshot</h2>
         <dl className="mt-3 space-y-2 text-xs">
           <div className="flex justify-between gap-3"><dt className="text-foreground-muted">Travellers</dt><dd className="font-medium text-foreground">{itinerary.adults + itinerary.children}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-foreground-muted">Stay</dt><dd className="capitalize text-foreground">{itinerary.accommodation_preference}</dd></div>
           <div className="flex justify-between gap-3"><dt className="text-foreground-muted">Vibe</dt><dd className="text-foreground">{itinerary.vibes.map((vibe) => getVibeEmoji(vibe)).join(" ") || "—"}</dd></div>
           <div className="flex justify-between gap-3"><dt className="text-foreground-muted">Data note</dt><dd className="text-right text-foreground-secondary">Live where available; estimates are labelled</dd></div>
         </dl>

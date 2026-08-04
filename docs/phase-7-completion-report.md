@@ -68,16 +68,17 @@ changing the provider-neutral itinerary contract.
 schema initializer remains useful for local development, but hosted databases
 must apply the ordered migrations before production readiness is enabled.
 
-The migration checker validates all six ordered migration files and the Phase 7
+The migration checker validates all seven ordered migration files and the Phase 7
 tables. Migration 006 removes the retired account schema from databases that
-ran the earlier account-based implementation. See
+ran the earlier account-based implementation. Migration 007 removes a retired
+multi-city projection from earlier itinerary deployments. See
 [backend/migrations/README.md](../backend/migrations/README.md).
 
 ## Production configuration
 
 Before deployment:
 
-1. Apply migrations `001` through `006` to staging, verify the schema, then
+1. Apply migrations `001` through `007` to staging, verify the schema, then
    apply them to production.
 2. Set `APP_ENV=production`, `REQUIRE_DURABLE_STORAGE=true`, and
    `REQUIRE_REDIS=true`.
@@ -112,7 +113,7 @@ errors in older planner modules.
 - `backend/.venv/bin/python -m compileall -q app main.py`: passed.
 - Phase 7 Ruff syntax/undefined-name gate: passed.
 - Phase 7 mypy gate: **17 source files**, no issues.
-- `backend/.venv/bin/python scripts/check_migrations.py`: **6 ordered
+- `backend/.venv/bin/python scripts/check_migrations.py`: **7 ordered
   migrations validated**.
 - `npm run lint`: passed.
 - `npx tsc --noEmit`: passed.

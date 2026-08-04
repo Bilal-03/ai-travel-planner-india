@@ -58,10 +58,9 @@ def test_budget_is_derived_from_items_and_selected_round_trip_not_llm_categories
     assert budget.return_transport == 1_800
     assert budget.food == 650
     assert budget.activities == 1_400
-    assert budget.accommodation == 2_400
     assert budget.local_transport == 675  # includes ₹500 return station transfers
-    assert budget.taxes_buffer == 437
-    assert budget.total_estimated == 9_162
+    assert budget.taxes_buffer == 317
+    assert budget.total_estimated == 6_642
 
 
 def test_requested_transport_mode_is_also_the_recommended_option():

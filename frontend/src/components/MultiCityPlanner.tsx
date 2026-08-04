@@ -67,7 +67,6 @@ export default function MultiCityPlanner({ isLoading, onSubmit }: MultiCityPlann
       start_date: startDate,
       budget,
       vibes: ["culture"],
-      accommodation_preference: "budget",
       adults: 2,
       children: 0,
       travel_preference: "balanced",

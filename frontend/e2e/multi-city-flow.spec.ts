@@ -40,13 +40,11 @@ function multiCityTrip(order = ["Jaipur", "Jodhpur", "Udaipur"]) {
     travel_legs: legs,
     itinerary_days: [{ day_number: 1, date: "2026-09-10", stay_id: stays[0].id, destination: stays[0].city, weather: null, visits: [], meals: [], travel_leg_id: legs[0].id, day_budget: 1200, day_spent: 0, notes: null }],
     visits: [],
-    accommodation_selections: [],
     transport_selections: [],
     start_date: "2026-09-10",
     end_date: "2026-09-18",
     total_days: 9,
     vibes: ["culture"],
-    accommodation_preference: "budget",
     adults: 2,
     children: 0,
     travel_preference: "balanced",
@@ -54,7 +52,7 @@ function multiCityTrip(order = ["Jaipur", "Jodhpur", "Udaipur"]) {
     dietary_preference: null,
     senior_citizens: 0,
     accessibility_requirements: null,
-    budget: { outbound_transport: 900, return_transport: 900, transport: 3600, food: 7200, activities: 0, accommodation: 8400, local_transport: 2700, taxes_buffer: 1095, miscellaneous: 0, total_estimated: 22995, remaining: 7005 },
+    budget: { outbound_transport: 900, return_transport: 900, transport: 3600, food: 7200, activities: 0, local_transport: 2700, taxes_buffer: 675, miscellaneous: 0, total_estimated: 14175, remaining: 15825 },
     generation_notes: [],
     created_at: "2026-08-04T00:00:00Z",
   };
@@ -71,4 +69,3 @@ test("generates and reorders a multi-city route without leaving the route studio
   await page.getByRole("button", { name: "Move Udaipur up" }).click();
   await expect(page.getByRole("heading", { name: "Delhi → Jaipur → Udaipur → Jodhpur → Delhi" })).toBeVisible();
 });
-
