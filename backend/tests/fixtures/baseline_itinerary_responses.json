@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "description": "Stable response slices expected from the current generation contract when the ten baseline requests are run with deterministic provider fixtures.",
+  "response_slices": [
+    {
+      "case_id": "delhi-jaipur-budget",
+      "snapshot": {"origin": "Delhi", "destination": "Jaipur", "total_days": 2, "day_numbers": [1, 2], "selected_transport_mode": "train", "transport_option_modes": ["flight", "train", "road"], "activity_counts": [1, 1], "meal_counts": [3, 3]}
+    },
+    {
+      "case_id": "mumbai-goa-friends",
+      "snapshot": {"origin": "Mumbai", "destination": "Goa", "total_days": 4, "day_numbers": [1, 2, 3, 4], "selected_transport_mode": "flight", "transport_option_modes": ["flight", "train", "road"], "activity_counts": [1, 1, 1, 1], "meal_counts": [3, 3, 3, 3]}
+    },
+    {
+      "case_id": "bengaluru-mysuru-family-senior",
+      "snapshot": {"origin": "Bengaluru", "destination": "Mysuru", "total_days": 3, "day_numbers": [1, 2, 3], "selected_transport_mode": "road", "transport_option_modes": ["flight", "train", "road"], "activity_counts": [1, 1, 1], "meal_counts": [3, 3, 3]}
+    },
+    {
+      "case_id": "delhi-manali-winter",
+      "snapshot": {"origin": "Delhi", "destination": "Manali", "total_days": 5, "day_numbers": [1, 2, 3, 4, 5], "selected_transport_mode": "road", "transport_option_modes": ["flight", "train", "road"], "activity_counts": [1, 1, 1, 1, 1], "meal_counts": [3, 3, 3, 3, 3]}
+    },
+    {
+      "case_id": "chennai-madurai-pilgrimage",
+      "snapshot": {"origin": "Chennai", "destination": "Madurai", "total_days": 3, "day_numbers": [1, 2, 3], "selected_transport_mode": "train", "transport_option_modes": ["flight", "train", "road"], "activity_counts": [1, 1, 1], "meal_counts": [3, 3, 3]}
+    },
+    {
+      "case_id": "kolkata-darjeeling-monsoon",
+      "snapshot": {"origin": "Kolkata", "destination": "Darjeeling", "total_days": 4, "day_numbers": [1, 2, 3, 4], "selected_transport_mode": "train", "transport_option_modes": ["flight", "train", "road"], "activity_counts": [1, 1, 1, 1], "meal_counts": [3, 3, 3, 3]}
+    },
+    {
+      "case_id": "mumbai-udaipur-accessibility",
+      "snapshot": {"origin": "Mumbai", "destination": "Udaipur", "total_days": 3, "day_numbers": [1, 2, 3], "selected_transport_mode": "flight", "transport_option_modes": ["flight", "train", "road"], "activity_counts": [1, 1, 1], "meal_counts": [3, 3, 3]}
+    },
+    {
+      "case_id": "hyderabad-hampi-low-budget",
+      "snapshot": {"origin": "Hyderabad", "destination": "Hampi", "total_days": 3, "day_numbers": [1, 2, 3], "selected_transport_mode": "train", "transport_option_modes": ["flight", "train", "road"], "activity_counts": [1, 1, 1], "meal_counts": [3, 3, 3]}
+    },
+    {
+      "case_id": "delhi-varanasi-train",
+      "snapshot": {"origin": "Delhi", "destination": "Varanasi", "total_days": 3, "day_numbers": [1, 2, 3], "selected_transport_mode": "train", "transport_option_modes": ["flight", "train", "road"], "activity_counts": [1, 1, 1], "meal_counts": [3, 3, 3]}
+    },
+    {
+      "case_id": "bengaluru-kochi-mixed-transport",
+      "snapshot": {"origin": "Bengaluru", "destination": "Kochi", "total_days": 4, "day_numbers": [1, 2, 3, 4], "selected_transport_mode": "train", "transport_option_modes": ["flight", "train", "road"], "activity_counts": [1, 1, 1, 1], "meal_counts": [3, 3, 3, 3]}
+    }
+  ]
+}
