@@ -98,6 +98,9 @@ export interface TripRequest {
   dietary_preference?: DietaryPreference;
   senior_citizens: number;
   accessibility_requirements?: string;
+  mandatory_places?: string[];
+  excluded_places?: string[];
+  free_text_notes?: string;
   allow_early_morning_travel: boolean;
   allow_late_night_travel: boolean;
 }
@@ -252,6 +255,9 @@ export interface Itinerary {
   dietary_preference: DietaryPreference | null;
   senior_citizens: number;
   accessibility_requirements: string | null;
+  mandatory_places?: string[];
+  excluded_places?: string[];
+  free_text_notes?: string | null;
   allow_early_morning_travel: boolean;
   allow_late_night_travel: boolean;
   transport_options: TransportOption[];

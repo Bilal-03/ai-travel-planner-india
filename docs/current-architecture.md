@@ -1,9 +1,9 @@
 # YatraAI current architecture
 
 Audit date: 2026-08-04
-Repository branch: `codex/phase-2-durable-generation`
+Repository branch: `codex/phase-3-constraint-planner`
 
-This document records the implementation that exists at the Phase 2 boundary.
+This document records the implementation that exists at the Phase 3 boundary.
 It describes behavior and ownership as implemented; it is not a proposal for
 the next architecture.
 
@@ -72,15 +72,16 @@ The route modules are mounted by `backend/main.py`:
 | `GET` | `/api/trips/{trip_id}` | Loads a saved itinerary. |
 | `POST` | `/api/trips/{trip_id}/share` | Returns a frontend share URL for an existing trip. |
 | `POST` | `/api/trips/{trip_id}/transport` | Selects one existing option, recalculates the budget, and updates the trip. Requires the creator edit token. |
-| `POST` | `/api/trips/{trip_id}/refine` | Sends a follow-up instruction to Gemini, validates the resulting plan, and updates the trip. Requires the creator edit token. |
+| `POST` | `/api/trips/{trip_id}/refine` | Parses common edits into scoped deterministic changes where possible; otherwise constrains Gemini to affected days, then validates and updates the trip. Requires the creator edit token. |
 | `POST` | `/api/trips/{trip_id}/packing-list` | Generates a packing list and updates the trip. Requires the creator edit token. |
 | `GET` | `/api/search/cities` | Local Indian-city index first, Nominatim fallback. |
 | `GET` | `/api/search/pois` | Overpass POI discovery around coordinates. |
 | `GET` | `/api/transport/flights` | Skyscanner search or labelled fallback estimates. |
 | `GET` | `/api/transport/trains` | RailRadar schedule search or labelled static/estimated records. |
 
-`TripRequest`, `DataProvenance`, `TransportOption`, `POI`, `DayPlan`,
-`BudgetBreakdown`, and `Itinerary` are defined in `backend/app/models/trip.py`.
+`TripRequest`, `TripIntent`, `DataProvenance`, `TransportOption`, `POI`,
+`DayPlan`, `BudgetBreakdown`, and `Itinerary` are defined in
+`backend/app/models/trip.py`.
 `DataProvenance` carries provider, status, retrieval/expiry, confidence, source,
 and disclaimer metadata; expired facts are treated as unavailable by the
 contract. The model layer is Pydantic-only; there is no SQLAlchemy model layer.
@@ -103,14 +104,20 @@ The planner's current sequence is:
 1. Resolve the origin and destination through `geocode_to_city_info`.
 2. Compute straight-line distance with `haversine_distance`.
 3. Fetch transport, POIs, weather, and destination photos concurrently.
-4. Choose one transport option and pass provider data plus POIs to Gemini.
-5. Fall back to a deterministic plan when Gemini is unavailable.
-6. Canonicalize activities against approved POIs and normalize day numbers,
+4. Translate the request into a structured `TripIntent`.
+5. Run `constraint_engine.py` over reviewed candidates to produce a
+   machine-readable schedule, including pace limits, meal breaks, opening
+   windows, travel buffers, weather/accessibility suitability, transport
+   windows, mandatory/excluded places, and deterministic budget checks.
+6. Pass that candidate schedule to Gemini for descriptions, notes, meals, tips,
+   and explanations; Gemini is not trusted as the source of exact timings.
+7. Fall back to the deterministic schedule when Gemini is unavailable.
+8. Canonicalize activities against approved POIs and normalize day numbers,
    dates, meals, and coordinates.
-7. Reflow activities around OSRM-derived or estimated route times.
-8. Validate timing, opening windows, stop-to-stop feasibility, meal count, and
+9. Reflow activities around OSRM-derived or estimated route times.
+10. Validate timing, opening windows, stop-to-stop feasibility, pace, meal count, and
    summary claims; retry Gemini repairs up to three times.
-9. Use a deterministic budget calculation and build the Pydantic itinerary.
+11. Use a deterministic budget calculation and build the Pydantic itinerary.
 
 The supporting service boundaries are:
 
@@ -128,6 +135,13 @@ The supporting service boundaries are:
 - `photos.py`: optional Unsplash destination imagery.
 - `festivals.py`: static festival data exists, but the generation flow
   currently intentionally leaves festival facts empty.
+
+`constraint_engine.py` also owns `parse_refinement_instruction` and
+`apply_scoped_refinement`. Edits such as “make day two less crowded”, “reduce
+the budget”, “avoid early morning travel”, and transport switches are handled
+deterministically when the current itinerary contains enough candidates. Other
+edits are sent to Gemini with an affected-day merge that preserves unrelated
+days before server-side validation.
 
 ## Persistence and caching
 
@@ -181,6 +195,12 @@ runtime API schema validation.
 Phase 2 adds direct service tests for idempotency, event replay, cancellation,
 retry, stable edit tokens, and an HTTP-level job lifecycle test covering submit,
 poll, SSE replay, result retrieval, and duplicate submission behavior.
+
+Phase 3 adds deterministic engine tests for intent mapping, rainy-day candidate
+selection, opening hours, travel buffers, pace, accessibility, mandatory and
+excluded places, budget trimming, and structured refinement. A planner
+regression test verifies that a scoped day-two edit preserves day-one activity
+order, timing, meals, and notes.
 
 The Phase 0 baseline corpus added on the Phase 0 branch is documented in
 `backend/tests/fixtures/` and exercised by

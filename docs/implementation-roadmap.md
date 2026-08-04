@@ -1,8 +1,8 @@
 # YatraAI implementation roadmap
 
 This roadmap mirrors the delivery order in the master implementation plan.
-Phases 0, 1, and 2 are complete on their respective branches. Phase 3 is the
-next implementation boundary.
+Phases 0, 1, 2, and 3 are complete on their respective branches. Phase 4 is
+the next implementation boundary.
 
 ## Phase status
 
@@ -11,7 +11,7 @@ next implementation boundary.
 | 0 | Audit, documentation, safety baseline, fixtures, and tests | Complete on `codex/phase-0-audit-baseline` |
 | 1 | Common provenance, freshness, provider-neutral response models | Complete on `codex/phase-1-data-trust` |
 | 2 | Durable trip jobs, Redis events, resumable progress, idempotency | Complete on `codex/phase-2-durable-generation` |
-| 3 | Deterministic constraint engine and scoped itinerary refinement | Not started |
+| 3 | Deterministic constraint engine and scoped itinerary refinement | Complete on `codex/phase-3-constraint-planner` |
 | 4 | Stardrift-inspired but simple trip workspace UX | Not started |
 | 5 | Provider gateway and live travel integrations | Not started |
 | 6 | Multi-destination trips, accounts, and explicit preference memory | Not started |
@@ -51,15 +51,23 @@ store, and the legacy synchronous endpoint remains available for compatibility.
 See `docs/phase-2-completion-report.md` for the exit evidence and known
 operational limitations.
 
+## Phase 3 gate
+
+Phase 3 is complete after introducing the structured `TripIntent` contract, a
+deterministic candidate scheduler and validator for pace, opening hours, travel
+time, transport windows, weather, accessibility, mandatory/excluded places, and
+budget, plus server-side scoped refinement for affected days and legs. Gemini
+now receives a deterministic candidate schedule before narration, and the
+existing final route/budget validation remains authoritative. See
+`docs/phase-3-completion-report.md` for the exit evidence and limitations.
+
 ## Later sequencing constraints
 
-1. Phase 3 depends on durable provider-neutral inputs and should validate
-   feasibility before adding richer narration.
-2. Phase 4 follows accuracy/reliability work; it is not an initial visual
+1. Phase 4 follows accuracy/reliability work; it is not an initial visual
    redesign task.
-3. Phase 5 must preserve the current provider until each replacement is
+2. Phase 5 must preserve the current provider until each replacement is
    contract-tested and feature-flagged.
-4. Multi-city, accounts, collaboration, offline, analytics, and payments stay
+3. Multi-city, accounts, collaboration, offline, analytics, and payments stay
    outside the initial single-destination product scope.
 
 ## Delivery controls

@@ -43,6 +43,9 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
   const [dietaryPreference, setDietaryPreference] = useState<DietaryPreference | undefined>();
   const [seniorCitizens, setSeniorCitizens] = useState(0);
   const [accessibilityRequirements, setAccessibilityRequirements] = useState("");
+  const [mandatoryPlaces, setMandatoryPlaces] = useState("");
+  const [excludedPlaces, setExcludedPlaces] = useState("");
+  const [freeTextNotes, setFreeTextNotes] = useState("");
   const [allowEarlyMorningTravel, setAllowEarlyMorningTravel] = useState(false);
   const [allowLateNightTravel, setAllowLateNightTravel] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -91,6 +94,9 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
       dietary_preference: dietaryPreference,
       senior_citizens: seniorCitizens,
       accessibility_requirements: accessibilityRequirements.trim() || undefined,
+      mandatory_places: mandatoryPlaces.split(",").map((place) => place.trim()).filter(Boolean),
+      excluded_places: excludedPlaces.split(",").map((place) => place.trim()).filter(Boolean),
+      free_text_notes: freeTextNotes.trim() || undefined,
       allow_early_morning_travel: allowEarlyMorningTravel,
       allow_late_night_travel: allowLateNightTravel,
     });
@@ -296,6 +302,21 @@ export default function TripForm({ onSubmit, isLoading }: TripFormProps) {
                 <input type="text" maxLength={500} value={accessibilityRequirements} onChange={(event) => setAccessibilityRequirements(event.target.value)} placeholder="Wheelchair access, step-free routes…" className="mt-1 w-full rounded border border-glass-border bg-black/20 px-3 py-2 text-sm text-foreground" />
               </label>
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="text-xs text-foreground-secondary">Must-visit places
+                <input type="text" maxLength={500} value={mandatoryPlaces} onChange={(event) => setMandatoryPlaces(event.target.value)} placeholder="Amber Fort, City Palace" className="mt-1 w-full rounded border border-glass-border bg-black/20 px-3 py-2 text-sm text-foreground" />
+                <span className="mt-1 block text-[11px] text-foreground-muted">Separate places with commas.</span>
+              </label>
+              <label className="text-xs text-foreground-secondary">Places to avoid
+                <input type="text" maxLength={500} value={excludedPlaces} onChange={(event) => setExcludedPlaces(event.target.value)} placeholder="Crowded markets, long treks" className="mt-1 w-full rounded border border-glass-border bg-black/20 px-3 py-2 text-sm text-foreground" />
+                <span className="mt-1 block text-[11px] text-foreground-muted">Names or categories are accepted.</span>
+              </label>
+            </div>
+
+            <label className="block text-xs text-foreground-secondary">Trip notes for the planner
+              <textarea maxLength={2000} value={freeTextNotes} onChange={(event) => setFreeTextNotes(event.target.value)} placeholder="Anything the planner should know…" rows={2} className="mt-1 w-full resize-y rounded border border-glass-border bg-black/20 px-3 py-2 text-sm text-foreground" />
+            </label>
 
             <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-foreground-secondary">
               <label className="flex items-center gap-2"><input type="checkbox" checked={allowEarlyMorningTravel} onChange={(event) => setAllowEarlyMorningTravel(event.target.checked)} /> Early-morning travel is okay</label>

@@ -46,6 +46,16 @@ from app.services.routing import get_route_segment, validate_day_feasibility
 from app.services.transport import search_transport
 from app.services.weather import get_forecast
 from app.services.photos import get_destination_photos
+from app.services.constraint_engine import (
+    RefinementAction,
+    ConstraintEngine,
+    apply_scoped_refinement,
+    build_trip_intent,
+    constraint_plan_to_raw_plan,
+    max_activities_for_intent,
+    parse_refinement_instruction,
+    validate_transport_window,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +109,9 @@ IMPORTANT RULES:
 12. Match the requested pace: relaxed means fewer, longer stops; packed means more
     stops only when the full travel-time validation can still pass.
 13. Respect dietary, accessibility, and early/late travel constraints supplied in trip details.
+14. The supplied deterministic candidate schedule is authoritative for place selection,
+    day assignment, and exact timings. Do not move, add, or remove scheduled stops;
+    enrich it with concise notes and practical wording only.
 
 You MUST respond with valid JSON matching the exact schema provided. No markdown, no explanations — ONLY JSON."""
 
@@ -113,6 +126,7 @@ def _build_planning_prompt(
     distance_km: float,
     festivals: list[dict],
     selected_transport: Optional[TransportOption] = None,
+    deterministic_schedule: Optional[dict] = None,
 ) -> str:
     """Build the grounded planning prompt with real data."""
 
@@ -135,6 +149,9 @@ TRIP DETAILS:
 - Pace: {request.pace.value}
 - Dietary preference: {request.dietary_preference.value if request.dietary_preference else 'no restriction'}
 - Accessibility: {request.accessibility_requirements or ('senior travellers in party' if request.senior_citizens else 'none stated')}
+- Mandatory places: {', '.join(request.mandatory_places) or 'none'}
+- Excluded places: {', '.join(request.excluded_places) or 'none'}
+- Traveller notes: {request.free_text_notes or 'none'}
 - Early-morning travel accepted: {'yes' if request.allow_early_morning_travel else 'no'}
 - Late-night travel accepted: {'yes' if request.allow_late_night_travel else 'no'}
 - Selected transport (budgeted both ways by the server): {json.dumps(selected_transport_data, default=str)}
@@ -164,6 +181,14 @@ with generic or invented attractions.
 
 WEATHER FORECAST:
 {json.dumps(weather, indent=2, default=str)}
+
+DETERMINISTIC CANDIDATE SCHEDULE:
+{json.dumps(deterministic_schedule or {}, indent=2, default=str)}
+
+The deterministic candidate schedule is the factual planning layer. Preserve
+its selected places, exact start/end times, visit durations, and day numbers.
+You may add concise notes, meal wording, practical tips, and explanations, but
+do not invent places, move activities, or make an infeasible schedule.
 
 Respond with ONLY valid JSON in this exact format:
 {{
@@ -487,7 +512,11 @@ def _canonicalize_plan(
     return source
 
 
-async def _repair_plan_schedule(plan: dict, approved_pois: list[dict]) -> None:
+async def _repair_plan_schedule(
+    plan: dict,
+    approved_pois: list[dict],
+    day_numbers: Optional[set[int]] = None,
+) -> None:
     """Reflow activities around real route times before strict validation."""
     approved_by_name = {
         _normalize_place_name(poi.get("name")): poi
@@ -495,6 +524,12 @@ async def _repair_plan_schedule(plan: dict, approved_pois: list[dict]) -> None:
         if poi.get("name")
     }
     for day in plan.get("day_plans", []):
+        if day_numbers is not None:
+            try:
+                if int(day.get("day_number")) not in day_numbers:
+                    continue
+            except (TypeError, ValueError):
+                continue
         activities = day.get("activities", [])
         if not isinstance(activities, list) or not activities:
             continue
@@ -572,6 +607,7 @@ async def _validate_plan(
     day_plans = plan.get("day_plans", [])
 
     expected_days = (request.end_date - request.start_date).days + 1
+    pace_limit = max_activities_for_intent(build_trip_intent(request))
     if len(day_plans) != expected_days:
         issues.append(
             f"Plan has {len(day_plans)} days but trip is {expected_days} days"
@@ -597,6 +633,10 @@ async def _validate_plan(
                 )
 
         activities = day.get("activities", [])
+        if len(activities) > pace_limit:
+            issues.append(
+                f"Day {day_number} has {len(activities)} activities, above the {request.pace.value} pace limit of {pace_limit}"
+            )
         if not activities and day_number_int not in [1, expected_days]:
             issues.append(
                 f"Day {day_number} has no activities planned"
@@ -804,10 +844,20 @@ def select_transport_for_itinerary(
         dietary_preference=itinerary.dietary_preference,
         senior_citizens=itinerary.senior_citizens,
         accessibility_requirements=itinerary.accessibility_requirements,
+        mandatory_places=itinerary.mandatory_places,
+        excluded_places=itinerary.excluded_places,
+        free_text_notes=itinerary.free_text_notes,
         allow_early_morning_travel=itinerary.allow_early_morning_travel,
         allow_late_night_travel=itinerary.allow_late_night_travel,
     )
+    transport_issues = validate_transport_window(build_trip_intent(request), selected)
+    if transport_issues:
+        raise ValueError(transport_issues[0].message)
     itinerary.budget = _calculate_budget(itinerary.day_plans, selected, request)
+    if itinerary.budget.remaining < 0:
+        raise ValueError(
+            f"That transport choice would exceed the trip budget by ₹{abs(itinerary.budget.remaining):,}."
+        )
     itinerary.generation_notes = [note for note in itinerary.generation_notes if not note.startswith("Selected transport:")]
     itinerary.generation_notes.append(f"Selected transport: {selected.provider}; all transport totals use this option round trip.")
     return itinerary
@@ -965,6 +1015,9 @@ def _plan_to_itinerary(
         dietary_preference=request.dietary_preference,
         senior_citizens=request.senior_citizens,
         accessibility_requirements=request.accessibility_requirements,
+        mandatory_places=request.mandatory_places,
+        excluded_places=request.excluded_places,
+        free_text_notes=request.free_text_notes,
         allow_early_morning_travel=request.allow_early_morning_travel,
         allow_late_night_travel=request.allow_late_night_travel,
         transport_options=transport_options,
@@ -1100,6 +1153,29 @@ async def generate_itinerary(
     if not photos:
         notes.append("Destination photography is unavailable — add an Unsplash key to enable it")
 
+    # ── Step 3.5: Deterministic constraint planning ────────────────────
+    # This produces a machine-readable feasible candidate before Gemini is
+    # asked to add language. The existing response contract remains intact;
+    # Gemini's output is still canonicalized and independently validated below.
+    intent = build_trip_intent(request)
+    constraint_plan = ConstraintEngine().optimize(
+        intent,
+        pois,
+        weather=weather_data or [],
+        selected_transport=selected_transport,
+    )
+    deterministic_schedule = constraint_plan_to_raw_plan(constraint_plan)
+    constraint_errors = [
+        issue.message
+        for issue in constraint_plan.issues
+        if issue.severity.value == "error"
+    ]
+    if constraint_errors:
+        notes.append(
+            "The deterministic planner found constraints to review: "
+            + "; ".join(constraint_errors[:2])
+        )
+
     # ── Step 4: AI Planning ───────────────────────────────────────────
     await report("planning", "Building your day-by-day itinerary…", 58)
     logger.info("🤖 Generating itinerary with Gemini AI...")
@@ -1114,6 +1190,7 @@ async def generate_itinerary(
         distance_km=distance_km,
         festivals=festivals,
         selected_transport=selected_transport,
+        deterministic_schedule=deterministic_schedule,
     )
 
     plan = await _call_gemini(prompt)
@@ -1122,7 +1199,7 @@ async def generate_itinerary(
         # Fallback: construct a basic plan without AI
         logger.warning("⚠️ Gemini unavailable — generating basic itinerary")
         notes.append("Generated without AI — basic itinerary from available data")
-        plan = _build_fallback_plan(request, pois, weather_data or [])
+        plan = deterministic_schedule if constraint_plan.activities else _build_fallback_plan(request, pois, weather_data or [])
 
     # The model may return aliases, string day numbers, omitted meals, or an
     # empty interior day. Normalize those cases before strict validation, then
@@ -1191,6 +1268,12 @@ async def generate_itinerary(
         selected_transport=selected_transport,
         local_transport=local_transport,
     )
+
+    if itinerary.budget.remaining < 0:
+        itinerary.generation_notes.append(
+            f"The deterministic estimate is ₹{abs(itinerary.budget.remaining):,} above the requested budget; "
+            "remove an optional stop or choose a lower-cost transport option before booking."
+        )
 
     logger.info(f"✨ Itinerary generated: {itinerary.total_days} days, "
                 f"₹{itinerary.budget.total_estimated:,} estimated")
@@ -1301,8 +1384,42 @@ def _itinerary_to_plan(itinerary: Itinerary) -> dict:
     }
 
 
+def _merge_scoped_plan_days(
+    original: dict,
+    candidate: dict,
+    affected_days: set[int],
+) -> dict:
+    """Merge a model edit without allowing unrelated days to drift."""
+
+    merged = deepcopy(original)
+    candidate_by_day: dict[int, dict] = {}
+    for index, day in enumerate(candidate.get("day_plans", []) if isinstance(candidate, dict) else [], start=1):
+        if not isinstance(day, dict):
+            continue
+        try:
+            day_number = int(day.get("day_number", index))
+        except (TypeError, ValueError):
+            day_number = index
+        candidate_by_day[day_number] = day
+    for day in merged.get("day_plans", []):
+        if not isinstance(day, dict):
+            continue
+        try:
+            day_number = int(day.get("day_number", 0))
+        except (TypeError, ValueError):
+            continue
+        if day_number in affected_days and day_number in candidate_by_day:
+            replacement = deepcopy(candidate_by_day[day_number])
+            replacement["day_number"] = day_number
+            day.clear()
+            day.update(replacement)
+    if isinstance(candidate, dict) and isinstance(candidate.get("tips"), list):
+        merged["tips"] = candidate["tips"]
+    return merged
+
+
 async def refine_itinerary(itinerary: Itinerary, instruction: str) -> Itinerary:
-    """Apply one natural-language change while preserving the trip's structure."""
+    """Apply a scoped, revalidated change without regenerating unrelated days."""
     request = TripRequest(
         origin=itinerary.origin.name,
         destination=itinerary.destination.name,
@@ -1319,24 +1436,29 @@ async def refine_itinerary(itinerary: Itinerary, instruction: str) -> Itinerary:
         dietary_preference=itinerary.dietary_preference,
         senior_citizens=itinerary.senior_citizens,
         accessibility_requirements=itinerary.accessibility_requirements,
+        mandatory_places=itinerary.mandatory_places,
+        excluded_places=itinerary.excluded_places,
+        free_text_notes=itinerary.free_text_notes,
         allow_early_morning_travel=itinerary.allow_early_morning_travel,
         allow_late_night_travel=itinerary.allow_late_night_travel,
     )
     existing_plan = _itinerary_to_plan(itinerary)
-    prompt = f"""Update this India itinerary according to the traveller's request.
+    refinement = parse_refinement_instruction(instruction)
 
-TRAVELLER REQUEST: {instruction}
-
-CURRENT ITINERARY JSON:
-{json.dumps(existing_plan, indent=2, default=str)}
-
-Keep dates and the overall JSON schema unchanged. Preserve useful activities unless
-the request asks to replace them. Keep costs realistic in INR, retain three meals
-per day, and return ONLY a valid JSON object matching the current itinerary schema.
-"""
-    refined_plan = await _call_gemini(prompt)
-    if not refined_plan:
-        itinerary.generation_notes.append("Could not apply that AI refinement right now. Please try again.")
+    if refinement.action == RefinementAction.CHANGE_TRANSPORT and refinement.transport_mode:
+        try:
+            mode = TransportMode(refinement.transport_mode)
+        except ValueError:
+            mode = None
+        if mode:
+            option = next((item for item in itinerary.transport_options if item.mode == mode), None)
+            if option:
+                updated = select_transport_for_itinerary(itinerary, mode, option.provider, option.code)
+                updated.generation_notes.append(f"Transport changed by refinement: {mode.value}.")
+                return updated
+        itinerary.generation_notes.append(
+            f"Could not apply the requested transport change: {refinement.transport_mode}."
+        )
         return itinerary
 
     approved_pois = [
@@ -1344,12 +1466,80 @@ per day, and return ONLY a valid JSON object matching the current itinerary sche
         for day_plan in itinerary.day_plans
         for activity in [*day_plan.activities, *day_plan.backup_activities]
     ]
+
+    deterministic_plan, changed_days, changed = apply_scoped_refinement(existing_plan, refinement)
+    if changed:
+        await _repair_plan_schedule(deterministic_plan, approved_pois, changed_days)
+        issues, route_segments, local_transport = await _validate_plan(
+            deterministic_plan,
+            request,
+            approved_pois,
+        )
+        if not issues:
+            refined = _plan_to_itinerary(
+                plan=deterministic_plan,
+                request=request,
+                origin=itinerary.origin,
+                destination=itinerary.destination,
+                transport_options=itinerary.transport_options,
+                weather_forecast=itinerary.weather_forecast,
+                route_segments=route_segments,
+                notes=[*itinerary.generation_notes, f"Deterministic refinement applied: {instruction}"],
+                destination_photos=[photo.model_dump() for photo in itinerary.destination_photos],
+                festivals=[festival.model_dump() for festival in itinerary.festivals],
+                packing_list=[item.model_dump() for item in itinerary.packing_list],
+                approved_pois=approved_pois,
+                selected_transport=itinerary.selected_transport,
+                local_transport=local_transport,
+            )
+            if refined.budget.remaining < 0:
+                itinerary.generation_notes.append(
+                    "The requested refinement exceeded the trip budget, so the previous itinerary was preserved."
+                )
+                return itinerary
+            refined.id = itinerary.id
+            return refined
+
+    affected_days = changed_days or {
+        int(day.get("day_number", index))
+        for index, day in enumerate(existing_plan.get("day_plans", []), start=1)
+        if isinstance(day, dict)
+    }
+    prompt = f"""Update this India itinerary according to the traveller's request.
+
+TRAVELLER REQUEST: {instruction}
+
+CURRENT ITINERARY JSON:
+{json.dumps(existing_plan, indent=2, default=str)}
+
+Only modify day(s) {sorted(affected_days)}. Copy every other day exactly,
+including activity order, times, costs, meals, notes, and backups. Keep dates and
+the overall JSON schema unchanged. Preserve useful activities unless the request
+asks to replace them. Keep costs realistic in INR, retain three meals per day,
+and return ONLY a valid JSON object matching the current itinerary schema.
+"""
+    refined_plan = await _call_gemini(prompt)
+    if not refined_plan:
+        itinerary.generation_notes.append("Could not apply that AI refinement right now. Please try again.")
+        return itinerary
+
+    refined_plan = _canonicalize_plan(refined_plan, request, approved_pois)
+    refined_plan = _merge_scoped_plan_days(existing_plan, refined_plan, affected_days)
+    await _repair_plan_schedule(refined_plan, approved_pois, affected_days)
     issues, route_segments, local_transport = await _validate_plan(refined_plan, request, approved_pois)
     if issues:
         repaired = await _call_gemini(_build_repair_prompt(issues, json.dumps(refined_plan, default=str)))
         if repaired:
-            refined_plan = repaired
+            repaired = _canonicalize_plan(repaired, request, approved_pois)
+            refined_plan = _merge_scoped_plan_days(existing_plan, repaired, affected_days)
+            await _repair_plan_schedule(refined_plan, approved_pois, affected_days)
             issues, route_segments, local_transport = await _validate_plan(refined_plan, request, approved_pois)
+
+    if issues:
+        itinerary.generation_notes.append(
+            "The requested refinement was not feasible, so the previous itinerary was preserved."
+        )
+        return itinerary
 
     refined = _plan_to_itinerary(
         plan=refined_plan,
@@ -1359,14 +1549,19 @@ per day, and return ONLY a valid JSON object matching the current itinerary sche
         transport_options=itinerary.transport_options,
         weather_forecast=itinerary.weather_forecast,
         route_segments=route_segments,
-        notes=[f"AI refinement applied: {instruction}"],
+        notes=[*itinerary.generation_notes, f"AI refinement applied: {instruction}"],
         destination_photos=[photo.model_dump() for photo in itinerary.destination_photos],
-        festivals=[],
+        festivals=[festival.model_dump() for festival in itinerary.festivals],
         packing_list=[item.model_dump() for item in itinerary.packing_list],
         approved_pois=approved_pois,
         selected_transport=itinerary.selected_transport,
         local_transport=local_transport,
     )
+    if refined.budget.remaining < 0:
+        itinerary.generation_notes.append(
+            "The requested refinement exceeded the trip budget, so the previous itinerary was preserved."
+        )
+        return itinerary
     refined.id = itinerary.id
     return refined
 
