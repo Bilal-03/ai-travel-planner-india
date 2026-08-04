@@ -24,6 +24,8 @@
 | 🌤️ **Weather-Aware Planning** | OpenWeatherMap forecasts with indoor backup activities |
 | 💰 **Budget Tracking** | Deterministic breakdown — outbound/return transport, food, activities, stay, local transport and buffer |
 | 🔗 **Instant Sharing** | View-only links, WhatsApp sharing, and persistent saved itineraries |
+| 🏙️ **Multi-city Routes** | Plan explicit destination stays, travel legs, return legs, and stay-scoped edits |
+| 👤 **Optional Accounts** | Continue anonymously, upgrade later, view trip history, and control explicit preference memory |
 | ✨ **Plan Refinement** | The planning browser can update its saved itinerary with a follow-up request |
 | 🧳 **Packing List** | Generates a weather- and vibe-aware checklist on demand |
 | 🖨️ **Print / PDF** | Print any itinerary or save it as a PDF from the browser |
@@ -115,6 +117,10 @@ Copy the included root [`.env.example`](.env.example) to `.env` for the backend,
 | `UPSTASH_REDIS_REST_URL` | ⚪ Optional | Cache (falls back to in-memory) | [Upstash](https://upstash.com/) |
 | `UPSTASH_REDIS_REST_TOKEN` | ⚪ Optional | Cache | Same as above |
 | `FRONTEND_URL` | ✅ Yes | Frontend URL for CORS | Your Vercel URL in production |
+| `AUTH_PROVIDER` | ⚪ Local default | `local` signed sessions or `supabase` JWT verification | `local` for development; Supabase Auth in managed deployment |
+| `SUPABASE_URL` | ⚪ Optional locally | Managed auth project URL | [Supabase Auth](https://supabase.com/docs/guides/auth) |
+| `SUPABASE_JWT_SECRET` | ⚪ Required with `AUTH_PROVIDER=supabase` | Server-only HS256 verification secret | Supabase project auth settings |
+| `ACCOUNT_SESSION_TTL_SECONDS` | ⚪ Optional | Local account-session lifetime | Defaults to 30 days |
 
 > **Note:** The app works without optional keys — it degrades gracefully. Only `GEMINI_API_KEY` is required.
 
@@ -124,7 +130,10 @@ Provider selections are controlled through `FLIGHT_PROVIDER`,
 current Skyscanner, RailRadar, Overpass, OSRM, and OpenWeather paths; hotels
 and buses remain unavailable until a contracted adapter is configured. Gateway
 timeouts, retries, and circuit-breaker thresholds are also configurable in the
-root `.env.example`.
+root `.env.example`. Phase 6 uses Supabase Auth as the managed authentication
+target when configured and a local signed-session fallback for credential-free
+development; PostgreSQL is required for durable account history and preference
+memory in production.
 
 ---
 

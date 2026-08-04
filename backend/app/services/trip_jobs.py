@@ -71,6 +71,7 @@ class TripJobRecord(BaseModel):
     id: str
     idempotency_key_hash: str
     request: TripRequest
+    owner_user_id: Optional[str] = None
     status: TripJobState = TripJobState.ACCEPTED
     step: str = TripJobState.ACCEPTED.value
     message: str = "Your trip request was accepted."
@@ -242,7 +243,11 @@ async def get_job(job_id: str) -> Optional[TripJobRecord]:
     return _load_job(job_id)
 
 
-async def create_job(request: TripRequest, idempotency_key: str) -> tuple[TripJobRecord, bool]:
+async def create_job(
+    request: TripRequest,
+    idempotency_key: str,
+    owner_user_id: str | None = None,
+) -> tuple[TripJobRecord, bool]:
     """Create one job or return the existing job for the same idempotency key."""
 
     key_hash = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
@@ -262,6 +267,7 @@ async def create_job(request: TripRequest, idempotency_key: str) -> tuple[TripJo
         id=str(uuid.uuid4()),
         idempotency_key_hash=key_hash,
         request=request,
+        owner_user_id=owner_user_id,
     )
     # Write the snapshot before reserving the key. A concurrent retry can
     # then always resolve the winning reservation to a complete job record.
@@ -413,7 +419,10 @@ async def _run_generation(job_id: str) -> None:
     )
 
     edit_token = edit_token_for_job(job_id)
-    trip_id = await save_trip(itinerary, hash_edit_token(edit_token))
+    if job.owner_user_id:
+        trip_id = await save_trip(itinerary, hash_edit_token(edit_token), job.owner_user_id)
+    else:
+        trip_id = await save_trip(itinerary, hash_edit_token(edit_token))
     itinerary.id = trip_id
     if not cached:
         cache.set(

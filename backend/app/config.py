@@ -49,6 +49,20 @@ class Settings(BaseSettings):
     # --- Durable trip jobs ---
     trip_job_secret: Optional[str] = Field(default=None, validation_alias="TRIP_JOB_SECRET")
 
+    # --- Authentication ---
+    # Supabase is the managed deployment target. The local signed-session
+    # adapter keeps anonymous/account flows usable before provider credentials
+    # are configured in a development environment.
+    auth_provider: str = Field(default="local", validation_alias="AUTH_PROVIDER")
+    supabase_url: Optional[str] = Field(default=None, validation_alias="SUPABASE_URL")
+    supabase_jwt_secret: Optional[str] = Field(default=None, validation_alias="SUPABASE_JWT_SECRET")
+    account_session_ttl_seconds: int = Field(
+        default=30 * 24 * 60 * 60,
+        ge=300,
+        le=365 * 24 * 60 * 60,
+        validation_alias="ACCOUNT_SESSION_TTL_SECONDS",
+    )
+
     # --- App ---
     frontend_url: str = "http://localhost:3000"
     backend_port: int = 8000

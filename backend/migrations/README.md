@@ -18,6 +18,12 @@ repository is connected to PostgreSQL in the deployment.
 the trip workspace's one-step undo action. The application also applies this
 column additively when it initializes an existing trips table.
 
+`004_phase6_multi_city_accounts.sql` adds the canonical multi-city aggregate and
+its stay/leg/visit/day/selection projections, optional account/session tables,
+explicit preference memory, and account ownership on saved trips. Apply it after
+the preceding migrations so account deletion can cascade through the normalized
+multi-city projections.
+
 Before applying in production, run the migration against a staging database and
 verify the status check constraint and expiry index. Do not hand-edit the live
 schema or replace this file with a runtime `ALTER TABLE` call.

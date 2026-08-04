@@ -11,6 +11,9 @@ import FeaturesRail from "@/components/FeaturesRail";
 import DestinationPostcards from "@/components/DestinationPostcards";
 import LoadingState from "@/components/LoadingState";
 import TripWorkspace from "@/components/TripWorkspace";
+import MultiCityPlanner from "@/components/MultiCityPlanner";
+import MultiCityWorkspace from "@/components/MultiCityWorkspace";
+import AccountPanel from "@/components/AccountPanel";
 import {
   api,
   Itinerary,
@@ -18,6 +21,8 @@ import {
   GenerationStatus,
   TripJob,
   ApiError,
+  MultiCityTrip,
+  MultiCityTripRequest,
 } from "@/lib/api";
 
 const ACTIVE_JOB_STORAGE_KEY = "yatraai:active-trip-job";
@@ -74,8 +79,11 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
+  const [multiCityTrip, setMultiCityTrip] = useState<MultiCityTrip | null>(null);
+  const [isMultiCityGenerating, setIsMultiCityGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRequest, setLastRequest] = useState<TripRequest | null>(null);
+  const [lastMultiCityRequest, setLastMultiCityRequest] = useState<MultiCityTripRequest | null>(null);
   const [plannerDraft, setPlannerDraft] = useState<Partial<TripRequest> | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
@@ -273,9 +281,30 @@ export default function Home() {
     activeJobIdRef.current = null;
     clearPersistedJob();
     setItinerary(null);
+    setMultiCityTrip(null);
+    setIsMultiCityGenerating(false);
     setError(null);
     setPlannerDraft(null);
+    setLastMultiCityRequest(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleMultiCitySubmit = async (request: MultiCityTripRequest) => {
+    requestAbortRef.current?.abort();
+    stopJobEvents();
+    activeJobIdRef.current = null;
+    setIsMultiCityGenerating(true);
+    setLastMultiCityRequest(request);
+    setItinerary(null);
+    setMultiCityTrip(null);
+    setError(null);
+    try {
+      setMultiCityTrip(await api.generateMultiCityTrip(request));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "The multi-city route could not be generated.");
+    } finally {
+      setIsMultiCityGenerating(false);
+    }
   };
 
   const handleQuickReview = (draft: Partial<TripRequest>, prompt: string) => {
@@ -297,15 +326,15 @@ export default function Home() {
   return (
     <main className="min-h-screen">
       <Header
-        onLogoClick={
-          itinerary
+          onLogoClick={
+          itinerary || multiCityTrip
             ? handleNewTrip
             : () => window.scrollTo({ top: 0, behavior: "smooth" })
         }
       />
 
       {/* ── Home: hero, ticket form, features, destinations ─────────── */}
-      {!itinerary && (
+      {!itinerary && !multiCityTrip && (
         <>
           <HomeHero />
 
@@ -317,6 +346,9 @@ export default function Home() {
             <TripForm key={plannerDraft?.free_text_notes || "detailed-plan"} onSubmit={handleSubmit} isLoading={isGenerating} initialData={plannerDraft || undefined} />
             {isGenerating && <LoadingState waitingForBackend={!backendReady} status={generationStatus} onCancel={cancelGeneration} onRetry={retryGeneration} />}
 
+            <MultiCityPlanner isLoading={isGenerating || isMultiCityGenerating} onSubmit={handleMultiCitySubmit} />
+            <AccountPanel />
+
             {error && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -325,7 +357,7 @@ export default function Home() {
               >
                 <p className="text-error font-medium">⚠️ {error}</p>
                 <button
-                  onClick={() => { setError(null); retryGeneration(); }}
+                  onClick={() => { setError(null); if (lastMultiCityRequest) void handleMultiCitySubmit(lastMultiCityRequest); else retryGeneration(); }}
                   className="mt-2 text-sm text-foreground-muted hover:text-foreground transition-colors"
                 >
                   Retry request
@@ -342,6 +374,10 @@ export default function Home() {
       {/* ── Itinerary Result ─────────────────────────────────────── */}
       {itinerary && (
         <TripWorkspace itinerary={itinerary} onUpdate={setItinerary} onNewTrip={handleNewTrip} onTransportSelect={handleTransportSelect} />
+      )}
+
+      {multiCityTrip && (
+        <MultiCityWorkspace trip={multiCityTrip} onUpdate={setMultiCityTrip} onNewTrip={handleNewTrip} />
       )}
 
       <Footer />

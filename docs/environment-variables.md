@@ -21,6 +21,10 @@ lowercase `Settings` fields. Never commit actual `.env` or `.env.local` files.
 | `UPSTASH_REDIS_REST_URL` | Strongly recommended for production | `redis_cache.py`, `services/trip_jobs.py` | Enables shared cache, job queue, event replay, idempotency, cancellation, and distributed coordination when paired with its token; otherwise process-local fallback is used. |
 | `UPSTASH_REDIS_REST_TOKEN` | Strongly recommended for production | `redis_cache.py`, `services/trip_jobs.py` | Credential for the Upstash Redis client. |
 | `TRIP_JOB_SECRET` | Strongly recommended for production | `config.py`, `services/trip_jobs.py` | Secret used to derive the edit token returned for completed asynchronous jobs. A development fallback exists, but production deployments must set this explicitly. |
+| `AUTH_PROVIDER` | No locally; `supabase` in managed deployment | `config.py`, `services/account_service.py` | Selects the account boundary. `local` is the signed-session fallback; `supabase` enables inbound Supabase JWT verification when the secret is present. |
+| `SUPABASE_URL` | Required for a Supabase deployment | `config.py` | Records the managed auth project URL for deployment configuration. |
+| `SUPABASE_JWT_SECRET` | Required for HS256 Supabase JWT verification | `config.py`, `services/account_service.py` | Verifies bearer tokens and auto-provisions an account record from the JWT subject. Keep it server-only. |
+| `ACCOUNT_SESSION_TTL_SECONDS` | No | `config.py`, `services/account_service.py` | Lifetime of local signed account sessions; default is 30 days. |
 | `FRONTEND_URL` | Yes in deployment | `main.py`, `api/trips.py` | CORS origin and base used when constructing a server-side share URL. |
 | `BACKEND_PORT` | No | `config.py` | Default local port setting; Render uses its injected `PORT` in the start command. |
 | `NOMINATIM_RPS` | No | `config.py` | Configured setting exists, but the current geocoder uses its own one-request-per-second limiter. |
@@ -64,6 +68,11 @@ build/runtime according to the Vercel environment configuration.
 | `UNSPLASH_ACCESS_KEY` | No destination photos | Cosmetic degradation only. |
 | `DATABASE_URL` | Process-local trips | Trips disappear on restart and are not shared across instances. |
 | Redis URL/token | Process-local cache, jobs, progress, rate limits, and provider caches | No cross-instance coordination; jobs and replay history are not restart-durable and duplicate work is possible. Provider circuit state is process-local by design in Phase 5. |
+| `SUPABASE_JWT_SECRET` | Local signed-session fallback remains usable | Managed bearer-token account access is not enabled; configure Supabase before production cross-device auth. |
+| `DATABASE_URL` for Phase 6 | Account/trip data remains process-local | Anonymous/account history, preference memory, and multi-city normalized projections disappear on restart. |
 
 Phase 2 adds `TRIP_JOB_SECRET` and makes Redis strongly recommended for durable
-multi-instance job processing. No new frontend variables are required.
+multi-instance job processing. Phase 6 adds the auth variables above; no new
+frontend variables are required for the local fallback. A managed Supabase
+frontend can add its public URL/key according to the official Next.js SSR
+quickstart.

@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.trips import generation_rate_limit
 from app.models.trip import TripRequest
+from app.services.account_service import get_account_for_token
 from app.services.trip_jobs import (
     TERMINAL_STATES,
     TripJobState,
@@ -24,6 +25,7 @@ from app.services.trip_storage import get_trip
 router = APIRouter(prefix="/api/trip-jobs", tags=["trip-jobs"])
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 EDIT_TOKEN_HEADER = "X-Trip-Edit-Token"
+ACCOUNT_TOKEN_HEADER = "X-Yatra-Account-Token"
 
 
 @router.post("", response_model=TripJobResponse, status_code=202)
@@ -31,6 +33,7 @@ async def submit_trip_job(
     request: TripRequest,
     idempotency_key: str | None = Header(None, alias=IDEMPOTENCY_HEADER),
     _: None = Depends(generation_rate_limit),
+    account_token: str | None = Header(None, alias=ACCOUNT_TOKEN_HEADER),
 ):
     """Accept a generation request and return immediately with a job ID."""
 
@@ -40,7 +43,8 @@ async def submit_trip_job(
     key = (idempotency_key or str(uuid.uuid4())).strip()
     if not 8 <= len(key) <= 200:
         raise HTTPException(status_code=400, detail="Idempotency-Key must be between 8 and 200 characters")
-    job, _ = await create_job(request, key)
+    account = await get_account_for_token(account_token)
+    job, _ = await create_job(request, key, account.id if account else None)
     return to_response(job)
 
 

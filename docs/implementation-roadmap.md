@@ -1,7 +1,7 @@
 # YatraAI implementation roadmap
 
 This roadmap mirrors the delivery order in the master implementation plan.
-Phases 0, 1, 2, 3, 4, and 5 are complete on their respective branches. Phase 6
+Phases 0, 1, 2, 3, 4, 5, and 6 are complete on their respective branches. Phase 7
 is the next implementation boundary.
 
 ## Phase status
@@ -14,7 +14,7 @@ is the next implementation boundary.
 | 3 | Deterministic constraint engine and scoped itinerary refinement | Complete on `codex/phase-3-constraint-planner` |
 | 4 | Stardrift-inspired but simple trip workspace UX | Complete on `codex/phase-4-trip-workspace` |
 | 5 | Provider gateway and live travel integrations | Complete on `codex/phase-5-provider-gateway` |
-| 6 | Multi-destination trips, accounts, and explicit preference memory | Not started |
+| 6 | Multi-destination trips, accounts, and explicit preference memory | Complete on `codex/phase-6-multi-city-accounts` |
 | 7 | Offline access, collaboration, analytics, security, and production hardening | Not started |
 
 ## Phase 0 exit evidence
@@ -82,14 +82,27 @@ contracted inventory source is available, and rail remains schedule-only with
 unavailable availability. See `docs/phase-5-completion-report.md` for exit
 evidence and known limitations.
 
+## Phase 6 gate
+
+Phase 6 is complete after adding a canonical `Trip` aggregate with explicit
+`DestinationStay`, `TravelLeg`, `ItineraryDay`, `Visit`,
+`AccommodationSelection`, and `TransportSelection` entities; a provider-backed
+three-city generator; scoped stay edits; route reordering with affected-leg
+recalculation; normalized PostgreSQL projections; anonymous session continuity;
+optional account upgrade/claiming; saved-trip history; and visible, editable,
+disableable, and deletable preference memory. Supabase HS256 JWTs are accepted
+when configured, while a signed local-session adapter keeps local development
+usable without provider credentials. See `docs/phase-6-completion-report.md` for
+exit evidence and limitations.
+
 ## Later sequencing constraints
 
 1. Phase 4 follows accuracy/reliability work; it is not an initial visual
    redesign task.
 2. Phase 5 must preserve the current provider until each replacement is
    contract-tested and feature-flagged.
-3. Multi-city, accounts, collaboration, offline, analytics, and payments stay
-   outside the initial single-destination product scope.
+3. Collaboration, offline access, analytics, and payments stay outside the
+   Phase 6 product scope.
 
 ## Delivery controls
 

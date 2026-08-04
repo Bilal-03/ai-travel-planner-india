@@ -26,6 +26,14 @@ services:
         sync: false
       - key: TRIP_JOB_SECRET
         sync: false
+      - key: AUTH_PROVIDER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: ACCOUNT_SESSION_TTL_SECONDS
+        value: "2592000"
       - key: FRONTEND_URL
         sync: false
       - key: FLIGHT_PROVIDER

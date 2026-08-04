@@ -57,7 +57,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Trip-Edit-Token"],
+    expose_headers=["X-Trip-Edit-Token", "X-Yatra-Account-Token"],
 )
 
 # Register routers
@@ -65,11 +65,15 @@ from app.api.trips import router as trips_router
 from app.api.search import router as search_router
 from app.api.transport import router as transport_router
 from app.api.trip_jobs import router as trip_jobs_router
+from app.api.multi_city import router as multi_city_router
+from app.api.account import router as account_router
 
 app.include_router(trips_router)
 app.include_router(search_router)
 app.include_router(transport_router)
 app.include_router(trip_jobs_router)
+app.include_router(multi_city_router)
+app.include_router(account_router)
 
 
 @app.get("/")
