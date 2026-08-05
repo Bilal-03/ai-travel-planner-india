@@ -138,3 +138,34 @@ def test_edit_token_is_stable_for_a_job_without_exposing_secret():
     assert token == trip_jobs.edit_token_for_job("job-123")
     assert token.startswith("job-123.")
     assert "trip_job_secret" not in token
+
+
+def test_job_progress_events_include_replayable_research_records(monkeypatch):
+    request = _request(14)
+    job = _create_job(monkeypatch, request)
+    saved_itinerary = None
+
+    async def generate_with_research(_request, progress=None):
+        if progress:
+            await progress("fetching_places", "Finding places that fit your interests…", 42)
+            await progress("validating", "Checking timing and budget…", 90)
+        return _itinerary(request)
+
+    async def fake_save(_itinerary, _owner_hash):
+        nonlocal saved_itinerary
+        saved_itinerary = _itinerary
+        return f"trip-{job.id[:8]}"
+
+    monkeypatch.setattr(trip_jobs, "generate_itinerary", generate_with_research)
+    monkeypatch.setattr(trip_jobs, "save_trip", fake_save)
+
+    asyncio.run(trip_jobs._execute_job(job.id))
+    events = asyncio.run(trip_jobs.replay_events(job.id, "0"))
+    research_events = [event.research_event for event in events if event.research_event]
+
+    assert research_events
+    assert any(event.event_type.value == "found_places" for event in research_events)
+    assert any(event.event_type.value == "validating" for event in research_events)
+    assert research_events[-1].event_type.value == "completed"
+    assert saved_itinerary is not None
+    assert saved_itinerary.research_events[-1].event_type.value == "completed"

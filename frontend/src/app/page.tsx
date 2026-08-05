@@ -15,6 +15,7 @@ import {
   Itinerary,
   TripRequest,
   GenerationStatus,
+  ResearchEvent,
   TripJob,
   ApiError,
 } from "@/lib/api";
@@ -78,6 +79,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [lastRequest, setLastRequest] = useState<TripRequest | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus | null>(null);
+  const [researchEvents, setResearchEvents] = useState<ResearchEvent[]>([]);
   const requestAbortRef = useRef<AbortController | null>(null);
   const stopJobEventsRef = useRef<(() => void) | null>(null);
   const activeJobIdRef = useRef<string | null>(null);
@@ -88,6 +90,13 @@ export default function Home() {
     stopJobEventsRef.current?.();
     stopJobEventsRef.current = null;
   };
+
+  const addResearchEvent = useCallback((event?: ResearchEvent | null) => {
+    if (!event) return;
+    setResearchEvents((current) => current.some((item) => item.id === event.id)
+      ? current
+      : [...current, event].slice(-16));
+  }, []);
 
   const finishFailedJob = useCallback((jobId: string, message: string) => {
     if (activeJobIdRef.current !== jobId) return;
@@ -109,6 +118,7 @@ export default function Home() {
       activeJobIdRef.current = null;
       clearPersistedJob();
       setItinerary(result);
+      setResearchEvents(result.research_events || []);
       saveOfflineTrip(result, "single");
       setError(null);
       setIsGenerating(false);
@@ -147,6 +157,7 @@ export default function Home() {
         if (stored && stored.jobId === event.job_id) {
           writePersistedJob({ ...stored, lastEventId: event.id });
         }
+        addResearchEvent(event.research_event);
         setGenerationStatus(event);
         if (event.status === "completed") {
           void resolveCompletedJob(event.job_id);
@@ -158,10 +169,11 @@ export default function Home() {
       },
       readPersistedJob()?.lastEventId || 0,
     );
-  }, [finishFailedJob, resolveCompletedJob]);
+  }, [addResearchEvent, finishFailedJob, resolveCompletedJob]);
 
   const resumePersistedJob = useCallback(async (persisted: PersistedTripJob) => {
     setLastRequest(persisted.request);
+    setResearchEvents([]);
     setIsGenerating(true);
     setError(null);
     setGenerationStatus({ step: "accepted", message: "Resuming your trip plan…", progress: 4, status: "accepted" });
@@ -218,6 +230,7 @@ export default function Home() {
     setIsGenerating(true);
     setError(null);
     setItinerary(null);
+    setResearchEvents([]);
     setLastRequest(data);
     setGenerationStatus({ step: "accepted", message: "Sending your trip request…", progress: 2, status: "accepted" });
 
@@ -284,6 +297,7 @@ export default function Home() {
     activeJobIdRef.current = null;
     clearPersistedJob();
     setItinerary(null);
+    setResearchEvents([]);
     setError(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -315,7 +329,7 @@ export default function Home() {
 
           <section id="plan" className="px-7 pt-[30px] pb-[90px]">
             <QuickPlanner onGenerate={handleSubmit} isLoading={isGenerating} />
-            {isGenerating && <LoadingState waitingForBackend={!backendReady} status={generationStatus} onCancel={cancelGeneration} onRetry={retryGeneration} />}
+            {isGenerating && <LoadingState waitingForBackend={!backendReady} status={generationStatus} researchEvents={researchEvents} onCancel={cancelGeneration} onRetry={retryGeneration} />}
 
             {error && (
               <motion.div

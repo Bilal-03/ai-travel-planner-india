@@ -39,6 +39,25 @@ export default function TripConversation({
 
   return (
     <aside className="workspace-conversation space-y-4" aria-label="Trip conversation and changes">
+      <div className="workspace-panel rounded-xl border border-glass-border bg-glass-bg p-4" aria-live="polite">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-foreground">Research trail</h3>
+          <span className="text-[10px] font-[family-name:var(--font-space-mono)] uppercase tracking-wide text-foreground-muted">{itinerary.research_events?.length || 0} checkpoints</span>
+        </div>
+        {itinerary.research_events?.length ? (
+          <ol className="mt-3 space-y-2.5">
+            {itinerary.research_events.slice(-5).map((event) => (
+              <li key={event.id} className="flex items-start gap-2 text-xs leading-relaxed text-foreground-secondary">
+                <span className={event.status === "error" ? "mt-0.5 text-error" : "mt-0.5 text-success"} aria-hidden="true">{event.status === "error" ? "!" : "✓"}</span>
+                <span>{event.message}</span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="mt-2 text-xs leading-relaxed text-foreground-muted">The planner&apos;s search and validation checkpoints will appear here.</p>
+        )}
+      </div>
+
       <div className="workspace-panel rounded-xl border border-glass-border bg-glass-bg p-4">
         <div className="flex items-start justify-between gap-3">
           <div>

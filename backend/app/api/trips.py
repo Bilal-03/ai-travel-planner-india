@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from app.cache.redis_cache import get_cache
 from app.config import settings
 from app.models.collaboration import AnalyticsEventRequest, TripKind
-from app.models.trip import GenerationStatus, Itinerary, PackingItem, TripRequest, TransportMode
+from app.models.trip import GenerationStatus, Itinerary, PackingItem, ResearchEvent, TripRequest, TransportMode
 from app.services.gemini_planner import (
     generate_itinerary,
     generate_packing_list,
@@ -29,6 +29,7 @@ from app.services.gemini_planner import (
 )
 from app.services.collaboration_service import VersionConflictError, assert_version, record_analytics, resolve_share_token
 from app.services.observability import capture_exception, monotonic_ms, safe_error_message
+from app.services.research_events import append_unique_events, event_for_failure, event_for_progress, event_for_update
 from app.services.trip_storage import get_trip, get_trip_owner_token_hash, save_trip, undo_trip, update_trip
 
 logger = logging.getLogger(__name__)
@@ -141,11 +142,22 @@ def _request_cache_key(request: TripRequest) -> str:
     return f"trip-generation:{hashlib.sha256(payload.encode()).hexdigest()}"
 
 
-async def _publish_progress(token: str | None, step: str, message: str, progress: int) -> None:
+async def _publish_progress(
+    token: str | None,
+    step: str,
+    message: str,
+    progress: int,
+    research_event: ResearchEvent | None = None,
+) -> None:
     if not token:
         return
     queue = _progress_queues.setdefault(token, asyncio.Queue())
-    await queue.put(GenerationStatus(step=step, message=message, progress=progress).model_dump())
+    await queue.put(GenerationStatus(
+        step=step,
+        message=message,
+        progress=progress,
+        research_event=research_event,
+    ).model_dump())
 
 
 async def _progress_events(token: str) -> AsyncIterator[str]:
@@ -189,11 +201,24 @@ async def generate_trip(
     await _record_analytics(AnalyticsEventRequest(event="planner_started", kind=TripKind.SINGLE))
     await _record_analytics(AnalyticsEventRequest(event="generation_started", kind=TripKind.SINGLE))
     try:
-        await _publish_progress(progress_token, "starting", "Starting your planner request…", 5)
+        research_events: list[ResearchEvent] = []
+
+        async def report(step: str, message: str, progress: int) -> None:
+            research_event = event_for_progress(step, message)
+            research_events.append(research_event)
+            await _publish_progress(progress_token, step, message, progress, research_event)
+
+        await report("starting", "Starting your planner request…", 5)
         cache_key = _request_cache_key(request)
         cached = get_cache().get(cache_key)
         if cached:
             itinerary = Itinerary.model_validate_json(cached)
+            cached_event = event_for_progress("cached", "Using your matching recent itinerary.")
+            completed_event = event_for_progress("complete", "Your itinerary is ready.")
+            itinerary.research_events = append_unique_events(
+                itinerary.research_events,
+                [*research_events, cached_event, completed_event],
+            )
             # A cache hit is a new planning session. Give it its own immutable
             # share record and private write capability instead of reusing an
             # unrelated traveller's saved link.
@@ -201,7 +226,7 @@ async def generate_trip(
             trip_id = await save_trip(itinerary, _hash_edit_token(edit_token))
             itinerary.id = trip_id
             response.headers[EDIT_TOKEN_HEADER] = edit_token
-            await _publish_progress(progress_token, "cached", "Using your matching recent itinerary.", 100)
+            await _publish_progress(progress_token, "cached", "Using your matching recent itinerary.", 100, completed_event)
             await _record_analytics(AnalyticsEventRequest(event="generation_completed", kind=TripKind.SINGLE, duration_ms=int(monotonic_ms() - started), metadata={"source": "cache"}))
             await _record_analytics(AnalyticsEventRequest(event="planner_completed", kind=TripKind.SINGLE, duration_ms=int(monotonic_ms() - started), metadata={"source": "cache"}))
             return itinerary
@@ -211,31 +236,40 @@ async def generate_trip(
         )
         itinerary = await generate_itinerary(
             request,
-            progress=lambda step, message, progress: _publish_progress(
-                progress_token, step, message, progress
-            ),
+            progress=report,
         )
 
+        completed_event = event_for_progress("complete", "Your itinerary is ready.")
+        itinerary.research_events = append_unique_events(
+            itinerary.research_events,
+            [*research_events, completed_event],
+        )
         # Auto-save for sharing
         edit_token = secrets.token_urlsafe(32)
         trip_id = await save_trip(itinerary, _hash_edit_token(edit_token))
         itinerary.id = trip_id
         get_cache().set(cache_key, itinerary.model_dump_json(), TRIP_CACHE_TTL_SECONDS)
         response.headers[EDIT_TOKEN_HEADER] = edit_token
-        await _publish_progress(progress_token, "complete", "Your itinerary is ready.", 100)
+        await _publish_progress(progress_token, "complete", "Your itinerary is ready.", 100, completed_event)
         await _record_analytics(AnalyticsEventRequest(event="generation_completed", kind=TripKind.SINGLE, trip_id=trip_id, duration_ms=int(monotonic_ms() - started), metadata={"estimated_data": any(option.is_fallback for option in itinerary.transport_options)}))
         await _record_analytics(AnalyticsEventRequest(event="planner_completed", kind=TripKind.SINGLE, trip_id=trip_id, duration_ms=int(monotonic_ms() - started)))
 
         return itinerary
 
     except ValueError as e:
-        await _publish_progress(progress_token, "failed", str(e), 100)
+        await _publish_progress(progress_token, "failed", str(e), 100, event_for_failure(str(e)))
         await _record_analytics(AnalyticsEventRequest(event="generation_failed", kind=TripKind.SINGLE, duration_ms=int(monotonic_ms() - started), metadata={"invalid_itinerary": True}))
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception(f"Trip generation failed: {e}")
         capture_exception(e, context={"operation": "generate_trip"})
-        await _publish_progress(progress_token, "failed", "The planner could not complete this request.", 100)
+        await _publish_progress(
+            progress_token,
+            "failed",
+            "The planner could not complete this request.",
+            100,
+            event_for_failure("The planner could not complete this request."),
+        )
         await _record_analytics(AnalyticsEventRequest(event="generation_failed", kind=TripKind.SINGLE, duration_ms=int(monotonic_ms() - started)))
         raise HTTPException(
             status_code=500,
@@ -343,6 +377,13 @@ async def refine_trip(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     refined = await refine_itinerary(itinerary, request.instruction)
+    refined.places = itinerary.places
+    refined.items = itinerary.items
+    refined.sources = itinerary.sources
+    refined.research_events = append_unique_events(
+        itinerary.research_events,
+        [event_for_update(request.instruction)],
+    )
     await update_trip(refined)
     lower_instruction = request.instruction.casefold()
     if "replace" in lower_instruction:

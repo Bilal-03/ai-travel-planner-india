@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.models.trip import TransportMode, TripRequest
+from app.models.trip import TransportMode, TripPreferences, TripRequest
 
 
 QuestionInput = Literal["choice", "text", "date_range", "number"]
@@ -43,6 +43,7 @@ class PlanningBrief(BaseModel):
     members: int | None = Field(None, ge=1, le=40)
     transport_mode: TransportMode | None = None
     planning_notes: str = Field("", max_length=4_000)
+    preferences: TripPreferences = Field(default_factory=TripPreferences)
 
     def complete(self) -> bool:
         return all((

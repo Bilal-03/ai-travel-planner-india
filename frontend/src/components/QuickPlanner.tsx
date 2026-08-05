@@ -145,17 +145,31 @@ export default function QuickPlanner({ onGenerate, isLoading }: QuickPlannerProp
                 <div><dt className="text-foreground-muted">Members</dt><dd className="mt-0.5 font-semibold text-foreground">{brief.members || "Not set"}</dd></div>
                 <div><dt className="text-foreground-muted">Budget</dt><dd className="mt-0.5 font-semibold text-foreground">{brief.budget ? `₹${brief.budget.toLocaleString("en-IN")}` : "Not set"}</dd></div>
               </dl>
+              {(brief.preferences.experiences.length > 0 || brief.preferences.pace) && (
+                <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Trip preferences">
+                  {brief.preferences.experiences.map((experience) => <span key={experience} className="rounded-full bg-teal-india/15 px-2 py-1 text-[10px] font-semibold text-teal-india">{experience}</span>)}
+                  {brief.preferences.pace && <span className="rounded-full bg-marigold/15 px-2 py-1 text-[10px] font-semibold capitalize text-marigold">{brief.preferences.pace} pace</span>}
+                </div>
+              )}
               {activeQuestion && (
                 <div className="mt-5 border-t border-glass-border pt-4">
                   <p className="text-sm font-semibold text-foreground">{activeQuestion.prompt}</p>
                   {activeQuestion.input_type === "choice" && (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {activeQuestion.options.map((option, index) => (
-                        <button key={option.id} type="button" disabled={isAsking} onClick={() => submitAnswer(activeQuestion, option.label, option.id)} className="rounded border border-glass-border bg-black/10 px-3 py-2 text-left text-xs text-foreground-secondary transition hover:border-marigold hover:text-foreground disabled:opacity-50">
-                          <span className="mr-2 text-marigold">{index + 1}.</span>{option.label}
-                        </button>
-                      ))}
-                    </div>
+                    <>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {activeQuestion.options.map((option, index) => (
+                          <button key={option.id} type="button" disabled={isAsking} onClick={() => submitAnswer(activeQuestion, option.label, option.id)} className="rounded border border-glass-border bg-black/10 px-3 py-2 text-left text-xs text-foreground-secondary transition hover:border-marigold hover:text-foreground disabled:opacity-50">
+                            <span className="mr-2 text-marigold">{index + 1}.</span>{option.label}
+                          </button>
+                        ))}
+                      </div>
+                      {activeQuestion.allow_custom && (
+                        <form onSubmit={submitCustomAnswer} className="mt-3 flex gap-2">
+                          <input required value={customAnswer} onChange={(event) => setCustomAnswer(event.target.value)} placeholder="Type something else…" className="min-w-0 flex-1 rounded border border-glass-border bg-black/20 px-3 py-2 text-xs text-foreground" />
+                          <button type="submit" disabled={isAsking} className="rounded border border-marigold/60 px-3 py-2 text-xs font-bold text-marigold disabled:opacity-50">Use</button>
+                        </form>
+                      )}
+                    </>
                   )}
                   {activeQuestion.input_type !== "choice" && (
                     <form onSubmit={submitCustomAnswer} className="mt-3 space-y-2">

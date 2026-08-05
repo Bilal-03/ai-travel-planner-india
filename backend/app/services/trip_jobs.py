@@ -22,9 +22,10 @@ from pydantic import BaseModel, Field
 
 from app.cache.redis_cache import get_cache
 from app.config import settings
-from app.models.trip import Itinerary, TripRequest
+from app.models.trip import Itinerary, ResearchEvent, TripRequest
 from app.services.gemini_planner import generate_itinerary
 from app.services.observability import capture_exception, safe_error_message
+from app.services.research_events import append_unique_events, event_for_failure, event_for_progress
 from app.services.trip_storage import save_trip
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,7 @@ class TripJobEvent(BaseModel):
     progress: int
     timestamp: datetime
     error: Optional[str] = None
+    research_event: Optional[ResearchEvent] = None
 
 
 class JobCancelled(Exception):
@@ -211,6 +213,7 @@ async def _publish_event(
     message: Optional[str] = None,
     progress: Optional[int] = None,
     error: Optional[str] = None,
+    research_event: Optional[ResearchEvent] = None,
 ) -> TripJobEvent:
     if status is not None:
         job.status = status
@@ -236,6 +239,7 @@ async def _publish_event(
         progress=job.progress,
         timestamp=datetime.now(timezone.utc),
         error=job.error,
+        research_event=research_event,
     )
     cache.list_push(
         _event_key(job.id),
@@ -299,7 +303,7 @@ async def create_job(
             raise RuntimeError("Could not reserve the idempotency key")
 
     cache.list_push(INDEX_KEY, job.id, INDEX_TTL_SECONDS)
-    await _publish_event(job)
+    await _publish_event(job, research_event=event_for_progress("accepted", job.message))
     await enqueue_job(job.id)
     await ensure_worker_started()
     return job, False
@@ -382,26 +386,34 @@ async def _run_generation(job_id: str) -> None:
         return
     await _raise_if_cancelled(job_id)
 
+    research_events: list[ResearchEvent] = []
+
     async def progress_callback(step: str, message: str, progress: int) -> None:
         await _raise_if_cancelled(job_id)
         current = _load_job(job_id)
         if not current:
             raise JobCancelled
+        research_event = event_for_progress(step, message)
+        research_events.append(research_event)
         await _publish_event(
             current,
             status=_mapped_state(step),
             message=message,
             progress=progress,
+            research_event=research_event,
         )
 
     cache = get_cache()
     cached = cache.get(request_cache_key(job.request))
     if cached:
+        research_event = event_for_progress("cached", "Using your matching recent itinerary.")
+        research_events.append(research_event)
         await _publish_event(
             job,
             status=TripJobState.SAVING,
             message="Saving your matching recent itinerary…",
             progress=92,
+            research_event=research_event,
         )
         itinerary = Itinerary.model_validate_json(cached)
     else:
@@ -415,14 +427,22 @@ async def _run_generation(job_id: str) -> None:
     current = _load_job(job_id)
     if not current:
         raise JobCancelled
+    saving_event = event_for_progress("saving", "Saving your itinerary so it survives refreshes…")
+    research_events.append(saving_event)
     await _publish_event(
         current,
         status=TripJobState.SAVING,
         message="Saving your itinerary so it survives refreshes…",
         progress=94,
+        research_event=saving_event,
     )
 
     edit_token = edit_token_for_job(job_id)
+    completed_event = event_for_progress("complete", "Your itinerary is ready.")
+    itinerary.research_events = append_unique_events(
+        itinerary.research_events,
+        [*research_events, completed_event],
+    )
     trip_id = await save_trip(itinerary, hash_edit_token(edit_token))
     itinerary.id = trip_id
     if not cached:
@@ -441,6 +461,7 @@ async def _run_generation(job_id: str) -> None:
         status=TripJobState.COMPLETED,
         message="Your itinerary is ready.",
         progress=100,
+        research_event=completed_event,
     )
 
 
@@ -485,6 +506,7 @@ async def _execute_job(job_id: str) -> None:
                 message="The trip request could not be completed.",
                 progress=current.progress,
                 error=safe_error_message(error, "The trip request could not be completed."),
+                research_event=event_for_failure("The trip request could not be completed."),
             )
             return
         except Exception as error:
@@ -507,6 +529,7 @@ async def _execute_job(job_id: str) -> None:
                 message="The planner could not complete this request.",
                 progress=current.progress,
                 error=CONTROLLED_FAILURE_MESSAGE,
+                research_event=event_for_failure(CONTROLLED_FAILURE_MESSAGE),
             )
             return
 

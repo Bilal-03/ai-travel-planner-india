@@ -833,6 +833,7 @@ def select_transport_for_itinerary(
         transport_mode=mode,
         members=itinerary.members,
         planning_notes=itinerary.planning_notes,
+        preferences=itinerary.preferences,
     )
     transport_issues = validate_transport_window(build_trip_intent(request), selected)
     if transport_issues:
@@ -1038,6 +1039,7 @@ def _plan_to_itinerary(
         total_days=total_days,
         members=request.members,
         planning_notes=request.planning_notes,
+        preferences=request.preferences,
         transport_options=transport_options,
         selected_transport=selected,
         day_plans=day_plans,
@@ -1505,6 +1507,7 @@ async def refine_itinerary(itinerary: Itinerary, instruction: str) -> Itinerary:
         transport_mode=itinerary.selected_transport.mode if itinerary.selected_transport else None,
         members=itinerary.members,
         planning_notes=itinerary.planning_notes,
+        preferences=itinerary.preferences,
     )
     existing_plan = _itinerary_to_plan(itinerary)
     refinement = parse_refinement_instruction(instruction)

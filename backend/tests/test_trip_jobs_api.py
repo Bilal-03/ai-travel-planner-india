@@ -94,6 +94,7 @@ def test_trip_job_http_lifecycle(monkeypatch):
         assert replay.status_code == 200
         assert "event: progress" in replay.text
         assert "id: 1" in replay.text
+        assert '"research_event"' in replay.text
         assert "Your itinerary is ready." in replay.text
 
         result = client.get(f"/api/trip-jobs/{job_id}/result")

@@ -517,6 +517,7 @@ class Itinerary(BaseModel):
     total_days: int
     members: int = Field(2, ge=1, le=40)
     planning_notes: Optional[str] = None
+    preferences: TripPreferences = Field(default_factory=TripPreferences)
     places: list[Place] = Field(default_factory=list)
     items: list[ItineraryItem] = Field(default_factory=list)
     sources: list[TripSource] = Field(default_factory=list)
@@ -573,6 +574,7 @@ class GenerationStatus(BaseModel):
     step: str
     message: str
     progress: int  # 0-100
+    research_event: Optional[ResearchEvent] = None
 
 
 class CitySearchResult(BaseModel):

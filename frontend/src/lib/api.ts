@@ -176,6 +176,7 @@ export interface PlanningBrief {
   members: number | null;
   transport_mode: TransportMode | null;
   planning_notes: string;
+  preferences: TripPreferences;
 }
 
 export interface PlannerClarificationResponse {
@@ -427,6 +428,7 @@ export interface Itinerary {
   total_days: number;
   members: number;
   planning_notes: string | null;
+  preferences?: TripPreferences;
   places?: Place[];
   items?: ItineraryItem[];
   sources?: TripSource[];
@@ -497,6 +499,7 @@ export interface GenerationStatus {
   id?: number;
   job_id?: string;
   error?: string | null;
+  research_event?: ResearchEvent | null;
 }
 
 export type TripJobState =
