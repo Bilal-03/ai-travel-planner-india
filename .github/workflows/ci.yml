@@ -134,7 +134,9 @@ jobs:
     name: Dependency and secret scanning
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -147,9 +149,29 @@ jobs:
       - run: npm --prefix frontend audit --audit-level=high --omit=dev
       - run: python -m pip install pip-audit
       - run: pip-audit -r backend/requirements.txt
-      - uses: gitleaks/gitleaks-action@v2
+      - name: Install Gitleaks
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.27.0
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          curl --fail --silent --show-error --location \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP/gitleaks"
+          echo "$RUNNER_TEMP/gitleaks" >> "$GITHUB_PATH"
+      - name: Scan Git history for secrets
+        run: >-
+          gitleaks git .
+          --redact
+          --exit-code 2
+          --report-format sarif
+          --report-path "$RUNNER_TEMP/gitleaks-results.sarif"
+      - name: Upload Gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-results
+          path: ${{ runner.temp }}/gitleaks-results.sarif
+          if-no-files-found: ignore
 
   dependency-review:
     name: Pull request dependency review
