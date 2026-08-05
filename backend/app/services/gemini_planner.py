@@ -765,7 +765,10 @@ def _select_transport(
 
 
 def _calculate_budget(
-    day_plans: list[DayPlan], selected_transport: Optional[TransportOption], request: TripRequest
+    day_plans: list[DayPlan],
+    selected_transport: Optional[TransportOption],
+    request: TripRequest,
+    stay_amount: int = 0,
 ) -> BudgetBreakdown:
     """Authoritative arithmetic: LLM output never supplies a category or total."""
     travellers = request.members
@@ -783,13 +786,14 @@ def _calculate_budget(
         TransportMode.ROAD: 150,
     }.get(selected_transport.mode if selected_transport else TransportMode.ROAD, 0)
     local_transport = between_stop_transport + transfer_per_leg * 2
-    subtotal = outbound + returning + food + activities + local_transport
+    subtotal = outbound + returning + food + activities + local_transport + stay_amount
     taxes_buffer = math.ceil(subtotal * 0.05)
     total = subtotal + taxes_buffer
     return BudgetBreakdown(
         outbound_transport=outbound,
         return_transport=returning,
         transport=outbound + returning,
+        stay=stay_amount,
         food=food,
         activities=activities,
         local_transport=local_transport,
@@ -798,7 +802,7 @@ def _calculate_budget(
         total_estimated=total,
         remaining=request.budget - total,
         provenance=_planner_estimate_provenance(
-            "Budget totals are planning estimates assembled from transport, meal, activity, and local-transport inputs. Verify live prices, taxes, and booking fees before purchase.",
+            "Budget totals are planning estimates assembled from transport, stay, meal, activity, and local-transport inputs. Verify live prices, taxes, and booking fees before purchase.",
             provider="YatraAI deterministic budget calculator",
             confidence=0.9,
         ),
@@ -806,7 +810,11 @@ def _calculate_budget(
 
 
 def select_transport_for_itinerary(
-    itinerary: Itinerary, mode: TransportMode, provider: str, code: Optional[str]
+    itinerary: Itinerary,
+    mode: TransportMode,
+    provider: str,
+    code: Optional[str],
+    option: Optional[TransportOption] = None,
 ) -> Itinerary:
     """Apply a traveller choice and recalculate the authoritative trip budget."""
     selected = next(
@@ -816,6 +824,15 @@ def select_transport_for_itinerary(
         ),
         None,
     )
+    if not selected and option is not None:
+        if option.mode != mode or option.provider != provider or option.code != code:
+            raise ValueError("The selected transport payload does not match the requested option")
+        if option.departure_city.casefold().strip() != itinerary.origin.name.casefold().strip():
+            raise ValueError("The selected transport does not start from this trip's origin")
+        if option.arrival_city.casefold().strip() != itinerary.destination.name.casefold().strip():
+            raise ValueError("The selected transport does not arrive at this trip's destination")
+        selected = option.model_copy(deep=True)
+        itinerary.transport_options.append(selected)
     if not selected:
         raise ValueError("That transport option is no longer available for this itinerary")
     for option in itinerary.transport_options:
@@ -838,9 +855,10 @@ def select_transport_for_itinerary(
     transport_issues = validate_transport_window(build_trip_intent(request), selected)
     if transport_issues:
         raise ValueError(transport_issues[0].message)
-    itinerary.budget = _calculate_budget(itinerary.day_plans, selected, request)
+    stay_amount = itinerary.budget.stay
+    itinerary.budget = _calculate_budget(itinerary.day_plans, selected, request, stay_amount)
     for option in itinerary.plan_options:
-        option.budget = _calculate_budget(option.day_plans, selected, request)
+        option.budget = _calculate_budget(option.day_plans, selected, request, stay_amount)
         if option.day_plans:
             option.day_plans[0].transport = selected
             option.day_plans[-1].transport = selected
@@ -859,10 +877,16 @@ def select_plan_for_itinerary(itinerary: Itinerary, plan_id: str) -> Itinerary:
     option = next((item for item in itinerary.plan_options if item.id == plan_id), None)
     if not option:
         raise ValueError("That itinerary plan is no longer available")
+    stay_amount = itinerary.budget.stay
     itinerary.selected_plan_id = option.id
     itinerary.day_plans = deepcopy(option.day_plans)
     itinerary.budget = deepcopy(option.budget)
+    stay_delta = stay_amount - itinerary.budget.stay
+    itinerary.budget.stay = stay_amount
+    itinerary.budget.total_estimated += stay_delta
+    itinerary.budget.remaining -= stay_delta
     itinerary.route_segments = deepcopy(option.route_segments)
+    option.budget = deepcopy(itinerary.budget)
     if itinerary.day_plans and itinerary.selected_transport:
         itinerary.day_plans[0].transport = itinerary.selected_transport
         itinerary.day_plans[-1].transport = itinerary.selected_transport

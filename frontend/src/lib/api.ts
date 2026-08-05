@@ -205,6 +205,28 @@ export interface TransportOption {
   last_checked_at: string | null;
 }
 
+export interface StayOption {
+  id: string;
+  city: string;
+  area: string;
+  name: string;
+  stay_type: string;
+  check_in: string;
+  check_out: string;
+  nights: number;
+  rooms: number;
+  nightly_price: number;
+  total_price: number;
+  currency: string;
+  amenities: string[];
+  description: string;
+  booking_url: string;
+  maps_url: string | null;
+  is_fallback: boolean;
+  provenance?: DataProvenance;
+  field_provenance?: Record<string, DataProvenance>;
+}
+
 export interface POI {
   id: string;
   name: string;
@@ -370,6 +392,7 @@ export interface BudgetBreakdown {
   outbound_transport: number;
   return_transport: number;
   transport: number;
+  stay: number;
   food: number;
   activities: number;
   local_transport: number;
@@ -827,13 +850,15 @@ export const api = {
       onResponse: (response) => saveRevision(tripId, response),
     }),
 
-  selectTransport: (tripId: string, option: TransportOption) =>
+  selectTransport: (tripId: string, option: TransportOption, travelDate?: string) =>
     request<Itinerary>(`/api/trips/${tripId}/transport`, {
       method: "POST",
       body: JSON.stringify({
         mode: option.mode,
         provider: option.provider,
         code: option.code,
+        option,
+        travel_date: travelDate,
       }),
       headers: editHeaders(tripId),
       onResponse: (response) => saveRevision(tripId, response),
@@ -870,6 +895,21 @@ export const api = {
       onResponse: (response) => saveRevision(tripId, response),
     }),
 
+  addStayToItinerary: (tripId: string, stay: StayOption) =>
+    request<Itinerary>(`/api/trips/${encodeURIComponent(tripId)}/stays`, {
+      method: "POST",
+      body: JSON.stringify({ stay }),
+      headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
+    }),
+
+  removeStayFromItinerary: (tripId: string, stayId: string) =>
+    request<Itinerary>(`/api/trips/${encodeURIComponent(tripId)}/stays/${encodeURIComponent(stayId)}`, {
+      method: "DELETE",
+      headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
+    }),
+
   generatePackingList: (tripId: string) =>
     request<PackingItem[]>(`/api/trips/${tripId}/packing-list`, {
       method: "POST",
@@ -884,10 +924,22 @@ export const api = {
     ),
 
   /** Search trains */
-  searchTrains: (from: string, to: string) =>
+  searchTrains: (from: string, to: string, date?: string) =>
     request<TransportOption[]>(
-      `/api/transport/trains?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+      `/api/transport/trains?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${date ? `&date=${encodeURIComponent(date)}` : ""}`
     ),
+
+  /** Search provider-neutral stay ideas for the destination. */
+  searchStays: (city: string, checkIn: string, checkOut: string, members: number, hotelStyle?: string) => {
+    const params = new URLSearchParams({
+      city,
+      check_in: checkIn,
+      check_out: checkOut,
+      members: String(members),
+    });
+    if (hotelStyle) params.set("hotel_style", hotelStyle);
+    return request<StayOption[]>(`/api/stays?${params.toString()}`);
+  },
 
   /** Health check */
   health: () => request<{ status: string; ready?: boolean; services: Record<string, unknown> }>("/health"),

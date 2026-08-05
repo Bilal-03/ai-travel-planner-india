@@ -318,6 +318,48 @@ class TransportOption(BaseModel):
         return self
 
 
+# ── Stay Models ────────────────────────────────────────────────────────
+
+class StayOption(BaseModel):
+    """A provider-neutral stay idea or inventory result for the trip workspace.
+
+    The current implementation intentionally supports area-level planning
+    estimates. It must not look like a hotel reservation until a live stay
+    provider is configured and supplies an actual property identifier.
+    """
+
+    id: str = Field(..., min_length=1, max_length=100)
+    city: str = Field(..., min_length=1, max_length=120)
+    area: str = Field(..., min_length=1, max_length=160)
+    name: str = Field(..., min_length=1, max_length=180)
+    stay_type: str = Field("area_estimate", min_length=1, max_length=80)
+    check_in: date
+    check_out: date
+    nights: int = Field(..., ge=1, le=31)
+    rooms: int = Field(1, ge=1, le=20)
+    nightly_price: int = Field(..., ge=0, le=1_000_000)
+    total_price: int = Field(..., ge=0, le=10_000_000)
+    currency: str = Field("INR", min_length=3, max_length=3)
+    amenities: list[str] = Field(default_factory=list, max_length=12)
+    description: str = Field(..., min_length=1, max_length=1_000)
+    booking_url: str = Field(..., min_length=1, max_length=2_000)
+    maps_url: Optional[str] = Field(None, max_length=2_000)
+    is_fallback: bool = True
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
+    field_provenance: dict[str, DataProvenance] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_stay_window_and_disclosure(self) -> "StayOption":
+        if self.check_out <= self.check_in:
+            raise ValueError("Stay check-out must be after check-in")
+        if self.nights != (self.check_out - self.check_in).days:
+            raise ValueError("Stay nights must match the check-in and check-out dates")
+        live_statuses = {DataStatus.LIVE, DataStatus.RECENTLY_VERIFIED}
+        if self.is_fallback and self.provenance.status in live_statuses:
+            raise ValueError("Fallback stay estimates cannot be marked live/recently_verified")
+        return self
+
+
 # ── POI Models ─────────────────────────────────────────────────────────
 
 class POI(BaseModel):
@@ -488,6 +530,7 @@ class BudgetBreakdown(BaseModel):
     outbound_transport: int = 0
     return_transport: int = 0
     transport: int = 0
+    stay: int = 0
     food: int = 0
     activities: int = 0
     local_transport: int = 0

@@ -15,6 +15,8 @@ export type ProductEvent =
   | "place_saved"
   | "place_removed"
   | "place_added"
+  | "stay_added"
+  | "stay_removed"
   | "provider_link_clicked";
 
 export type AnalyticsMetadata = Record<string, string | number | boolean | null | undefined>;
@@ -34,6 +36,8 @@ const EVENTS: ReadonlySet<ProductEvent> = new Set([
   "place_saved",
   "place_removed",
   "place_added",
+  "stay_added",
+  "stay_removed",
   "provider_link_clicked",
 ]);
 
@@ -53,6 +57,7 @@ const METADATA_KEYS = new Set([
   "plan_id",
   "category",
   "day_number",
+  "estimated_data",
 ]);
 
 function cleanMetadata(metadata: AnalyticsMetadata): Record<string, string | number | boolean | null> {

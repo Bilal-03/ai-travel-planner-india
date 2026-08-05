@@ -14,6 +14,7 @@ interface BudgetBreakdownProps {
 const CATEGORIES = [
   { key: "outbound_transport" as const, label: "Outbound transport", color: "#8b5cf6", icon: "➡️" },
   { key: "return_transport" as const, label: "Return transport", color: "#a78bfa", icon: "⬅️" },
+  { key: "stay" as const, label: "Stays", color: "#14b8a6", icon: "🛏️" },
   { key: "food" as const, label: "Food & Dining", color: "#f59e0b", icon: "🍛" },
   { key: "activities" as const, label: "Activities", color: "#06b6d4", icon: "🎯" },
   { key: "local_transport" as const, label: "Local transport & transfers", color: "#ec4899", icon: "🚕" },
@@ -78,7 +79,7 @@ export default function BudgetBreakdownComponent({
       {/* Category bars */}
       <div className="space-y-3">
         {CATEGORIES.map((cat) => {
-          const amount = budget[cat.key];
+          const amount = budget[cat.key] || 0;
           const percent =
             budget.total_estimated > 0
               ? (amount / budget.total_estimated) * 100

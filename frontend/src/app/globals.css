@@ -759,6 +759,16 @@ input[type="range"]::-moz-range-thumb {
   justify-content: center;
 }
 
+.stay-card-illustration {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.34), rgba(61, 88, 214, 0.35));
+  border-radius: 0.6rem;
+  display: flex;
+  font-size: 2rem;
+  height: 7rem;
+  justify-content: center;
+}
+
 .place-selected-panel {
   background: rgba(61, 88, 214, 0.08);
   border: 1px solid rgba(129, 140, 248, 0.35);
@@ -790,9 +800,20 @@ input[type="range"]::-moz-range-thumb {
   padding: 0.65rem;
 }
 
+.saved-stay-row {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--glass-border);
+  border-radius: 0.7rem;
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.65rem;
+}
+
 [data-theme="light"] .place-discovery-modal,
 [data-theme="light"] .place-discovery-card,
 [data-theme="light"] .saved-place-row,
+[data-theme="light"] .saved-stay-row,
 [data-theme="light"] .place-discovery-tabs {
   background: rgba(255, 255, 255, 0.92);
 }

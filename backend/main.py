@@ -128,6 +128,7 @@ app.add_middleware(
 # Register routers
 from app.api.trips import router as trips_router
 from app.api.search import router as search_router
+from app.api.stays import router as stays_router
 from app.api.transport import router as transport_router
 from app.api.trip_jobs import router as trip_jobs_router
 from app.api.analytics import router as analytics_router
@@ -136,6 +137,7 @@ from app.api.planner import router as planner_router
 
 app.include_router(trips_router)
 app.include_router(search_router)
+app.include_router(stays_router)
 app.include_router(transport_router)
 app.include_router(trip_jobs_router)
 app.include_router(analytics_router)

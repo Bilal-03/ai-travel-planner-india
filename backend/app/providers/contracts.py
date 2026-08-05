@@ -7,6 +7,7 @@ the services return anything to an API or the planner.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Protocol
 
 from pydantic import BaseModel, Field, field_validator
@@ -18,6 +19,7 @@ from app.models.trip import (
     GeoPoint,
     POI,
     RouteSegment,
+    StayOption,
     TransportMode,
     TransportOption,
 )
@@ -36,6 +38,22 @@ class RailSearchRequest(BaseModel):
     destination: str = Field(min_length=2, max_length=120)
     travel_date: str | None = Field(default=None, max_length=32)
     distance_km: float | None = Field(default=None, ge=0)
+
+
+class StaySearchRequest(BaseModel):
+    city: str = Field(min_length=2, max_length=120)
+    check_in: date
+    check_out: date
+    members: int = Field(default=2, ge=1, le=40)
+    hotel_style: str | None = Field(default=None, max_length=80)
+
+    @field_validator("check_out")
+    @classmethod
+    def require_checkout_after_checkin(cls, value: date, info):
+        check_in = info.data.get("check_in")
+        if check_in and value <= check_in:
+            raise ValueError("Stay check-out must be after check-in")
+        return value
 
 
 class PlaceSearchRequest(BaseModel):
@@ -108,6 +126,10 @@ class RailProvider(Protocol):
     async def search_schedules(self, request: RailSearchRequest) -> list[RailOption]: ...
 
     async def search_availability(self, request: RailSearchRequest) -> list[RailAvailability]: ...
+
+
+class StayProvider(Protocol):
+    async def search(self, request: StaySearchRequest) -> list[StayOption]: ...
 
 
 class PlaceProvider(Protocol):

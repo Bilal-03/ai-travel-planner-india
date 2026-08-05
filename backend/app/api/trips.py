@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from app.cache.redis_cache import get_cache
 from app.config import settings
 from app.models.collaboration import AnalyticsEventRequest, TripKind
-from app.models.trip import GenerationStatus, Itinerary, PackingItem, Place, ResearchEvent, TripRequest, TransportMode
+from app.models.trip import GenerationStatus, Itinerary, PackingItem, Place, ResearchEvent, StayOption, TransportMode, TransportOption, TripRequest
 from app.services.gemini_planner import (
     generate_itinerary,
     generate_packing_list,
@@ -29,8 +29,10 @@ from app.services.gemini_planner import (
 )
 from app.services.collaboration_service import VersionConflictError, assert_version, record_analytics, resolve_share_token
 from app.services.observability import capture_exception, monotonic_ms, safe_error_message
-from app.services.research_events import append_unique_events, event_for_failure, event_for_place_update, event_for_progress, event_for_update
+from app.services.research_events import append_unique_events, event_for_failure, event_for_place_update, event_for_progress, event_for_stay_update, event_for_update
+from app.services.transport import search_flights, search_trains
 from app.services.trip_storage import get_trip, get_trip_owner_token_hash, save_trip, undo_trip, update_trip
+from app.services.stays import add_stay_to_itinerary, remove_stay_from_itinerary
 from app.services.workspace_places import add_place_to_day, remove_saved_place, save_place
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,8 @@ class TransportSelectionRequest(BaseModel):
     mode: TransportMode
     provider: str = Field(..., min_length=1)
     code: str | None = None
+    option: TransportOption | None = None
+    travel_date: str | None = Field(None, max_length=32)
 
 
 class PlanSelectionRequest(BaseModel):
@@ -65,6 +69,10 @@ class AddPlaceToItineraryRequest(BaseModel):
     day_number: int = Field(..., ge=1, le=31)
     position: int | None = Field(None, ge=0, le=200)
     place: Place | None = None
+
+
+class StaySelectionRequest(BaseModel):
+    stay: StayOption
 
 
 def _hash_edit_token(token: str) -> str:
@@ -302,8 +310,40 @@ async def select_trip_transport(
         raise HTTPException(status_code=404, detail="Trip not found")
     try:
         await assert_version(trip_id, TripKind.SINGLE, if_match)
+        verified_option = request.option
+        existing = next(
+            (
+                option for option in itinerary.transport_options
+                if option.mode == request.mode
+                and option.provider == request.provider
+                and option.code == request.code
+            ),
+            None,
+        )
+        if request.option is not None and existing is None:
+            travel_date = request.travel_date or itinerary.start_date.isoformat()
+            if travel_date != itinerary.start_date.isoformat():
+                raise ValueError("Only transport on the trip's outbound date can be selected for this itinerary")
+            raw_options = await (
+                search_flights(itinerary.origin.name, itinerary.destination.name, travel_date)
+                if request.mode == TransportMode.FLIGHT
+                else search_trains(itinerary.origin.name, itinerary.destination.name, travel_date)
+            )
+            verified_option = next(
+                (
+                    TransportOption.model_validate(raw)
+                    for raw in raw_options
+                    if raw.get("mode") == request.mode.value
+                    and raw.get("provider") == request.provider
+                    and raw.get("code") == request.code
+                    and raw.get("price") == request.option.price
+                ),
+                None,
+            )
+            if verified_option is None:
+                raise ValueError("That transport result changed or expired. Search again before selecting it")
         updated = select_transport_for_itinerary(
-            itinerary, request.mode, request.provider, request.code
+            itinerary, request.mode, request.provider, request.code, verified_option
         )
         await update_trip(updated)
         await _record_analytics(AnalyticsEventRequest(event="transport_selected", kind=TripKind.SINGLE, trip_id=trip_id, metadata={"provider": request.provider}))
@@ -470,6 +510,80 @@ async def add_trip_place_to_itinerary(
             kind=TripKind.SINGLE,
             trip_id=trip_id,
             metadata={"day_number": request.day_number},
+        ))
+    response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
+    return updated
+
+
+@router.post("/{trip_id}/stays", response_model=Itinerary)
+async def add_trip_stay(
+    trip_id: str,
+    request: StaySelectionRequest,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
+    _: None = Depends(require_trip_owner),
+):
+    """Add a stay planning estimate to the trip-level itinerary."""
+
+    itinerary = await get_trip(trip_id)
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    try:
+        await assert_version(trip_id, TripKind.SINGLE, if_match)
+        updated, changed = add_stay_to_itinerary(itinerary, request.stay)
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"ETag": f'W/"{exc.current}"'}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if changed:
+        updated.research_events = append_unique_events(
+            itinerary.research_events,
+            [event_for_stay_update("added", request.stay.name)],
+        )
+        await update_trip(updated)
+        await _record_analytics(AnalyticsEventRequest(
+            event="stay_added",
+            kind=TripKind.SINGLE,
+            trip_id=trip_id,
+            metadata={"area": request.stay.area, "estimated_data": True},
+        ))
+    response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
+    return updated
+
+
+@router.delete("/{trip_id}/stays/{stay_id}", response_model=Itinerary)
+async def remove_trip_stay(
+    trip_id: str,
+    stay_id: str,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
+    _: None = Depends(require_trip_owner),
+):
+    """Remove a previously added stay estimate and reverse its budget line."""
+
+    itinerary = await get_trip(trip_id)
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    try:
+        await assert_version(trip_id, TripKind.SINGLE, if_match)
+        updated, changed = remove_stay_from_itinerary(itinerary, stay_id)
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"ETag": f'W/"{exc.current}"'}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if changed:
+        removed = next((item for item in itinerary.items if item.metadata.get("stay_id") == stay_id), None)
+        updated.research_events = append_unique_events(
+            itinerary.research_events,
+            [event_for_stay_update("removed", removed.title if removed else "the stay")],
+        )
+        await update_trip(updated)
+        await _record_analytics(AnalyticsEventRequest(
+            event="stay_removed",
+            kind=TripKind.SINGLE,
+            trip_id=trip_id,
         ))
     response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
     return updated

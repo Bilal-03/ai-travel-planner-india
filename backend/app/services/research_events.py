@@ -71,6 +71,21 @@ def event_for_place_update(action: str, place_name: str, day_number: int | None 
     )
 
 
+def event_for_stay_update(action: str, stay_name: str) -> ResearchEvent:
+    """Create a visible checkpoint for a saved stay estimate."""
+
+    messages = {
+        "added": f"Added {stay_name} to the trip budget as a stay planning estimate.",
+        "removed": f"Removed {stay_name} from the trip budget.",
+    }
+    return ResearchEvent(
+        event_type=ResearchEventType.UPDATED_PLAN,
+        status=ResearchEventStatus.COMPLETE,
+        message=messages.get(action, f"Updated the stay planning estimate: {stay_name}."),
+        metadata={"action": action, "stay_name": stay_name},
+    )
+
+
 def append_unique_events(
     existing: list[ResearchEvent], additions: list[ResearchEvent]
 ) -> list[ResearchEvent]:

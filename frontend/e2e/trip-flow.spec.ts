@@ -94,7 +94,8 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
     provider_ids: { yatraai: "place-city-palace" },
     photos: [],
   };
-  const mutableTrip = JSON.parse(JSON.stringify(trip)) as Omit<typeof trip, "places"> & { places: Array<typeof place> };
+  type MutableTrip = Omit<typeof trip, "places" | "items"> & { places: Array<typeof place>; items: Array<Record<string, unknown>> };
+  const mutableTrip = JSON.parse(JSON.stringify(trip)) as MutableTrip;
   const job = {
     id: "e2e-job-123",
     status: "accepted",
@@ -132,6 +133,36 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
   }));
   await page.route("**/api/trip-jobs/e2e-job-123/result", (route) => route.fulfill({ json: trip, headers: { "X-Trip-Edit-Token": "test-edit-token" } }));
   await page.route("**/api/search/places?*", (route) => route.fulfill({ json: [place] }));
+  const stay = {
+    id: "stay-jaipur-central",
+    city: "Jaipur",
+    area: "Central / old city",
+    name: "Central / old city stay estimate",
+    stay_type: "area_estimate",
+    check_in: trip.start_date,
+    check_out: trip.end_date,
+    nights: 2,
+    rooms: 1,
+    nightly_price: 3200,
+    total_price: 6400,
+    currency: "INR",
+    amenities: ["Walkable sights"],
+    description: "A central planning estimate near the headline sights.",
+    booking_url: "https://www.google.com/travel/search?q=Hotels+in+Jaipur",
+    maps_url: "https://www.google.com/maps/search/?api=1&query=Jaipur",
+    is_fallback: true,
+    provenance: { provider: "YatraAI stay planning estimate", status: "estimated", retrieved_at: "2026-08-03T00:00:00Z", expires_at: "2026-08-04T00:00:00Z", confidence: 0.45, source_reference: "app://stay-estimates", disclaimer: "Area-level planning estimate; no reservation is confirmed." },
+  };
+  const flight = { ...trip.transport_options[0], mode: "flight", provider: "IndiGo fare estimate", code: "6E-204", price: 3600, duration_minutes: 85, departure_city: "Delhi", arrival_city: "Jaipur" };
+  await page.route("**/api/stays?*", (route) => route.fulfill({ json: [stay] }));
+  await page.route("**/api/transport/flights?*", (route) => route.fulfill({ json: [flight] }));
+  await page.route("**/api/trips/e2e-trip-123/stays**", async (route) => {
+    if (route.request().method() === "POST") {
+      mutableTrip.items = [{ id: "stay-item-1", item_type: "stay", title: stay.name, day_number: null, position: 0, place_id: null, coordinates: null, start_time: null, end_time: null, duration_minutes: null, description: stay.description, notes: "Planning estimate", image_url: null, source_ids: [], provenance: stay.provenance, is_locked: false, metadata: { ...stay, stay_id: stay.id } }];
+      return route.fulfill({ json: mutableTrip, headers: { ETag: 'W/"7"' } });
+    }
+    return route.fulfill({ json: mutableTrip, headers: { ETag: 'W/"8"' } });
+  });
   await page.route("**/api/trips/e2e-trip-123/places**", async (route) => {
     const request = route.request();
     if (request.method() === "POST" && request.url().endsWith("/places")) {
@@ -171,6 +202,16 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
   await expect(page.getByTestId("save-place-place-city-palace")).toHaveText("Saved");
   await page.getByRole("button", { name: "Close place search" }).click();
   await expect(page.getByText("City Palace").last()).toBeVisible();
+  await page.getByRole("button", { name: "Add a place to itinerary" }).click();
+  await page.getByRole("tab", { name: "Stay" }).click();
+  await expect(page.getByTestId("stay-card-stay-jaipur-central")).toBeVisible();
+  await page.getByTestId("add-stay-stay-jaipur-central").click();
+  await expect(page.getByTestId("add-stay-stay-jaipur-central")).toHaveText("Added to itinerary");
+  await page.getByRole("button", { name: "Close place search" }).click();
+  await page.getByRole("button", { name: "Add a place to itinerary" }).click();
+  await page.getByRole("tab", { name: "Flight" }).click();
+  await expect(page.getByText("IndiGo fare estimate")).toBeVisible();
+  await page.getByRole("button", { name: "Close place search" }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Saved", exact: true }).click();
   await expect(page.getByRole("heading", { name: /Saved Places/ })).toBeVisible();

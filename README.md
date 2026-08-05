@@ -19,7 +19,8 @@
 | Feature | Description |
 |---|---|
 | 🤖 **AI Itinerary Generation** | Google Gemini 2.5 Flash creates personalized day-by-day plans |
-| ✈️🚂 **Flights & Trains** | Skyscanner results when configured; train schedules and fares retain separate source labels |
+| ✈️🚂 **Flights & Trains** | Search the selected outbound date from the Add workspace; provider results and fallback fares retain separate source labels |
+| 🛏️ **Stay Discovery** | Compare destination areas using date-aware planning estimates, save one to the trip budget, and hand off to live hotel search |
 | 🗺️ **Interactive Maps** | Leaflet + OpenStreetMap with routes and POI markers |
 | 🌤️ **Weather-Aware Planning** | OpenWeatherMap forecasts with indoor backup activities |
 | 💰 **Budget Tracking** | Deterministic breakdown — outbound/return transport, food, activities, stay, local transport and buffer |
@@ -124,6 +125,10 @@ Copy the included root [`.env.example`](.env.example) to `.env` for the backend,
 
 The app uses built-in provider defaults for Skyscanner, RailRadar, Overpass,
 OSRM, and OpenWeather, with labelled fallbacks when optional keys are absent.
+Stay discovery currently requires no additional API key and returns three
+date-aware area estimates (central, quiet, and transfer-friendly) rather than inventing hotel inventory. The
+workspace stores the estimate as a trip-level stay item and links to Google
+Hotels for live property, price, tax, and cancellation checks.
 The app supports single-destination planning with PostgreSQL-backed durable
 itinerary/share storage for production deployments; it has no user accounts or
 login flow.
@@ -172,11 +177,13 @@ ai-travel-planner-india/
 │       ├── api/              # Route handlers
 │       │   ├── trips.py      # Trip generation & retrieval
 │       │   ├── search.py     # City search
-│       │   └── transport.py  # Flights & trains
+│       │   ├── transport.py  # Flights & trains
+│       │   └── stays.py      # Date-aware stay estimates
 │       ├── models/           # Pydantic data models
 │       ├── services/         # Business logic
 │       │   ├── gemini_planner.py # AI itinerary generation and validation
 │       │   ├── transport.py  # Flight/train search
+│       │   ├── stays.py      # Stay discovery and budget mutations
 │       │   ├── weather.py    # Weather forecasts
 │       │   ├── routing.py    # Full stop-to-stop route calculation
 │       │   ├── poi_discovery.py # POI lookup
