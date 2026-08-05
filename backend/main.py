@@ -109,7 +109,10 @@ if not settings.is_production:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(allowed_origins),
-    allow_credentials=False,
+    # The analytics beacon uses the browser's credentials mode for a
+    # cross-origin delivery. Origins remain explicit above; never combine
+    # this with a wildcard origin.
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
         "Accept",

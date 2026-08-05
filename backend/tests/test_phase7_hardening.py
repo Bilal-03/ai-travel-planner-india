@@ -105,6 +105,21 @@ def test_request_size_limit_returns_413(monkeypatch):
     assert result.status_code == 413
 
 
+def test_analytics_preflight_allows_the_configured_frontend_credentials():
+    with TestClient(app) as client:
+        result = client.options(
+            "/api/analytics/events",
+            headers={
+                "Origin": settings.frontend_url.rstrip("/"),
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert result.status_code == 200
+    assert result.headers["access-control-allow-credentials"] == "true"
+
+
 def test_distributed_counter_does_not_fallback_to_memory():
     client = CacheClient()
     client._redis = None

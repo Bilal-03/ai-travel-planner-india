@@ -71,6 +71,46 @@ def test_complete_fallback_prompt_generates_without_optional_transport(monkeypat
     assert result.trip_request.members == 2
 
 
+def test_fallback_parser_separates_natural_date_range_from_destination():
+    brief = prompt_planner._heuristic_brief(
+        "Plan 5 days from Delhi to Manali, 14 Aug 2026 to 18 Aug 2026, for 2 members, total budget ₹30,000.",
+        [],
+    )
+
+    assert brief.origin == "delhi"
+    assert brief.destination == "manali"
+    assert brief.start_date == date(2026, 8, 14)
+    assert brief.end_date == date(2026, 8, 18)
+    assert brief.members == 2
+    assert brief.budget == 30_000
+
+
+def test_model_brief_is_repaired_from_explicit_prompt_facts(monkeypatch):
+    async def fake_gemini(_prompt, system=None):
+        return {
+            "status": "ready",
+            "brief": {
+                "origin": "delhi",
+                "destination": "manali, 14 aug 2026 to 18 aug 2026",
+                "start_date": "2026-08-19",
+                "end_date": "2026-08-23",
+                "budget": 30_000,
+                "members": 2,
+                "preferences": {"experiences": ["mountains & outdoors"], "pace": "balanced"},
+            },
+            "questions": [],
+        }
+
+    monkeypatch.setattr(prompt_planner, "_call_gemini", fake_gemini)
+    result = asyncio.run(prompt_planner.clarify_planner(PlannerClarificationRequest(
+        prompt="Plan 5 days from Delhi to Manali, 14 Aug 2026 to 18 Aug 2026, for 2 members, total budget ₹30,000.",
+    )))
+
+    assert result.brief.destination == "manali"
+    assert result.brief.start_date == date(2026, 8, 14)
+    assert result.brief.end_date == date(2026, 8, 18)
+
+
 def test_answers_are_sent_back_as_context(monkeypatch):
     captured: list[str] = []
     start = date.today() + timedelta(days=10)
