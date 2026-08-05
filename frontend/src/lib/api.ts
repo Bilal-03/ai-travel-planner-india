@@ -108,6 +108,21 @@ export interface DataProvenance {
   disclaimer: string;
 }
 
+export type TravelPace = "relaxed" | "balanced" | "active";
+export type TravellerType = "solo" | "couple" | "family" | "friends" | "seniors" | "business";
+
+export interface TripPreferences {
+  experiences: string[];
+  pace: TravelPace | null;
+  traveller_type: TravellerType | null;
+  transport_preferences: TransportMode[];
+  hotel_style: string | null;
+  dietary_preferences: string[];
+  accessibility_requirements: string[];
+  arrival_window: string | null;
+  flexible_dates: boolean;
+}
+
 export const UNAVAILABLE_PROVENANCE: DataProvenance = {
   provider: "not_provided",
   status: "unavailable",
@@ -127,6 +142,7 @@ export interface TripRequest {
   transport_mode?: TransportMode;
   members: number;
   planning_notes?: string;
+  preferences?: Partial<TripPreferences>;
 }
 
 export type ClarificationInput = "choice" | "text" | "date_range" | "number";
@@ -199,6 +215,104 @@ export interface POI {
   opening_hours: string | null;
   provenance?: DataProvenance;
   field_provenance?: Record<string, DataProvenance>;
+}
+
+export interface PlacePhoto {
+  url: string;
+  alt: string;
+  credit: string | null;
+  source_url: string | null;
+  provenance?: DataProvenance;
+}
+
+export interface Place {
+  id: string;
+  name: string;
+  category: string;
+  coordinates: GeoPoint;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string;
+  description: string | null;
+  opening_hours: string | null;
+  rating: number | null;
+  review_count: number | null;
+  price_level: number | null;
+  official_url: string | null;
+  maps_url: string | null;
+  provider_ids: Record<string, string>;
+  photos: PlacePhoto[];
+  provenance?: DataProvenance;
+  field_provenance?: Record<string, DataProvenance>;
+}
+
+export type ItineraryItemType =
+  | "place_visit"
+  | "stay"
+  | "flight"
+  | "train"
+  | "road_transfer"
+  | "restaurant"
+  | "event"
+  | "note";
+
+export interface ItineraryItem {
+  id: string;
+  item_type: ItineraryItemType;
+  title: string;
+  day_number: number | null;
+  position: number;
+  place_id: string | null;
+  coordinates: GeoPoint | null;
+  start_time: string | null;
+  end_time: string | null;
+  duration_minutes: number | null;
+  description: string | null;
+  notes: string | null;
+  image_url: string | null;
+  source_ids: string[];
+  provenance?: DataProvenance;
+  is_locked: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export type SourceKind = "official" | "provider" | "map" | "editorial" | "image" | "user";
+
+export interface TripSource {
+  id: string;
+  source_type: SourceKind;
+  publisher: string;
+  title: string;
+  url: string | null;
+  attribution_text: string | null;
+  provenance?: DataProvenance;
+  captured_at: string;
+}
+
+export type ResearchEventType =
+  | "understanding_request"
+  | "asking_question"
+  | "searching"
+  | "found_places"
+  | "found_transport"
+  | "found_stays"
+  | "validating"
+  | "updated_plan"
+  | "completed"
+  | "failed";
+export type ResearchEventStatus = "pending" | "complete" | "warning" | "error";
+
+export interface ResearchEvent {
+  id: string;
+  event_type: ResearchEventType;
+  status: ResearchEventStatus;
+  message: string;
+  query: string | null;
+  result_count: number | null;
+  source_ids: string[];
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface Activity {
@@ -313,6 +427,10 @@ export interface Itinerary {
   total_days: number;
   members: number;
   planning_notes: string | null;
+  places?: Place[];
+  items?: ItineraryItem[];
+  sources?: TripSource[];
+  research_events?: ResearchEvent[];
   transport_options: TransportOption[];
   selected_transport: TransportOption | null;
   day_plans: DayPlan[];

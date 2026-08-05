@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -83,6 +83,82 @@ def _unavailable_provenance() -> DataProvenance:
     return DataProvenance()
 
 
+# ── Workspace contracts ───────────────────────────────────────────────
+
+class TravelPace(str, Enum):
+    RELAXED = "relaxed"
+    BALANCED = "balanced"
+    ACTIVE = "active"
+
+
+class TravellerType(str, Enum):
+    SOLO = "solo"
+    COUPLE = "couple"
+    FAMILY = "family"
+    FRIENDS = "friends"
+    SENIORS = "seniors"
+    BUSINESS = "business"
+
+
+class TripPreferences(BaseModel):
+    """Optional preference signals collected by the conversation layer.
+
+    These fields are intentionally advisory. The constraint engine remains the
+    authority for feasibility, while the research layer uses these values to
+    rank places and choose the next clarification question.
+    """
+
+    experiences: list[str] = Field(default_factory=list, max_length=8)
+    pace: Optional[TravelPace] = None
+    traveller_type: Optional[TravellerType] = None
+    transport_preferences: list[TransportMode] = Field(default_factory=list, max_length=3)
+    hotel_style: Optional[str] = Field(None, max_length=80)
+    dietary_preferences: list[str] = Field(default_factory=list, max_length=8)
+    accessibility_requirements: list[str] = Field(default_factory=list, max_length=8)
+    arrival_window: Optional[str] = Field(None, max_length=80)
+    flexible_dates: bool = False
+
+
+class ItineraryItemType(str, Enum):
+    PLACE_VISIT = "place_visit"
+    STAY = "stay"
+    FLIGHT = "flight"
+    TRAIN = "train"
+    ROAD_TRANSFER = "road_transfer"
+    RESTAURANT = "restaurant"
+    EVENT = "event"
+    NOTE = "note"
+
+
+class SourceKind(str, Enum):
+    OFFICIAL = "official"
+    PROVIDER = "provider"
+    MAP = "map"
+    EDITORIAL = "editorial"
+    IMAGE = "image"
+    USER = "user"
+
+
+class ResearchEventType(str, Enum):
+    UNDERSTANDING_REQUEST = "understanding_request"
+    ASKING_QUESTION = "asking_question"
+    SEARCHING = "searching"
+    FOUND_PLACES = "found_places"
+    FOUND_TRANSPORT = "found_transport"
+    FOUND_STAYS = "found_stays"
+    VALIDATING = "validating"
+    UPDATED_PLAN = "updated_plan"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class ResearchEventStatus(str, Enum):
+    PENDING = "pending"
+    COMPLETE = "complete"
+    WARNING = "warning"
+    ERROR = "error"
+
+
 # ── Request Models ─────────────────────────────────────────────────────
 
 class TripRequest(BaseModel):
@@ -101,6 +177,7 @@ class TripRequest(BaseModel):
         max_length=4_000,
         description="Original prompt and clarification answers supplied by the traveller",
     )
+    preferences: TripPreferences = Field(default_factory=TripPreferences)
 
     @model_validator(mode="after")
     def validate_trip_constraints(self) -> "TripRequest":
@@ -131,6 +208,7 @@ class TripIntent(BaseModel):
     currency: str = Field("INR", min_length=3, max_length=3)
     preferred_transport: Optional[TransportMode] = None
     planning_notes: str = Field("", max_length=4_000)
+    preferences: TripPreferences = Field(default_factory=TripPreferences)
 
     @model_validator(mode="after")
     def validate_intent(self) -> "TripIntent":
@@ -161,6 +239,7 @@ class TripIntent(BaseModel):
             budget=request.budget,
             preferred_transport=request.transport_mode,
             planning_notes=request.planning_notes or "",
+            preferences=request.preferences,
         )
 
 
@@ -254,6 +333,89 @@ class POI(BaseModel):
     rating: Optional[float] = None
     provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
     field_provenance: dict[str, DataProvenance] = Field(default_factory=dict)
+
+
+class PlacePhoto(BaseModel):
+    """A place-level image with explicit attribution and freshness metadata."""
+
+    url: str = Field(..., min_length=1)
+    alt: str = Field(..., min_length=1, max_length=240)
+    credit: Optional[str] = Field(None, max_length=160)
+    source_url: Optional[str] = None
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
+
+
+class Place(BaseModel):
+    """Normalized place record used by saved places, map pins, and itinerary items."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:12], min_length=1, max_length=64)
+    name: str = Field(..., min_length=1, max_length=180)
+    category: str = Field(..., min_length=1, max_length=80)
+    coordinates: GeoPoint
+    address: Optional[str] = Field(None, max_length=300)
+    city: Optional[str] = Field(None, max_length=120)
+    state: Optional[str] = Field(None, max_length=120)
+    country: str = Field("India", min_length=2, max_length=80)
+    description: Optional[str] = Field(None, max_length=2_000)
+    opening_hours: Optional[str] = Field(None, max_length=300)
+    rating: Optional[float] = Field(None, ge=0, le=5)
+    review_count: Optional[int] = Field(None, ge=0)
+    price_level: Optional[int] = Field(None, ge=0, le=4)
+    official_url: Optional[str] = None
+    maps_url: Optional[str] = None
+    provider_ids: dict[str, str] = Field(default_factory=dict)
+    photos: list[PlacePhoto] = Field(default_factory=list, max_length=12)
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
+    field_provenance: dict[str, DataProvenance] = Field(default_factory=dict)
+
+
+class TripSource(BaseModel):
+    """A source attached to a claim, research event, or itinerary item."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:12], min_length=1, max_length=64)
+    source_type: SourceKind = SourceKind.PROVIDER
+    publisher: str = Field(..., min_length=1, max_length=160)
+    title: str = Field(..., min_length=1, max_length=240)
+    url: Optional[str] = None
+    attribution_text: Optional[str] = Field(None, max_length=300)
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
+    captured_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ResearchEvent(BaseModel):
+    """User-visible progress record for planning and research activity."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:12], min_length=1, max_length=64)
+    event_type: ResearchEventType
+    status: ResearchEventStatus = ResearchEventStatus.COMPLETE
+    message: str = Field(..., min_length=1, max_length=500)
+    query: Optional[str] = Field(None, max_length=500)
+    result_count: Optional[int] = Field(None, ge=0)
+    source_ids: list[str] = Field(default_factory=list, max_length=32)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ItineraryItem(BaseModel):
+    """The normalized, editable unit rendered in the Stardrift-style plan view."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:12], min_length=1, max_length=64)
+    item_type: ItineraryItemType
+    title: str = Field(..., min_length=1, max_length=180)
+    day_number: Optional[int] = Field(None, ge=1, le=31)
+    position: int = Field(0, ge=0)
+    place_id: Optional[str] = Field(None, max_length=64)
+    coordinates: Optional[GeoPoint] = None
+    start_time: Optional[str] = Field(None, max_length=20)
+    end_time: Optional[str] = Field(None, max_length=20)
+    duration_minutes: Optional[int] = Field(None, ge=0, le=1_440)
+    description: Optional[str] = Field(None, max_length=2_000)
+    notes: Optional[str] = Field(None, max_length=2_000)
+    image_url: Optional[str] = None
+    source_ids: list[str] = Field(default_factory=list, max_length=32)
+    provenance: DataProvenance = Field(default_factory=_unavailable_provenance)
+    is_locked: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── Weather Models ─────────────────────────────────────────────────────
@@ -355,6 +517,10 @@ class Itinerary(BaseModel):
     total_days: int
     members: int = Field(2, ge=1, le=40)
     planning_notes: Optional[str] = None
+    places: list[Place] = Field(default_factory=list)
+    items: list[ItineraryItem] = Field(default_factory=list)
+    sources: list[TripSource] = Field(default_factory=list)
+    research_events: list[ResearchEvent] = Field(default_factory=list)
     transport_options: list[TransportOption] = []
     selected_transport: Optional[TransportOption] = None
     day_plans: list[DayPlan] = []

@@ -43,6 +43,12 @@ earlier route-planner implementation. The earlier route migration remains in
 the ordered history so existing migration runners stay consistent; the active
 application no longer creates or exposes those tables.
 
+`009_phase1_workspace_foundation.sql` adds the normalized place, provider-link,
+trip-intent, itinerary-item, source, and research-event projections used by the
+Stardrift-inspired workspace. It deliberately keeps the itinerary JSON as the
+compatibility read model while the application begins writing these projections
+incrementally. Apply it after the preceding migrations.
+
 Before applying in production, run the migration against a staging database and
 verify the status check constraint and expiry index. Do not hand-edit the live
 schema or replace this file with a runtime `ALTER TABLE` call.
