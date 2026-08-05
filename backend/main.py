@@ -119,6 +119,7 @@ app.add_middleware(
         "Last-Event-ID",
         "X-Progress-Token",
         "X-Request-ID",
+        "X-YatraAI-Client-ID",
         "X-Trip-Edit-Token",
         "X-Trip-Share-Token",
     ],

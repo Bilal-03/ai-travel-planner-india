@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import time
 from collections import defaultdict, deque
@@ -41,6 +42,10 @@ _progress_queues: dict[str, asyncio.Queue[dict]] = {}
 TRIP_CACHE_TTL_SECONDS = 60 * 60
 EDIT_TOKEN_HEADER = "X-Trip-Edit-Token"
 SHARE_TOKEN_HEADER = "X-Trip-Share-Token"
+CLIENT_ID_HEADER = "X-YatraAI-Client-ID"
+_CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+# Changing this value intentionally starts a fresh bucket after a deployment.
+RATE_LIMIT_KEY_VERSION = "v2"
 _rate_limit_windows: dict[tuple[str, str], deque[float]] = defaultdict(deque)
 _rate_limit_lock = Lock()
 
@@ -80,11 +85,22 @@ def _hash_edit_token(token: str) -> str:
 
 
 async def _rate_limit(request: Request, scope: str, limit: int, window_seconds: int) -> None:
-    """Shared Redis-backed guard for expensive endpoints with local fallback."""
+    """Shared Redis-backed guard for expensive endpoints with local fallback.
+
+    The IP address remains part of the identity for abuse protection, while a
+    stable browser ID prevents all visitors behind one hosting proxy from
+    sharing the same bucket. The client ID is an anonymous routing aid, not an
+    authentication credential.
+    """
     client = request.client.host if request.client else "unknown"
-    client_hash = hashlib.sha256(client.encode("utf-8")).hexdigest()[:16]
+    browser_id = request.headers.get(CLIENT_ID_HEADER, "").strip()
+    if _CLIENT_ID_PATTERN.fullmatch(browser_id):
+        identity = f"{client}:{browser_id}"
+    else:
+        identity = client
+    client_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
     now = time.monotonic()
-    local_key = (scope, client)
+    local_key = (scope, identity)
     async with _rate_limit_lock:
         local_attempts = _rate_limit_windows[local_key]
         while local_attempts and local_attempts[0] <= now - window_seconds:
@@ -98,7 +114,7 @@ async def _rate_limit(request: Request, scope: str, limit: int, window_seconds: 
             )
         try:
             attempts = get_cache().increment(
-                f"travel:rate-limit:{scope}:{client_hash}",
+                f"travel:rate-limit:{RATE_LIMIT_KEY_VERSION}:{scope}:{client_hash}",
                 ttl_seconds=window_seconds,
                 require_distributed=settings.require_redis,
             )
@@ -115,6 +131,11 @@ async def _rate_limit(request: Request, scope: str, limit: int, window_seconds: 
 
 async def generation_rate_limit(request: Request) -> None:
     await _rate_limit(request, "generate", limit=5, window_seconds=10 * 60)
+
+
+async def clarification_rate_limit(request: Request) -> None:
+    """Allow the prompt question flow more room than full itinerary generation."""
+    await _rate_limit(request, "clarify", limit=20, window_seconds=10 * 60)
 
 
 async def refinement_rate_limit(request: Request) -> None:

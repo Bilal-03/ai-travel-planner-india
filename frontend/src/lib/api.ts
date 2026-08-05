@@ -6,6 +6,32 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const EDIT_TOKEN_HEADER = "X-Trip-Edit-Token";
 const SHARE_TOKEN_HEADER = "X-Trip-Share-Token";
+const CLIENT_ID_HEADER = "X-YatraAI-Client-ID";
+const CLIENT_ID_STORAGE_KEY = "yatraai:client-id";
+const CLIENT_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+
+function getClientId(): string | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const existing = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+    if (existing && CLIENT_ID_PATTERN.test(existing)) return existing;
+  } catch {
+    // Some privacy modes block storage; a non-persistent ID still helps this session.
+  }
+
+  const generated =
+    typeof window.crypto?.randomUUID === "function"
+      ? window.crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+  try {
+    window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, generated);
+  } catch {
+    // Continue with the generated session ID when persistent storage is unavailable.
+  }
+  return CLIENT_ID_PATTERN.test(generated) ? generated : null;
+}
 
 export type CollaborationRole = "owner" | "editor" | "viewer";
 export type TripKind = "single";
@@ -591,6 +617,7 @@ async function request<T>(
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
   const { timeoutMs = 30_000, retries = 0, onResponse, ...fetchOptions } = options || {};
+  const clientId = getClientId();
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     const controller = new AbortController();
@@ -608,6 +635,7 @@ async function request<T>(
         signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
+          ...(clientId ? { [CLIENT_ID_HEADER]: clientId } : {}),
           ...fetchOptions.headers,
         },
       });
