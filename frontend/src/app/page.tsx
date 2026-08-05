@@ -314,13 +314,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen">
-      <Header
-          onLogoClick={
-          itinerary
-            ? handleNewTrip
-            : () => window.scrollTo({ top: 0, behavior: "smooth" })
-        }
-      />
+      {!itinerary && <Header onLogoClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />}
 
       {/* ── Home: hero, ticket form, features, destinations ─────────── */}
       {!itinerary && (

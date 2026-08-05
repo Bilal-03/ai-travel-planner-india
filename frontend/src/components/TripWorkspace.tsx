@@ -21,7 +21,8 @@ import { track } from "@/lib/analytics";
 
 const TripMap = dynamic(() => import("@/components/TripMap"), { ssr: false });
 
-type WorkspaceTab = "plan" | "map" | "budget" | "chat";
+type WorkspaceTab = "plan" | "overview" | "map" | "budget" | "chat";
+type WorkspaceRightTab = "plan" | "overview";
 
 interface TripWorkspaceProps {
   itinerary: Itinerary;
@@ -43,6 +44,7 @@ interface WorkspaceContentProps {
 function WorkspaceTabs({ activeTab, onChange }: { activeTab: WorkspaceTab; onChange: (tab: WorkspaceTab) => void }) {
   const tabs: { id: WorkspaceTab; label: string; icon: string }[] = [
     { id: "plan", label: "Plan", icon: "📅" },
+    { id: "overview", label: "Overview", icon: "✦" },
     { id: "map", label: "Map", icon: "🗺️" },
     { id: "budget", label: "Budget", icon: "💰" },
     { id: "chat", label: "Chat", icon: "✦" },
@@ -51,11 +53,68 @@ function WorkspaceTabs({ activeTab, onChange }: { activeTab: WorkspaceTab; onCha
   return (
     <nav className="workspace-tabs no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-glass-border bg-glass-bg p-1 lg:hidden" aria-label="Trip workspace sections">
       {tabs.map((tab) => (
-        <button key={tab.id} type="button" onClick={() => onChange(tab.id)} aria-current={activeTab === tab.id ? "page" : undefined} className={`flex min-w-[76px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-semibold transition ${activeTab === tab.id ? "bg-primary text-white shadow-md" : "text-foreground-muted hover:bg-glass-highlight hover:text-foreground"}`}>
+        <button data-testid={`workspace-mobile-tab-${tab.id}`} key={tab.id} type="button" onClick={() => onChange(tab.id)} aria-current={activeTab === tab.id ? "page" : undefined} className={`flex min-w-[78px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-semibold transition ${activeTab === tab.id ? "bg-primary text-white shadow-md" : "text-foreground-muted hover:bg-glass-highlight hover:text-foreground"}`}>
           <span aria-hidden="true">{tab.icon}</span>{tab.label}
         </button>
       ))}
     </nav>
+  );
+}
+
+function WorkspaceRightTabs({ activeTab, onChange }: { activeTab: WorkspaceRightTab; onChange: (tab: WorkspaceRightTab) => void }) {
+  const tabs: { id: WorkspaceRightTab; label: string }[] = [
+    { id: "overview", label: "Trip overview" },
+    { id: "plan", label: "Plan" },
+  ];
+
+  return (
+    <nav className="workspace-right-tabs" aria-label="Itinerary workspace view">
+      <div className="flex items-center gap-1">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            aria-current={activeTab === tab.id ? "page" : undefined}
+            className={activeTab === tab.id ? "workspace-right-tab workspace-right-tab-active" : "workspace-right-tab"}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <span className="hidden text-[10px] font-[family-name:var(--font-space-mono)] uppercase tracking-[0.14em] text-foreground-muted sm:inline">Live workspace</span>
+    </nav>
+  );
+}
+
+function WorkspaceTopbar({ itinerary, onNewTrip }: { itinerary: Itinerary; onNewTrip: () => void }) {
+  return (
+    <motion.header initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} className="workspace-topbar">
+      <div className="flex min-w-0 items-center gap-3">
+        <button type="button" onClick={onNewTrip} aria-label="Start a new trip" className="workspace-brand-mark">
+          <span aria-hidden="true">✦</span>
+        </button>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-[0.16em] text-marigold">Trip workspace</p>
+            <span className="hidden text-[10px] text-foreground-muted sm:inline">·</span>
+            <span className="hidden text-[10px] text-foreground-muted sm:inline">Private planning board</span>
+          </div>
+          <h1 className="mt-0.5 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">{itinerary.origin.name} → {itinerary.destination.name}</h1>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-foreground-secondary">
+            <span>{formatDate(itinerary.start_date)} – {formatDate(itinerary.end_date)}</span>
+            <span aria-hidden="true">·</span>
+            <span>{itinerary.total_days} days</span>
+            <span aria-hidden="true">·</span>
+            <span>{formatINR(itinerary.budget.total_estimated)} planned</span>
+          </div>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 print:hidden">
+        <span className="hidden rounded-full border border-glass-border bg-glass-bg px-3 py-2 text-xs text-foreground-muted xl:inline">No sign-up · private edits</span>
+        <ShareTrip tripId={itinerary.id} />
+      </div>
+    </motion.header>
   );
 }
 
@@ -168,11 +227,16 @@ function PlanContent({ itinerary, onUpdate, onTransportSelect, onPlanSelect, isP
 
 function OverviewRail({ itinerary }: { itinerary: Itinerary }) {
   return (
-    <aside className="space-y-4" aria-label="Trip overview">
-      <div className="workspace-panel overflow-hidden rounded-xl border border-glass-border bg-glass-bg">
-        <div className="border-b border-glass-border px-4 py-3"><h2 className="text-sm font-semibold text-foreground">🗺️ Route at a glance</h2><p className="mt-1 text-xs text-foreground-muted">Filter stops by day on the map.</p></div>
-        <TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} />
-      </div>
+    <aside className="workspace-overview space-y-4" aria-label="Trip overview">
+      <section className="workspace-panel rounded-xl border border-glass-border bg-glass-bg p-4">
+        <p className="font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-[0.14em] text-marigold">Trip overview</p>
+        <h2 className="mt-1 text-xl font-bold text-foreground">A clear route, one place to adjust it.</h2>
+        <p className="mt-2 text-sm leading-relaxed text-foreground-secondary">The map above follows your stops. Use Plan to inspect each day, or ask the planner to reshape the route in plain language.</p>
+        <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-lg bg-background/45 p-3"><span className="block text-foreground-muted">Destination</span><strong className="mt-1 block text-foreground">{itinerary.destination.name}</strong></div>
+          <div className="rounded-lg bg-background/45 p-3"><span className="block text-foreground-muted">Stops</span><strong className="mt-1 block text-foreground">{itinerary.day_plans.reduce((count, day) => count + day.activities.length, 0)} planned</strong></div>
+        </div>
+      </section>
       <BudgetBreakdown budget={itinerary.budget} totalBudget={itinerary.budget.total_estimated + itinerary.budget.remaining} />
       {itinerary.selected_transport && (
         <div className="workspace-panel rounded-xl border border-glass-border bg-glass-bg p-4">
@@ -194,8 +258,24 @@ function OverviewRail({ itinerary }: { itinerary: Itinerary }) {
   );
 }
 
+function WorkspaceMapPane({ itinerary }: { itinerary: Itinerary }) {
+  return (
+    <div className="workspace-map-frame">
+      <div className="workspace-map-toolbar">
+        <div className="min-w-0">
+          <p className="font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-[0.14em] text-foreground-muted">Route at a glance</p>
+          <p className="truncate text-sm font-semibold text-foreground">{itinerary.origin.name} → {itinerary.destination.name}</p>
+        </div>
+        <span className="rounded-full border border-success/25 bg-success/10 px-2.5 py-1 text-[10px] font-semibold text-success">{itinerary.day_plans.length} days mapped</span>
+      </div>
+      <TripMap compact center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} />
+    </div>
+  );
+}
+
 export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransportSelect }: TripWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("plan");
+  const [rightTab, setRightTab] = useState<WorkspaceRightTab>("plan");
   const [isEditing, setIsEditing] = useState(false);
   const [refinementError, setRefinementError] = useState<string | null>(null);
   const [previousItinerary, setPreviousItinerary] = useState<Itinerary | null>(null);
@@ -260,29 +340,31 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
   );
 
   return (
-    <section id="trip-workspace" className="gradient-hero min-h-[calc(100vh-73px)] px-3 py-5 sm:px-5 sm:py-8 lg:px-7">
-      <div className="mx-auto max-w-[1440px]">
-        <motion.header initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} className="mb-5 flex flex-col gap-4 sm:mb-7 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <button type="button" onClick={onNewTrip} className="mb-2 text-sm text-foreground-muted transition hover:text-foreground">← New trip</button>
-            <p className="font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-[0.16em] text-marigold">Trip workspace · {itinerary.total_days} days</p>
-            <h1 className="mt-1 truncate font-[family-name:var(--font-teko)] text-[clamp(2.5rem,5vw,4.4rem)] font-semibold uppercase leading-none text-foreground"><span className="gradient-text">{itinerary.origin.name} → {itinerary.destination.name}</span></h1>
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground-secondary sm:text-sm"><span>📅 {formatDate(itinerary.start_date)} – {formatDate(itinerary.end_date)}</span><span className="hidden sm:inline">•</span><span>💰 {formatINR(itinerary.budget.total_estimated)} planned</span></div>
-          </div>
-          <div className="flex items-center gap-2 print:hidden"><span className="hidden rounded-full border border-glass-border bg-glass-bg px-3 py-2 text-xs text-foreground-muted sm:inline">No sign-up · private edits</span><ShareTrip tripId={itinerary.id} /></div>
-        </motion.header>
+    <section id="trip-workspace" className="workspace-page gradient-hero min-h-[calc(100vh-73px)] px-3 py-4 sm:px-5 sm:py-6 lg:px-7">
+      <div className="mx-auto max-w-[1600px]">
+        <WorkspaceTopbar itinerary={itinerary} onNewTrip={onNewTrip} />
 
         <WorkspaceTabs activeTab={activeTab} onChange={setActiveTab} />
 
-        <div className="mt-5 hidden items-start gap-5 lg:grid lg:grid-cols-[250px_minmax(0,1fr)_330px] xl:grid-cols-[270px_minmax(0,1fr)_360px]">
-          {conversation}
-          <main className="min-w-0"><PlanContent itinerary={itinerary} onUpdate={onUpdate} onTransportSelect={onTransportSelect} onPlanSelect={selectPlan} isPlanSelecting={isPlanSelecting} onActivityEdit={refine} isEditing={isEditing} /></main>
-          <OverviewRail itinerary={itinerary} />
+        <div data-testid="workspace-shell" className="workspace-shell mt-4 hidden lg:grid">
+          <div className="workspace-conversation-column min-h-0">{conversation}</div>
+          <section className="workspace-right-pane" aria-label="Trip map and itinerary">
+            <WorkspaceMapPane itinerary={itinerary} />
+            <WorkspaceRightTabs activeTab={rightTab} onChange={setRightTab} />
+            <div className="workspace-right-scroll">
+              {rightTab === "plan" ? (
+                <PlanContent itinerary={itinerary} onUpdate={onUpdate} onTransportSelect={onTransportSelect} onPlanSelect={selectPlan} isPlanSelecting={isPlanSelecting} onActivityEdit={refine} isEditing={isEditing} />
+              ) : (
+                <OverviewRail itinerary={itinerary} />
+              )}
+            </div>
+          </section>
         </div>
 
-        <div className="mt-5 lg:hidden">
+        <div className="workspace-mobile-surface mt-4 lg:hidden">
           {activeTab === "plan" && <PlanContent itinerary={itinerary} onUpdate={onUpdate} onTransportSelect={onTransportSelect} onPlanSelect={selectPlan} isPlanSelecting={isPlanSelecting} onActivityEdit={refine} isEditing={isEditing} />}
-          {activeTab === "map" && <div className="rounded-xl border border-glass-border bg-glass-bg p-1"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div>}
+          {activeTab === "overview" && <OverviewRail itinerary={itinerary} />}
+          {activeTab === "map" && <div className="workspace-mobile-map rounded-xl border border-glass-border bg-glass-bg p-1"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div>}
           {activeTab === "budget" && <div className="space-y-4"><BudgetBreakdown budget={itinerary.budget} totalBudget={itinerary.budget.total_estimated + itinerary.budget.remaining} />{itinerary.selected_transport && <TransportCard option={itinerary.selected_transport} travelDate={itinerary.start_date} isSelected />}</div>}
           {activeTab === "chat" && conversation}
         </div>

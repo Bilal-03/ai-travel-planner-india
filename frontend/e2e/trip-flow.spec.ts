@@ -115,6 +115,9 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
 
   await expect(page.getByRole("heading", { name: "Delhi → Jaipur" })).toBeVisible();
   await expect(page.getByText("Plan conversation")).toBeVisible();
+  await expect(page.getByTestId("workspace-shell")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Trip overview" })).toBeVisible();
+  await expect(page.getByText("Live workspace")).toBeVisible();
   await expect(page.getByText("Day-by-Day Itinerary").first()).toBeVisible();
   await expect(page.getByText("Static reference").first()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -122,6 +125,8 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
   await expect(page.locator("h3:visible", { hasText: "Budget Breakdown" })).toBeVisible();
   await page.getByRole("button", { name: "Chat" }).click();
   await expect(page.locator('aside[aria-label="Trip conversation and changes"]:visible')).toBeVisible();
+  await page.getByRole("button", { name: "Overview" }).click();
+  await expect(page.getByRole("heading", { name: "A clear route, one place to adjust it." })).toBeVisible();
   // Framer Motion keeps the button in a short hover transform; force avoids
   // treating that visual transition as an interaction failure.
   await page.locator("#share-trip-btn").click({ force: true });

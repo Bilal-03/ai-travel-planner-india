@@ -85,6 +85,7 @@ export default function QuickPlanner({ onGenerate, isLoading }: QuickPlannerProp
   };
 
   const brief = response?.brief;
+  const preferences = brief?.preferences || { experiences: [], pace: null };
 
   return (
     <section className="mx-auto mb-8 max-w-[1180px] rounded-[10px] border border-marigold/30 bg-[linear-gradient(120deg,rgba(196,82,43,0.18),rgba(28,128,121,0.12))] p-5 shadow-[0_24px_60px_-36px_rgba(242,169,59,0.55)] sm:p-7" aria-labelledby="quick-plan-heading">
@@ -145,10 +146,10 @@ export default function QuickPlanner({ onGenerate, isLoading }: QuickPlannerProp
                 <div><dt className="text-foreground-muted">Members</dt><dd className="mt-0.5 font-semibold text-foreground">{brief.members || "Not set"}</dd></div>
                 <div><dt className="text-foreground-muted">Budget</dt><dd className="mt-0.5 font-semibold text-foreground">{brief.budget ? `₹${brief.budget.toLocaleString("en-IN")}` : "Not set"}</dd></div>
               </dl>
-              {(brief.preferences.experiences.length > 0 || brief.preferences.pace) && (
+              {(preferences.experiences.length > 0 || preferences.pace) && (
                 <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Trip preferences">
-                  {brief.preferences.experiences.map((experience) => <span key={experience} className="rounded-full bg-teal-india/15 px-2 py-1 text-[10px] font-semibold text-teal-india">{experience}</span>)}
-                  {brief.preferences.pace && <span className="rounded-full bg-marigold/15 px-2 py-1 text-[10px] font-semibold capitalize text-marigold">{brief.preferences.pace} pace</span>}
+                  {preferences.experiences.map((experience) => <span key={experience} className="rounded-full bg-teal-india/15 px-2 py-1 text-[10px] font-semibold text-teal-india">{experience}</span>)}
+                  {preferences.pace && <span className="rounded-full bg-marigold/15 px-2 py-1 text-[10px] font-semibold capitalize text-marigold">{preferences.pace} pace</span>}
                 </div>
               )}
               {activeQuestion && (

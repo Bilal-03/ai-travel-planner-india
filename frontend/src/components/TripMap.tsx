@@ -8,6 +8,7 @@ interface TripMapProps {
   dayPlans: DayPlan[];
   routeSegments: RouteSegment[];
   destination: string;
+  compact?: boolean;
 }
 
 // Day colors for routes
@@ -33,6 +34,7 @@ export default function TripMap({
   dayPlans,
   routeSegments,
   destination,
+  compact = false,
 }: TripMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<import("leaflet").Map | null>(null);
@@ -215,47 +217,63 @@ export default function TripMap({
     }
   }, [selectedDay, L]);
 
+  const filterControls = (
+    <div className="flex gap-1.5 overflow-x-auto">
+      <button
+        type="button"
+        onClick={() => setSelectedDay(null)}
+        className={`shrink-0 rounded-md px-2 py-1 text-xs transition-colors ${
+          selectedDay === null
+            ? "bg-primary text-white"
+            : "bg-glass-bg text-foreground-muted hover:bg-glass-highlight"
+        }`}
+      >
+        All
+      </button>
+      {dayPlans.map((_, idx) => (
+        <button
+          type="button"
+          key={idx}
+          onClick={() => setSelectedDay(idx)}
+          className={`shrink-0 rounded-md px-2 py-1 text-xs transition-colors ${
+            selectedDay === idx
+              ? "text-white"
+              : "bg-glass-bg text-foreground-muted hover:bg-glass-highlight"
+          }`}
+          style={
+            selectedDay === idx
+              ? { backgroundColor: DAY_COLORS[idx % DAY_COLORS.length] }
+              : {}
+          }
+        >
+          D{idx + 1}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (compact) {
+    return (
+      <div className="trip-map-compact overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-glass-border bg-glass-bg px-3 py-2">
+          <span className="text-xs font-semibold text-foreground">Map layers</span>
+          {filterControls}
+        </div>
+        <div ref={mapRef} className="h-[280px] w-full sm:h-[320px] lg:h-[330px]" id="trip-map-workspace" />
+      </div>
+    );
+  }
+
   return (
-    <div className="glass rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between p-4 border-b border-glass-border">
-        <h3 className="font-bold font-[family-name:var(--font-outfit)] text-foreground flex items-center gap-2">
+    <div className="glass overflow-hidden rounded-xl">
+      <div className="flex items-center justify-between gap-3 border-b border-glass-border p-4">
+        <h3 className="flex items-center gap-2 font-[family-name:var(--font-outfit)] font-bold text-foreground">
           🗺️ Trip Map — {destination}
         </h3>
-
-        {/* Day filter buttons */}
-        <div className="flex gap-1.5">
-          <button
-            onClick={() => setSelectedDay(null)}
-            className={`px-2 py-1 rounded-md text-xs transition-colors ${
-              selectedDay === null
-                ? "bg-primary text-white"
-                : "bg-glass-bg text-foreground-muted hover:bg-glass-highlight"
-            }`}
-          >
-            All
-          </button>
-          {dayPlans.map((_, idx) => (
-            <button
-              key={idx}
-              onClick={() => setSelectedDay(idx)}
-              className={`px-2 py-1 rounded-md text-xs transition-colors ${
-                selectedDay === idx
-                  ? "text-white"
-                  : "bg-glass-bg text-foreground-muted hover:bg-glass-highlight"
-              }`}
-              style={
-                selectedDay === idx
-                  ? { backgroundColor: DAY_COLORS[idx % DAY_COLORS.length] }
-                  : {}
-              }
-            >
-              D{idx + 1}
-            </button>
-          ))}
-        </div>
+        {filterControls}
       </div>
 
-      <div ref={mapRef} className="w-full h-[400px] md:h-[500px]" id="trip-map" />
+      <div ref={mapRef} className="h-[400px] w-full md:h-[500px]" id="trip-map" />
     </div>
   );
 }
