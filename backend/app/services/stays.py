@@ -20,6 +20,7 @@ from app.models.trip import (
     ItineraryItemType,
     StayOption,
 )
+from app.services.trip_commitments import sync_trip_commitment_budgets
 
 
 def _estimate_provenance() -> DataProvenance:
@@ -144,13 +145,13 @@ def search_stays(
     return options
 
 
-def _sync_selected_plan(updated: Itinerary) -> None:
+def _sync_plan_options(updated: Itinerary) -> None:
+    """Keep the selected plan and alternative totals honest after a stay change."""
+
     for option in updated.plan_options:
-        if option.id != updated.selected_plan_id:
-            continue
-        option.day_plans = [day.model_copy(deep=True) for day in updated.day_plans]
-        option.budget = updated.budget.model_copy(deep=True)
-        break
+        if option.id == updated.selected_plan_id:
+            option.day_plans = [day.model_copy(deep=True) for day in updated.day_plans]
+    sync_trip_commitment_budgets(updated)
 
 
 def add_stay_to_itinerary(itinerary: Itinerary, stay: StayOption) -> tuple[Itinerary, bool]:
@@ -174,7 +175,7 @@ def add_stay_to_itinerary(itinerary: Itinerary, stay: StayOption) -> tuple[Itine
     updated.budget.stay += stay.total_price
     updated.budget.total_estimated += stay.total_price
     updated.budget.remaining -= stay.total_price
-    _sync_selected_plan(updated)
+    _sync_plan_options(updated)
     return updated, True
 
 
@@ -191,5 +192,5 @@ def remove_stay_from_itinerary(itinerary: Itinerary, stay_id: str) -> tuple[Itin
     updated.budget.stay = max(0, updated.budget.stay - amount)
     updated.budget.total_estimated = max(0, updated.budget.total_estimated - amount)
     updated.budget.remaining += amount
-    _sync_selected_plan(updated)
+    _sync_plan_options(updated)
     return updated, True

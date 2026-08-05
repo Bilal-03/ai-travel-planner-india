@@ -59,6 +59,7 @@ from app.services.constraint_engine import (
     validate_transport_window,
 )
 from app.services.observability import record_llm_usage
+from app.services.trip_commitments import preserve_trip_commitments
 
 logger = logging.getLogger(__name__)
 
@@ -1545,6 +1546,7 @@ async def refine_itinerary(itinerary: Itinerary, instruction: str) -> Itinerary:
             option = next((item for item in itinerary.transport_options if item.mode == mode), None)
             if option:
                 updated = select_transport_for_itinerary(itinerary, mode, option.provider, option.code)
+                updated = preserve_trip_commitments(itinerary, updated)
                 updated.generation_notes.append(f"Transport changed by refinement: {mode.value}.")
                 return updated
         itinerary.generation_notes.append(
@@ -1607,13 +1609,14 @@ async def refine_itinerary(itinerary: Itinerary, instruction: str) -> Itinerary:
                 selected_transport=itinerary.selected_transport,
                 local_transport=local_transport,
             )
+            refined = preserve_trip_commitments(itinerary, refined)
             if refined.budget.remaining < 0:
                 itinerary.generation_notes.append(
                     "The requested refinement exceeded the trip budget, so the previous itinerary was preserved."
                 )
                 return itinerary
             refined.id = itinerary.id
-            return _restore_plan_options(itinerary, refined)
+            return preserve_trip_commitments(itinerary, _restore_plan_options(itinerary, refined))
 
     affected_days = changed_days or (
         {refinement.day_number}
@@ -1677,13 +1680,14 @@ and return ONLY a valid JSON object matching the current itinerary schema.
         selected_transport=itinerary.selected_transport,
         local_transport=local_transport,
     )
+    refined = preserve_trip_commitments(itinerary, refined)
     if refined.budget.remaining < 0:
         itinerary.generation_notes.append(
             "The requested refinement exceeded the trip budget, so the previous itinerary was preserved."
         )
         return itinerary
     refined.id = itinerary.id
-    return _restore_plan_options(itinerary, refined)
+    return preserve_trip_commitments(itinerary, _restore_plan_options(itinerary, refined))
 
 
 async def generate_packing_list(itinerary: Itinerary) -> list[PackingItem]:

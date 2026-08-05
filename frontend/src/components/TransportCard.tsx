@@ -7,10 +7,12 @@ import DataStatusBadge from "./DataStatusBadge";
 import EstimateDisclaimer from "./EstimateDisclaimer";
 import FreshnessTimestamp from "./FreshnessTimestamp";
 import ProviderAttribution from "./ProviderAttribution";
+import { getTransportHandoff } from "@/lib/providerLinks";
 
 interface TransportCardProps {
   option: TransportOption;
   travelDate?: string;
+  tripId?: string;
   isSelected?: boolean;
   onClick?: () => void;
 }
@@ -18,6 +20,7 @@ interface TransportCardProps {
 export default function TransportCard({
   option,
   travelDate,
+  tripId,
   isSelected = false,
   onClick,
 }: TransportCardProps) {
@@ -25,10 +28,7 @@ export default function TransportCard({
   const isTrain = option.mode === "train";
   const fareProvenance = option.field_data_provenance?.fare || option.provenance;
   const modeIcon = isFlight ? "✈️" : isTrain ? "🚂" : "🚗";
-  const bookingUrl = isFlight
-    ? `https://www.google.com/travel/flights?q=${encodeURIComponent(`Flights from ${option.departure_city} to ${option.arrival_city}${travelDate ? ` on ${travelDate}` : ""}`)}`
-    : isTrain ? "https://www.irctc.co.in/nget/train-search"
-    : `https://www.google.com/maps/dir/${encodeURIComponent(option.departure_city)}/${encodeURIComponent(option.arrival_city)}`;
+  const handoff = getTransportHandoff(option, travelDate);
 
   return (
     <motion.div
@@ -146,17 +146,15 @@ export default function TransportCard({
         </div>
       )}
 
-      {option.is_fallback && (
-        <a
-          href={bookingUrl}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(event) => { event.stopPropagation(); track("provider_link_clicked", { metadata: { provider: option.provider, source: option.mode } }); }}
-          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary-light transition-colors"
-        >
-          {isFlight ? "Check live fares on Google Flights" : isTrain ? "Check trains on IRCTC" : "View road route"} ↗
-        </a>
-      )}
+      <a
+        href={handoff.url}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(event) => { event.stopPropagation(); track("provider_link_clicked", { tripId, kind: tripId ? "single" : undefined, metadata: { provider: option.provider, source: `transport_${option.mode}`, estimated_data: option.is_fallback } }); }}
+        className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary-light transition-colors"
+      >
+        {handoff.label} ↗
+      </a>
       {onClick && <div className="mt-3 text-xs font-medium text-primary">{isSelected ? "Selected for the full trip" : "Select for the full trip"}</div>}
     </motion.div>
   );

@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import ItineraryTimeline from "@/components/ItineraryTimeline";
 import TransportCard from "@/components/TransportCard";
+import TripCommitments from "@/components/TripCommitments";
 import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
 import TripConversation from "@/components/TripConversation";
@@ -138,37 +139,6 @@ function TravelTips({ itinerary }: { itinerary: Itinerary }) {
   );
 }
 
-function JourneySummary({ itinerary }: { itinerary: Itinerary }) {
-  if (!itinerary.selected_transport) return null;
-  return (
-    <section className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-[0.14em] text-primary">Recommended journey</p>
-          <h2 className="mt-1 text-lg font-bold text-foreground">A route that fits the brief.</h2>
-        </div>
-        <span className="rounded-full bg-success/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-success">Selected</span>
-      </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg bg-background/35 p-3">
-          <p className="text-[11px] text-foreground-muted">Outbound · {itinerary.start_date}</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">{itinerary.origin.name} → {itinerary.destination.name}</p>
-          <p className="mt-1 text-xs text-foreground-secondary">{itinerary.selected_transport.provider} · {formatINR(itinerary.selected_transport.price)} per person</p>
-        </div>
-        <div className="rounded-lg bg-background/35 p-3">
-          <p className="text-[11px] text-foreground-muted">Return · {itinerary.end_date}</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">{itinerary.destination.name} → {itinerary.origin.name}</p>
-          <p className="mt-1 text-xs text-foreground-secondary">Round-trip budget includes the selected option.</p>
-        </div>
-      </div>
-      <div className="mt-3 flex items-start gap-2 rounded-lg border border-glass-border bg-background/30 p-3 text-xs leading-relaxed text-foreground-secondary">
-        <span aria-hidden="true">✦</span>
-        <p><strong className="text-foreground">Why this option?</strong> It keeps the selected plan within the working budget while using the transport option that best fits the route. Verify live fares and availability before booking.</p>
-      </div>
-    </section>
-  );
-}
-
 function PlanOptions({ itinerary, onPlanSelect, isPlanSelecting }: Pick<WorkspaceContentProps, "itinerary" | "onPlanSelect" | "isPlanSelecting">) {
   const options = itinerary.plan_options || [];
   if (options.length <= 1) return null;
@@ -200,7 +170,7 @@ function PlanContent({ itinerary, onUpdate, onTransportSelect, onPlanSelect, isP
   return (
     <div className="space-y-5">
       <PlanOptions itinerary={itinerary} onPlanSelect={onPlanSelect} isPlanSelecting={isPlanSelecting} />
-      <JourneySummary itinerary={itinerary} />
+      <TripCommitments itinerary={itinerary} />
       <TravelTips itinerary={itinerary} />
       <DestinationInspiration itinerary={itinerary} />
       <section aria-labelledby="workspace-itinerary-heading">
@@ -220,7 +190,7 @@ function PlanContent({ itinerary, onUpdate, onTransportSelect, onPlanSelect, isP
             <span className="text-xs text-foreground-muted">{alternatives.length} alternative{alternatives.length === 1 ? "" : "s"}</span>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {alternatives.map((option, index) => <TransportCard key={`${option.provider}-${option.code || index}`} option={option} travelDate={itinerary.start_date} onClick={() => void onTransportSelect(option)} />)}
+            {alternatives.map((option, index) => <TransportCard key={`${option.provider}-${option.code || index}`} option={option} travelDate={itinerary.start_date} tripId={itinerary.id} onClick={() => void onTransportSelect(option)} />)}
           </div>
         </section>
       )}
@@ -244,14 +214,7 @@ function OverviewRail({ itinerary }: { itinerary: Itinerary }) {
         </div>
       </section>
       <BudgetBreakdown budget={itinerary.budget} totalBudget={itinerary.budget.total_estimated + itinerary.budget.remaining} />
-      {itinerary.selected_transport && (
-        <div className="workspace-panel rounded-xl border border-glass-border bg-glass-bg p-4">
-          <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-semibold text-foreground">🚆 Selected transport</h2><span className="text-xs text-success">In plan</span></div>
-          <p className="mt-2 text-sm font-medium text-foreground">{itinerary.selected_transport.provider}</p>
-          <p className="mt-1 text-xs text-foreground-secondary">{itinerary.selected_transport.mode} · {formatINR(itinerary.selected_transport.price)} per person</p>
-          <p className="mt-3 text-xs leading-relaxed text-foreground-muted">Transport choices are re-budgeted and rechecked on the server when you select another option.</p>
-        </div>
-      )}
+      <TripCommitments itinerary={itinerary} compact />
       <div className="workspace-panel rounded-xl border border-glass-border bg-glass-bg p-4">
         <h2 className="text-sm font-semibold text-foreground">Trip snapshot</h2>
         <dl className="mt-3 space-y-2 text-xs">
@@ -375,7 +338,7 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
           {activeTab === "overview" && <OverviewRail itinerary={itinerary} />}
           {activeTab === "map" && <div className="workspace-mobile-map rounded-xl border border-glass-border bg-glass-bg p-1"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div>}
           {activeTab === "saved" && <SavedPlacesPanel itinerary={itinerary} onOpenDiscovery={() => setIsPlaceDiscoveryOpen(true)} onUpdate={onUpdate} />}
-          {activeTab === "budget" && <div className="space-y-4"><BudgetBreakdown budget={itinerary.budget} totalBudget={itinerary.budget.total_estimated + itinerary.budget.remaining} />{itinerary.selected_transport && <TransportCard option={itinerary.selected_transport} travelDate={itinerary.start_date} isSelected />}</div>}
+          {activeTab === "budget" && <div className="space-y-4"><BudgetBreakdown budget={itinerary.budget} totalBudget={itinerary.budget.total_estimated + itinerary.budget.remaining} /><TripCommitments itinerary={itinerary} compact /></div>}
           {activeTab === "chat" && conversation}
         </div>
         {isPlaceDiscoveryOpen && <PlaceDiscovery itinerary={itinerary} isOpen onClose={() => setIsPlaceDiscoveryOpen(false)} onUpdate={onUpdate} />}

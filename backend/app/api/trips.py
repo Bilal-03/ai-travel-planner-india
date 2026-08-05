@@ -623,7 +623,6 @@ async def refine_trip(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     refined = await refine_itinerary(itinerary, request.instruction)
     refined.places = itinerary.places
-    refined.items = itinerary.items
     refined.sources = itinerary.sources
     refined.research_events = append_unique_events(
         itinerary.research_events,

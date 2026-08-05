@@ -21,6 +21,7 @@
 | 🤖 **AI Itinerary Generation** | Google Gemini 2.5 Flash creates personalized day-by-day plans |
 | ✈️🚂 **Flights & Trains** | Search the selected outbound date from the Add workspace; provider results and fallback fares retain separate source labels |
 | 🛏️ **Stay Discovery** | Compare destination areas using date-aware planning estimates, save one to the trip budget, and hand off to live hotel search |
+| 📌 **Trip Commitments** | Keep the selected transport and saved stay estimates attached while the AI reshapes the day plan, with explicit provider handoffs |
 | 🗺️ **Interactive Maps** | Leaflet + OpenStreetMap with routes and POI markers |
 | 🌤️ **Weather-Aware Planning** | OpenWeatherMap forecasts with indoor backup activities |
 | 💰 **Budget Tracking** | Deterministic breakdown — outbound/return transport, food, activities, stay, local transport and buffer |
@@ -129,6 +130,9 @@ Stay discovery currently requires no additional API key and returns three
 date-aware area estimates (central, quiet, and transfer-friendly) rather than inventing hotel inventory. The
 workspace stores the estimate as a trip-level stay item and links to Google
 Hotels for live property, price, tax, and cancellation checks.
+Trip commitments are planning records only: transport links open a current
+search handoff and stay links open live hotel search. The app does not hold
+inventory, issue tickets, or create reservations.
 The app supports single-destination planning with PostgreSQL-backed durable
 itinerary/share storage for production deployments; it has no user accounts or
 login flow.

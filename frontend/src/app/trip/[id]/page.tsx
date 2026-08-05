@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import ItineraryTimeline from "@/components/ItineraryTimeline";
 import TransportCard from "@/components/TransportCard";
+import TripCommitments from "@/components/TripCommitments";
 import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
 import ConnectivityIndicator from "@/components/ConnectivityIndicator";
@@ -173,15 +174,7 @@ export default function TripDetailPage() {
           </div>
         )}
 
-        {itinerary.selected_transport && (
-          <section className="mb-8">
-            <h2 className="mb-3 text-xl font-bold text-foreground">🚀 Recommended journey</h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div><p className="mb-2 text-sm font-medium text-foreground-secondary">Outbound · {itinerary.origin.name} → {itinerary.destination.name}</p><TransportCard option={itinerary.selected_transport} travelDate={itinerary.start_date} isSelected /></div>
-              <div><p className="mb-2 text-sm font-medium text-foreground-secondary">Return · {itinerary.destination.name} → {itinerary.origin.name}</p><TransportCard option={itinerary.selected_transport} travelDate={itinerary.end_date} isSelected /></div>
-            </div>
-          </section>
-        )}
+        <section className="mb-8"><TripCommitments itinerary={itinerary} /></section>
 
         <section className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <BudgetBreakdown budget={itinerary.budget} totalBudget={itinerary.budget.total_estimated + itinerary.budget.remaining} />
@@ -193,7 +186,7 @@ export default function TripDetailPage() {
         <section className="mb-8"><DestinationInspiration itinerary={itinerary} /></section>
 
         {itinerary.transport_options.some((option) => option.provider !== itinerary.selected_transport?.provider || option.code !== itinerary.selected_transport?.code) && (
-          <section className="mb-8"><h2 className="mb-3 text-xl font-bold text-foreground">Alternative transport options</h2><p className="mb-3 text-sm text-foreground-muted">Shared itineraries are read-only. Create your own plan to choose another option.</p><div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{itinerary.transport_options.filter((option) => option.provider !== itinerary.selected_transport?.provider || option.code !== itinerary.selected_transport?.code).map((option, index) => <TransportCard key={index} option={option} travelDate={itinerary.start_date} />)}</div></section>
+          <section className="mb-8"><h2 className="mb-3 text-xl font-bold text-foreground">Alternative transport options</h2><p className="mb-3 text-sm text-foreground-muted">Shared itineraries are read-only. Create your own plan to choose another option.</p><div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{itinerary.transport_options.filter((option) => option.provider !== itinerary.selected_transport?.provider || option.code !== itinerary.selected_transport?.code).map((option, index) => <TransportCard key={index} option={option} travelDate={itinerary.start_date} tripId={itinerary.id} />)}</div></section>
         )}
 
         <details className="glass mb-8 overflow-hidden rounded-xl"><summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-foreground">🗺️ View interactive map</summary><div className="border-t border-glass-border"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div></details>

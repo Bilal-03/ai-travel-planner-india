@@ -208,6 +208,10 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
   await page.getByTestId("add-stay-stay-jaipur-central").click();
   await expect(page.getByTestId("add-stay-stay-jaipur-central")).toHaveText("Added to itinerary");
   await page.getByRole("button", { name: "Close place search" }).click();
+  await page.getByRole("button", { name: "Plan", exact: true }).click();
+  await expect(page.getByTestId("workspace-shell").getByTestId("trip-commitments")).toBeVisible();
+  await expect(page.getByTestId("workspace-shell").getByTestId("stay-commitment")).toContainText(stay.name);
+  await expect(page.getByTestId("workspace-shell").getByText(/planning records, not reservations/i)).toBeVisible();
   await page.getByRole("button", { name: "Add a place to itinerary" }).click();
   await page.getByRole("tab", { name: "Flight" }).click();
   await expect(page.getByText("IndiGo fare estimate")).toBeVisible();
