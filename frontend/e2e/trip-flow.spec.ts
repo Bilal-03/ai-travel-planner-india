@@ -40,6 +40,8 @@ function itinerary() {
     total_days: 3,
     members: 2,
     planning_notes: "heritage places",
+    places: [],
+    items: [],
     transport_options: [train],
     selected_transport: train,
     day_plans: [{
@@ -71,6 +73,28 @@ function itinerary() {
 
 test("plans a trip and opens a read-only shared itinerary", async ({ page }) => {
   const trip = itinerary();
+  const place = {
+    id: "place-city-palace",
+    name: "City Palace",
+    category: "palace",
+    coordinates: { lat: 26.9258, lng: 75.8237 },
+    address: null,
+    city: "Jaipur",
+    state: "Rajasthan",
+    country: "India",
+    description: "A palace complex in Jaipur's historic centre.",
+    opening_hours: null,
+    rating: null,
+    review_count: null,
+    price_level: null,
+    estimated_visit_minutes: 120,
+    estimated_cost: 400,
+    official_url: null,
+    maps_url: "https://www.google.com/maps/search/?api=1&query=26.9258,75.8237",
+    provider_ids: { yatraai: "place-city-palace" },
+    photos: [],
+  };
+  const mutableTrip = JSON.parse(JSON.stringify(trip)) as Omit<typeof trip, "places"> & { places: Array<typeof place> };
   const job = {
     id: "e2e-job-123",
     status: "accepted",
@@ -107,6 +131,22 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
     body: `id: 1\nevent: progress\ndata: ${JSON.stringify({ id: 1, job_id: job.id, status: "completed", step: "completed", message: "Your itinerary is ready.", progress: 100, timestamp: "2026-08-03T12:00:01Z", error: null })}\n\n`,
   }));
   await page.route("**/api/trip-jobs/e2e-job-123/result", (route) => route.fulfill({ json: trip, headers: { "X-Trip-Edit-Token": "test-edit-token" } }));
+  await page.route("**/api/search/places?*", (route) => route.fulfill({ json: [place] }));
+  await page.route("**/api/trips/e2e-trip-123/places**", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST" && request.url().endsWith("/places")) {
+      mutableTrip.places = [place];
+      return route.fulfill({ json: mutableTrip, headers: { ETag: 'W/"4"' } });
+    }
+    if (request.method() === "POST" && request.url().includes("/itinerary")) {
+      return route.fulfill({ json: mutableTrip, headers: { ETag: 'W/"5"' } });
+    }
+    if (request.method() === "DELETE") {
+      mutableTrip.places = [];
+      return route.fulfill({ json: mutableTrip, headers: { ETag: 'W/"6"' } });
+    }
+    return route.fulfill({ json: mutableTrip });
+  });
   await page.route("**/api/trips/e2e-trip-123", (route) => route.fulfill({ json: trip }));
 
   await page.goto("/");
@@ -120,7 +160,20 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
   await expect(page.getByText("Live workspace")).toBeVisible();
   await expect(page.getByText("Day-by-Day Itinerary").first()).toBeVisible();
   await expect(page.getByText("Static reference").first()).toBeVisible();
+  await page.getByRole("button", { name: "Saved", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Saved Places/ })).toBeVisible();
+  await page.getByRole("button", { name: "Add a place to itinerary" }).click();
+  await expect(page.getByTestId("add-to-itinerary-dialog")).toBeVisible();
+  await page.getByTestId("place-search-input").fill("palace");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByTestId("place-card-place-city-palace")).toBeVisible();
+  await page.getByTestId("save-place-place-city-palace").click();
+  await expect(page.getByTestId("save-place-place-city-palace")).toHaveText("Saved");
+  await page.getByRole("button", { name: "Close place search" }).click();
+  await expect(page.getByText("City Palace").last()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Saved", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Saved Places/ })).toBeVisible();
   await page.getByRole("button", { name: "Budget" }).click();
   await expect(page.locator("h3:visible", { hasText: "Budget Breakdown" })).toBeVisible();
   await page.getByRole("button", { name: "Chat" }).click();

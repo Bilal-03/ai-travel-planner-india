@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from app.cache.redis_cache import get_cache
 from app.config import settings
 from app.models.collaboration import AnalyticsEventRequest, TripKind
-from app.models.trip import GenerationStatus, Itinerary, PackingItem, ResearchEvent, TripRequest, TransportMode
+from app.models.trip import GenerationStatus, Itinerary, PackingItem, Place, ResearchEvent, TripRequest, TransportMode
 from app.services.gemini_planner import (
     generate_itinerary,
     generate_packing_list,
@@ -29,8 +29,9 @@ from app.services.gemini_planner import (
 )
 from app.services.collaboration_service import VersionConflictError, assert_version, record_analytics, resolve_share_token
 from app.services.observability import capture_exception, monotonic_ms, safe_error_message
-from app.services.research_events import append_unique_events, event_for_failure, event_for_progress, event_for_update
+from app.services.research_events import append_unique_events, event_for_failure, event_for_place_update, event_for_progress, event_for_update
 from app.services.trip_storage import get_trip, get_trip_owner_token_hash, save_trip, undo_trip, update_trip
+from app.services.workspace_places import add_place_to_day, remove_saved_place, save_place
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/trips", tags=["trips"])
@@ -54,6 +55,16 @@ class TransportSelectionRequest(BaseModel):
 
 class PlanSelectionRequest(BaseModel):
     plan_id: str = Field(..., min_length=1, max_length=40)
+
+
+class SavePlaceRequest(BaseModel):
+    place: Place
+
+
+class AddPlaceToItineraryRequest(BaseModel):
+    day_number: int = Field(..., ge=1, le=31)
+    position: int | None = Field(None, ge=0, le=200)
+    place: Place | None = None
 
 
 def _hash_edit_token(token: str) -> str:
@@ -342,6 +353,126 @@ async def get_trip_by_id(trip_id: str, response: Response):
         raise HTTPException(status_code=404, detail="Trip not found")
     response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
     return itinerary
+
+
+@router.post("/{trip_id}/places", response_model=Itinerary)
+async def save_trip_place(
+    trip_id: str,
+    request: SavePlaceRequest,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
+    _: None = Depends(require_trip_owner),
+):
+    """Save a normalized place to this trip's private workspace."""
+
+    itinerary = await get_trip(trip_id)
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    try:
+        await assert_version(trip_id, TripKind.SINGLE, if_match)
+        updated, changed = save_place(itinerary, request.place)
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"ETag": f'W/"{exc.current}"'}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if changed:
+        updated.research_events = append_unique_events(
+            itinerary.research_events,
+            [event_for_place_update("saved", request.place.name)],
+        )
+        await update_trip(updated)
+        await _record_analytics(AnalyticsEventRequest(
+            event="place_saved",
+            kind=TripKind.SINGLE,
+            trip_id=trip_id,
+            metadata={"category": request.place.category},
+        ))
+    response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
+    return updated
+
+
+@router.delete("/{trip_id}/places/{place_id}", response_model=Itinerary)
+async def remove_trip_place(
+    trip_id: str,
+    place_id: str,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
+    _: None = Depends(require_trip_owner),
+):
+    """Remove a saved place without changing an already scheduled visit."""
+
+    itinerary = await get_trip(trip_id)
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    try:
+        await assert_version(trip_id, TripKind.SINGLE, if_match)
+        updated, changed = remove_saved_place(itinerary, place_id)
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"ETag": f'W/"{exc.current}"'}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if changed:
+        removed = next((place for place in itinerary.places if place.id == place_id), None)
+        updated.research_events = append_unique_events(
+            itinerary.research_events,
+            [event_for_place_update("removed", removed.name if removed else "that place")],
+        )
+        await update_trip(updated)
+        await _record_analytics(AnalyticsEventRequest(
+            event="place_removed",
+            kind=TripKind.SINGLE,
+            trip_id=trip_id,
+        ))
+    response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
+    return updated
+
+
+@router.post("/{trip_id}/places/{place_id}/itinerary", response_model=Itinerary)
+async def add_trip_place_to_itinerary(
+    trip_id: str,
+    place_id: str,
+    request: AddPlaceToItineraryRequest,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
+    _: None = Depends(require_trip_owner),
+):
+    """Schedule one saved place on a selected day with server-side guardrails."""
+
+    itinerary = await get_trip(trip_id)
+    if not itinerary:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    try:
+        await assert_version(trip_id, TripKind.SINGLE, if_match)
+        updated, changed = add_place_to_day(
+            itinerary,
+            place_id=place_id,
+            day_number=request.day_number,
+            position=request.position,
+            place=request.place,
+        )
+    except VersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc), headers={"ETag": f'W/"{exc.current}"'}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if changed:
+        place = next((candidate for candidate in updated.places if candidate.id == place_id), request.place)
+        if place is not None:
+            updated.research_events = append_unique_events(
+                itinerary.research_events,
+                [event_for_place_update("added", place.name, request.day_number)],
+            )
+        await update_trip(updated)
+        await _record_analytics(AnalyticsEventRequest(
+            event="place_added",
+            kind=TripKind.SINGLE,
+            trip_id=trip_id,
+            metadata={"day_number": request.day_number},
+        ))
+    response.headers["ETag"] = f'W/"{await _current_version(trip_id)}"'
+    return updated
 
 
 @router.post("/{trip_id}/share")

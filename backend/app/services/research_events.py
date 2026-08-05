@@ -55,6 +55,22 @@ def event_for_update(instruction: str) -> ResearchEvent:
     )
 
 
+def event_for_place_update(action: str, place_name: str, day_number: int | None = None) -> ResearchEvent:
+    """Create a concise workspace checkpoint for saved-place mutations."""
+
+    messages = {
+        "saved": f"Saved {place_name} to your trip workspace.",
+        "removed": f"Removed {place_name} from Saved Places; scheduled visits stay intact.",
+        "added": f"Added {place_name} to day {day_number or '?'} and rechecked its timing and budget.",
+    }
+    return ResearchEvent(
+        event_type=ResearchEventType.UPDATED_PLAN,
+        status=ResearchEventStatus.COMPLETE,
+        message=messages.get(action, f"Updated your saved places with {place_name}."),
+        metadata={"action": action, "place_name": place_name, **({"day_number": day_number} if day_number else {})},
+    )
+
+
 def append_unique_events(
     existing: list[ResearchEvent], additions: list[ResearchEvent]
 ) -> list[ResearchEvent]:

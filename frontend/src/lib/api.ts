@@ -240,6 +240,8 @@ export interface Place {
   rating: number | null;
   review_count: number | null;
   price_level: number | null;
+  estimated_visit_minutes: number;
+  estimated_cost: number;
   official_url: string | null;
   maps_url: string | null;
   provider_ids: Record<string, string>;
@@ -618,6 +620,32 @@ export const api = {
       retries: 1,
     }),
 
+  /** Search normalized India-focused places around the trip destination. */
+  searchPlaces: (options: {
+    coordinates: GeoPoint;
+    city?: string;
+    query?: string;
+    focus?: string;
+    radius?: number;
+    limit?: number;
+    signal?: AbortSignal;
+  }) => {
+    const params = new URLSearchParams({
+      lat: String(options.coordinates.lat),
+      lng: String(options.coordinates.lng),
+      ...(options.city ? { city: options.city } : {}),
+      ...(options.query ? { q: options.query } : {}),
+      ...(options.focus ? { focus: options.focus } : {}),
+      ...(options.radius ? { radius: String(options.radius) } : {}),
+      ...(options.limit ? { limit: String(options.limit) } : {}),
+    });
+    return request<Place[]>(`/api/search/places?${params.toString()}`, {
+      signal: options.signal,
+      timeoutMs: 30_000,
+      retries: 1,
+    });
+  },
+
   /** Extract a trip request or return the next small set of questions. */
   clarifyPlanner: (data: { prompt: string; answers: PlannerAnswer[] }, signal?: AbortSignal) =>
     request<PlannerClarificationResponse>("/api/planner/clarify", {
@@ -815,6 +843,29 @@ export const api = {
     request<Itinerary>(`/api/trips/${tripId}/plan`, {
       method: "POST",
       body: JSON.stringify({ plan_id: planId }),
+      headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
+    }),
+
+  savePlace: (tripId: string, place: Place) =>
+    request<Itinerary>(`/api/trips/${encodeURIComponent(tripId)}/places`, {
+      method: "POST",
+      body: JSON.stringify({ place }),
+      headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
+    }),
+
+  removeSavedPlace: (tripId: string, placeId: string) =>
+    request<Itinerary>(`/api/trips/${encodeURIComponent(tripId)}/places/${encodeURIComponent(placeId)}`, {
+      method: "DELETE",
+      headers: editHeaders(tripId),
+      onResponse: (response) => saveRevision(tripId, response),
+    }),
+
+  addPlaceToItinerary: (tripId: string, placeId: string, dayNumber: number, place?: Place) =>
+    request<Itinerary>(`/api/trips/${encodeURIComponent(tripId)}/places/${encodeURIComponent(placeId)}/itinerary`, {
+      method: "POST",
+      body: JSON.stringify({ day_number: dayNumber, place }),
       headers: editHeaders(tripId),
       onResponse: (response) => saveRevision(tripId, response),
     }),

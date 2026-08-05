@@ -361,6 +361,8 @@ class Place(BaseModel):
     rating: Optional[float] = Field(None, ge=0, le=5)
     review_count: Optional[int] = Field(None, ge=0)
     price_level: Optional[int] = Field(None, ge=0, le=4)
+    estimated_visit_minutes: int = Field(60, ge=15, le=1_440)
+    estimated_cost: int = Field(0, ge=0, le=1_000_000)
     official_url: Optional[str] = None
     maps_url: Optional[str] = None
     provider_ids: dict[str, str] = Field(default_factory=dict)

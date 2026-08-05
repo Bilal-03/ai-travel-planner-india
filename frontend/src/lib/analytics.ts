@@ -12,6 +12,9 @@ export type ProductEvent =
   | "day_regenerated"
   | "transport_selected"
   | "plan_selected"
+  | "place_saved"
+  | "place_removed"
+  | "place_added"
   | "provider_link_clicked";
 
 export type AnalyticsMetadata = Record<string, string | number | boolean | null | undefined>;
@@ -28,6 +31,9 @@ const EVENTS: ReadonlySet<ProductEvent> = new Set([
   "day_regenerated",
   "transport_selected",
   "plan_selected",
+  "place_saved",
+  "place_removed",
+  "place_added",
   "provider_link_clicked",
 ]);
 
@@ -45,6 +51,8 @@ const METADATA_KEYS = new Set([
   "cost_usd",
   "duration_ms",
   "plan_id",
+  "category",
+  "day_number",
 ]);
 
 function cleanMetadata(metadata: AnalyticsMetadata): Record<string, string | number | boolean | null> {

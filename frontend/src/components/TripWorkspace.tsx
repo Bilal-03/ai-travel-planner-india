@@ -8,6 +8,7 @@ import TransportCard from "@/components/TransportCard";
 import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
 import TripConversation from "@/components/TripConversation";
+import PlaceDiscovery, { SavedPlacesPanel } from "@/components/PlaceDiscovery";
 import { DestinationInspiration, PackingAndPrint } from "@/components/TripEnhancements";
 import {
   api,
@@ -21,8 +22,8 @@ import { track } from "@/lib/analytics";
 
 const TripMap = dynamic(() => import("@/components/TripMap"), { ssr: false });
 
-type WorkspaceTab = "plan" | "overview" | "map" | "budget" | "chat";
-type WorkspaceRightTab = "plan" | "overview";
+type WorkspaceTab = "plan" | "overview" | "map" | "saved" | "budget" | "chat";
+type WorkspaceRightTab = "plan" | "overview" | "saved";
 
 interface TripWorkspaceProps {
   itinerary: Itinerary;
@@ -46,6 +47,7 @@ function WorkspaceTabs({ activeTab, onChange }: { activeTab: WorkspaceTab; onCha
     { id: "plan", label: "Plan", icon: "📅" },
     { id: "overview", label: "Overview", icon: "✦" },
     { id: "map", label: "Map", icon: "🗺️" },
+    { id: "saved", label: "Saved", icon: "🔖" },
     { id: "budget", label: "Budget", icon: "💰" },
     { id: "chat", label: "Chat", icon: "✦" },
   ];
@@ -61,10 +63,11 @@ function WorkspaceTabs({ activeTab, onChange }: { activeTab: WorkspaceTab; onCha
   );
 }
 
-function WorkspaceRightTabs({ activeTab, onChange }: { activeTab: WorkspaceRightTab; onChange: (tab: WorkspaceRightTab) => void }) {
+function WorkspaceRightTabs({ activeTab, onChange, onAddPlace }: { activeTab: WorkspaceRightTab; onChange: (tab: WorkspaceRightTab) => void; onAddPlace: () => void }) {
   const tabs: { id: WorkspaceRightTab; label: string }[] = [
     { id: "overview", label: "Trip overview" },
     { id: "plan", label: "Plan" },
+    { id: "saved", label: "Saved" },
   ];
 
   return (
@@ -82,7 +85,10 @@ function WorkspaceRightTabs({ activeTab, onChange }: { activeTab: WorkspaceRight
           </button>
         ))}
       </div>
-      <span className="hidden text-[10px] font-[family-name:var(--font-space-mono)] uppercase tracking-[0.14em] text-foreground-muted sm:inline">Live workspace</span>
+      <div className="flex items-center gap-2">
+        <span className="hidden text-[10px] font-[family-name:var(--font-space-mono)] uppercase tracking-[0.14em] text-foreground-muted sm:inline">Live workspace</span>
+        <button type="button" onClick={onAddPlace} aria-label="Add a place to itinerary" className="workspace-add-button rounded-lg px-3 py-2 text-xs font-semibold text-white">+ Add</button>
+      </div>
     </nav>
   );
 }
@@ -280,6 +286,7 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
   const [refinementError, setRefinementError] = useState<string | null>(null);
   const [previousItinerary, setPreviousItinerary] = useState<Itinerary | null>(null);
   const [isPlanSelecting, setIsPlanSelecting] = useState(false);
+  const [isPlaceDiscoveryOpen, setIsPlaceDiscoveryOpen] = useState(false);
 
   const refine = async (instruction: string) => {
     setIsEditing(true);
@@ -350,12 +357,14 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
           <div className="workspace-conversation-column min-h-0">{conversation}</div>
           <section className="workspace-right-pane" aria-label="Trip map and itinerary">
             <WorkspaceMapPane itinerary={itinerary} />
-            <WorkspaceRightTabs activeTab={rightTab} onChange={setRightTab} />
+            <WorkspaceRightTabs activeTab={rightTab} onChange={setRightTab} onAddPlace={() => setIsPlaceDiscoveryOpen(true)} />
             <div className="workspace-right-scroll">
               {rightTab === "plan" ? (
                 <PlanContent itinerary={itinerary} onUpdate={onUpdate} onTransportSelect={onTransportSelect} onPlanSelect={selectPlan} isPlanSelecting={isPlanSelecting} onActivityEdit={refine} isEditing={isEditing} />
-              ) : (
+              ) : rightTab === "overview" ? (
                 <OverviewRail itinerary={itinerary} />
+              ) : (
+                <SavedPlacesPanel itinerary={itinerary} onOpenDiscovery={() => setIsPlaceDiscoveryOpen(true)} onUpdate={onUpdate} />
               )}
             </div>
           </section>
@@ -365,9 +374,11 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
           {activeTab === "plan" && <PlanContent itinerary={itinerary} onUpdate={onUpdate} onTransportSelect={onTransportSelect} onPlanSelect={selectPlan} isPlanSelecting={isPlanSelecting} onActivityEdit={refine} isEditing={isEditing} />}
           {activeTab === "overview" && <OverviewRail itinerary={itinerary} />}
           {activeTab === "map" && <div className="workspace-mobile-map rounded-xl border border-glass-border bg-glass-bg p-1"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div>}
+          {activeTab === "saved" && <SavedPlacesPanel itinerary={itinerary} onOpenDiscovery={() => setIsPlaceDiscoveryOpen(true)} onUpdate={onUpdate} />}
           {activeTab === "budget" && <div className="space-y-4"><BudgetBreakdown budget={itinerary.budget} totalBudget={itinerary.budget.total_estimated + itinerary.budget.remaining} />{itinerary.selected_transport && <TransportCard option={itinerary.selected_transport} travelDate={itinerary.start_date} isSelected />}</div>}
           {activeTab === "chat" && conversation}
         </div>
+        {isPlaceDiscoveryOpen && <PlaceDiscovery itinerary={itinerary} isOpen onClose={() => setIsPlaceDiscoveryOpen(false)} onUpdate={onUpdate} />}
       </div>
     </section>
   );
