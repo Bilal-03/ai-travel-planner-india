@@ -637,6 +637,87 @@ input[type="range"]::-moz-range-thumb {
   }
 }
 
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body {
+    background: #fff !important;
+    color: #111827 !important;
+  }
+
+  .print-hidden,
+  .workspace-conversation-column,
+  .workspace-map-frame,
+  .workspace-right-tabs,
+  .workspace-tabs,
+  .workspace-mobile-surface {
+    display: none !important;
+  }
+
+  .workspace-page {
+    background: #fff !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+  }
+
+  .workspace-page .workspace-topbar {
+    background: #fff !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: #111827 !important;
+    padding: 0 0 0.8rem !important;
+  }
+
+  .workspace-page .workspace-brand-mark {
+    background: #111827 !important;
+    color: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .workspace-page .workspace-shell {
+    display: block !important;
+    height: auto !important;
+    margin-top: 0 !important;
+    min-height: 0 !important;
+  }
+
+  .workspace-page .workspace-right-pane {
+    background: #fff !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  .workspace-page .workspace-right-scroll {
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .workspace-page .workspace-panel,
+  .workspace-page .glass {
+    background: #fff !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .workspace-page .gradient-text {
+    background: none !important;
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+  }
+
+  .workspace-page a {
+    color: #111827 !important;
+  }
+}
+
 @media (min-width: 640px) and (max-width: 1023px) {
   .workspace-topbar {
     padding-inline: 1.15rem;

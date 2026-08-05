@@ -54,7 +54,7 @@ function WorkspaceTabs({ activeTab, onChange }: { activeTab: WorkspaceTab; onCha
   ];
 
   return (
-    <nav className="workspace-tabs no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-glass-border bg-glass-bg p-1 lg:hidden" aria-label="Trip workspace sections">
+    <nav className="workspace-tabs print-hidden no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-glass-border bg-glass-bg p-1 lg:hidden" aria-label="Trip workspace sections">
       {tabs.map((tab) => (
         <button data-testid={`workspace-mobile-tab-${tab.id}`} key={tab.id} type="button" onClick={() => onChange(tab.id)} aria-current={activeTab === tab.id ? "page" : undefined} className={`flex min-w-[78px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-semibold transition ${activeTab === tab.id ? "bg-primary text-white shadow-md" : "text-foreground-muted hover:bg-glass-highlight hover:text-foreground"}`}>
           <span aria-hidden="true">{tab.icon}</span>{tab.label}
@@ -72,7 +72,7 @@ function WorkspaceRightTabs({ activeTab, onChange, onAddPlace }: { activeTab: Wo
   ];
 
   return (
-    <nav className="workspace-right-tabs" aria-label="Itinerary workspace view">
+    <nav className="workspace-right-tabs print-hidden" aria-label="Itinerary workspace view">
       <div className="flex items-center gap-1">
         {tabs.map((tab) => (
           <button
@@ -229,7 +229,7 @@ function OverviewRail({ itinerary }: { itinerary: Itinerary }) {
 
 function WorkspaceMapPane({ itinerary }: { itinerary: Itinerary }) {
   return (
-    <div className="workspace-map-frame">
+    <div className="workspace-map-frame print-hidden">
       <div className="workspace-map-toolbar">
         <div className="min-w-0">
           <p className="font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-[0.14em] text-foreground-muted">Route at a glance</p>
@@ -317,7 +317,7 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
         <WorkspaceTabs activeTab={activeTab} onChange={setActiveTab} />
 
         <div data-testid="workspace-shell" className="workspace-shell mt-4 hidden lg:grid">
-          <div className="workspace-conversation-column min-h-0">{conversation}</div>
+          <div className="workspace-conversation-column print-hidden min-h-0">{conversation}</div>
           <section className="workspace-right-pane" aria-label="Trip map and itinerary">
             <WorkspaceMapPane itinerary={itinerary} />
             <WorkspaceRightTabs activeTab={rightTab} onChange={setRightTab} onAddPlace={() => setIsPlaceDiscoveryOpen(true)} />
@@ -333,7 +333,7 @@ export default function TripWorkspace({ itinerary, onUpdate, onNewTrip, onTransp
           </section>
         </div>
 
-        <div className="workspace-mobile-surface mt-4 lg:hidden">
+        <div className="workspace-mobile-surface print-hidden mt-4 lg:hidden">
           {activeTab === "plan" && <PlanContent itinerary={itinerary} onUpdate={onUpdate} onTransportSelect={onTransportSelect} onPlanSelect={selectPlan} isPlanSelecting={isPlanSelecting} onActivityEdit={refine} isEditing={isEditing} />}
           {activeTab === "overview" && <OverviewRail itinerary={itinerary} />}
           {activeTab === "map" && <div className="workspace-mobile-map rounded-xl border border-glass-border bg-glass-bg p-1"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div>}

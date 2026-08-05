@@ -73,6 +73,9 @@ function itinerary() {
 
 test("plans a trip and opens a read-only shared itinerary", async ({ page }) => {
   const trip = itinerary();
+  await page.addInitScript(() => {
+    window.print = () => { document.body.dataset.printRequested = "true"; };
+  });
   const place = {
     id: "place-city-palace",
     name: "City Palace",
@@ -233,5 +236,16 @@ test("plans a trip and opens a read-only shared itinerary", async ({ page }) => 
   await page.goto("/trip/e2e-trip-123");
   await expect(page.getByText("Shared Trip")).toBeVisible();
   await expect(page.getByText("Shared itineraries are read-only.")).toBeVisible();
+  await expect(page.getByTestId("print-trip-button")).toBeVisible();
+  await page.getByTestId("print-trip-button").click();
+  await expect(page.locator("body")).toHaveAttribute("data-print-requested", "true");
   await expect(page.getByText("Refine itinerary")).toHaveCount(0);
+
+  await page.unroute("**/api/trips/e2e-trip-123");
+  await page.route("**/api/trips/e2e-trip-123", (route) => route.abort());
+  await page.reload();
+  await expect(page.getByTestId("offline-essentials")).toBeVisible();
+  await expect(page.getByTestId("connectivity-indicator")).toContainText("Viewing a saved trip snapshot");
+  await expect(page.getByTestId("offline-essentials").getByText("Trip commitments")).toBeVisible();
+  await expect(page.getByTestId("offline-essentials")).toContainText("Indian Railways fare estimate");
 });

@@ -12,7 +12,7 @@ import BudgetBreakdown from "@/components/BudgetBreakdown";
 import ShareTrip from "@/components/ShareTrip";
 import ConnectivityIndicator from "@/components/ConnectivityIndicator";
 import OfflineEssentials from "@/components/OfflineEssentials";
-import { DestinationInspiration } from "@/components/TripEnhancements";
+import { DestinationInspiration, PrintTripButton } from "@/components/TripEnhancements";
 import {
   api,
   Itinerary,
@@ -32,11 +32,13 @@ export default function TripDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offlineSnapshot, setOfflineSnapshot] = useState<OfflineTripSnapshot | null>(null);
+  const [usingOfflineSnapshot, setUsingOfflineSnapshot] = useState(false);
 
   useEffect(() => {
     async function loadTrip() {
       const shareToken = new URLSearchParams(window.location.search).get("share");
       setShareToken(tripId, shareToken);
+      setUsingOfflineSnapshot(false);
       try {
         const data = await api.getTrip(tripId);
         setItinerary(data);
@@ -47,6 +49,7 @@ export default function TripDetailPage() {
         if (cached?.kind === "single") {
           setItinerary(cached.trip as Itinerary);
           setOfflineSnapshot(cached);
+          setUsingOfflineSnapshot(true);
           setError(null);
         } else {
           setError("Trip not found or has expired.");
@@ -98,7 +101,7 @@ export default function TripDetailPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <ConnectivityIndicator savedAt={offlineSnapshot?.savedAt} />
+      <ConnectivityIndicator savedAt={offlineSnapshot?.savedAt} usingSnapshot={usingOfflineSnapshot} />
       {/* Header */}
       <div className="gradient-hero px-4 py-8">
         <div className="max-w-6xl mx-auto">
@@ -189,12 +192,12 @@ export default function TripDetailPage() {
           <section className="mb-8"><h2 className="mb-3 text-xl font-bold text-foreground">Alternative transport options</h2><p className="mb-3 text-sm text-foreground-muted">Shared itineraries are read-only. Create your own plan to choose another option.</p><div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{itinerary.transport_options.filter((option) => option.provider !== itinerary.selected_transport?.provider || option.code !== itinerary.selected_transport?.code).map((option, index) => <TransportCard key={index} option={option} travelDate={itinerary.start_date} tripId={itinerary.id} />)}</div></section>
         )}
 
-        <details className="glass mb-8 overflow-hidden rounded-xl"><summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-foreground">🗺️ View interactive map</summary><div className="border-t border-glass-border"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div></details>
+        <details className="glass print:hidden mb-8 overflow-hidden rounded-xl"><summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-foreground">🗺️ View interactive map</summary><div className="border-t border-glass-border"><TripMap center={itinerary.destination.coordinates} dayPlans={itinerary.day_plans} routeSegments={itinerary.route_segments} destination={itinerary.destination.name} /></div></details>
 
-        <section className="mb-8 print:hidden"><h2 className="mb-3 text-xl font-bold text-foreground">Secondary tools</h2><div className="glass flex items-center justify-between rounded-xl p-4"><div><h3 className="font-semibold text-foreground">🔗 Share this trip</h3><p className="text-xs text-foreground-muted">Shared itineraries are read-only. Your group can safely browse the plan.</p></div><ShareTrip tripId={itinerary.id} /></div></section>
+        <section className="mb-8 print:hidden"><h2 className="mb-3 text-xl font-bold text-foreground">Secondary tools</h2><div className="glass flex flex-col gap-4 rounded-xl p-4 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-semibold text-foreground">🔗 Share or print this trip</h3><p className="text-xs text-foreground-muted">Shared itineraries are read-only. Print a copy before you leave, then verify live details with providers.</p></div><div className="flex flex-wrap gap-2"><PrintTripButton itinerary={itinerary} /><ShareTrip tripId={itinerary.id} /></div></div></section>
 
         {/* CTA */}
-        <div className="text-center mt-12 mb-8">
+        <div className="text-center mt-12 mb-8 print:hidden">
           <Link
             href="/"
             className="warm-button inline-block px-8 py-3 text-white rounded-xl font-semibold hover:brightness-110 transition-all duration-300"

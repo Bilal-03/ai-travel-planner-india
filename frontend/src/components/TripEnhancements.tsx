@@ -66,6 +66,19 @@ export function DestinationInspiration({ itinerary }: Pick<TripUpdateProps, "iti
   );
 }
 
+export function PrintTripButton({ itinerary, className = "" }: { itinerary: Itinerary; className?: string }) {
+  return (
+    <button
+      type="button"
+      data-testid="print-trip-button"
+      onClick={() => { track("trip_exported", { tripId: itinerary.id, kind: "single", metadata: { source: "print" } }); window.print(); }}
+      className={`inline-flex items-center justify-center rounded-xl border border-glass-border px-3 py-2 text-sm font-medium text-foreground hover:bg-glass-highlight print:hidden ${className}`}
+    >
+      🖨️ Print or save as PDF
+    </button>
+  );
+}
+
 export function PackingAndPrint({ itinerary, onUpdate }: TripUpdateProps) {
   const [isPacking, setIsPacking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +103,7 @@ export function PackingAndPrint({ itinerary, onUpdate }: TripUpdateProps) {
         <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold text-foreground">🧳 Packing list</h3><p className="text-xs text-foreground-muted">Built from your dates, weather, and planning context.</p></div><button onClick={createPackingList} disabled={isPacking} className="rounded-lg border border-primary/50 px-3 py-2 text-sm font-medium text-primary disabled:opacity-50">{isPacking ? "Creating…" : itinerary.packing_list.length ? "Refresh" : "Generate"}</button></div>
         {itinerary.packing_list.length > 0 && <ul className="mt-3 space-y-2">{itinerary.packing_list.map((item) => <li key={`${item.category}-${item.item}`} className="text-sm text-foreground-secondary"><span className="mr-2 text-accent">✓</span><strong className="text-foreground">{item.item}</strong><span className="text-foreground-muted"> — {item.reason}</span></li>)}</ul>}
       </section>
-      <button onClick={() => { track("trip_exported", { tripId: itinerary.id, kind: "single", metadata: { source: "print" } }); window.print(); }} className="w-full rounded-xl border border-glass-border py-3 text-sm font-medium text-foreground hover:bg-glass-highlight">🖨️ Print or save as PDF</button>
+      <PrintTripButton itinerary={itinerary} className="w-full" />
       {error && <p className="text-sm text-error">{error}</p>}
     </div>
   );

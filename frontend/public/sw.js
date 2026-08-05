@@ -1,5 +1,5 @@
 /* YatraAI offline shell. Map tiles are deliberately never cached. */
-const VERSION = "yatraai-phase7-v1";
+const VERSION = "yatraai-phase7-v2";
 const SHELL_CACHE = `${VERSION}-shell`;
 const SNAPSHOT_CACHE = `${VERSION}-trip-snapshots`;
 const TILE_HOSTS = ["tile.openstreetmap.org", "maps.googleapis.com", "api.mapbox.com", "tiles.mapbox.com"];
@@ -24,6 +24,10 @@ function isTripSnapshot(url) {
   return url.pathname.startsWith("/api/trips/");
 }
 
+function isTokenBearingRequest(request) {
+  return request.headers.has("X-Trip-Share-Token") || request.headers.has("X-Trip-Edit-Token");
+}
+
 async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   try {
@@ -41,7 +45,7 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (isMapTile(url)) return;
-  if (url.origin === self.location.origin && isTripSnapshot(url)) {
+  if (url.origin === self.location.origin && isTripSnapshot(url) && !isTokenBearingRequest(request)) {
     event.respondWith(networkFirst(request, SNAPSHOT_CACHE));
     return;
   }

@@ -11,6 +11,10 @@ export interface OfflineTripSnapshot {
   essentials: {
     addresses: string[];
     emergencyNotes: string[];
+    commitments?: {
+      transport: string | null;
+      stays: string[];
+    };
   };
 }
 
@@ -28,8 +32,32 @@ function addressesForTrip(trip: OfflineTrip): string[] {
   ];
 }
 
+function currency(amount: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+export function commitmentsForTrip(trip: OfflineTrip): { transport: string | null; stays: string[] } {
+  const transport = trip.selected_transport
+    ? `${trip.selected_transport.provider}${trip.selected_transport.code ? ` · ${trip.selected_transport.code}` : ""} · ${trip.origin.name} → ${trip.destination.name}`
+    : null;
+  const stays = (trip.items || [])
+    .filter((item) => item.item_type === "stay")
+    .map((item) => {
+      const metadata = item.metadata || {};
+      const area = typeof metadata.area === "string" ? metadata.area : "Destination stay";
+      const total = typeof metadata.total_price === "number" ? ` · ${currency(metadata.total_price)}` : "";
+      return `${item.title} · ${area}${total}`;
+    });
+  return { transport, stays };
+}
+
 export function saveOfflineTrip(trip: OfflineTrip, kind: OfflineTripKind): void {
   if (typeof window === "undefined" || !trip.id) return;
+  const commitments = commitmentsForTrip(trip);
   const snapshot: OfflineTripSnapshot = {
     tripId: trip.id,
     kind,
@@ -42,6 +70,7 @@ export function saveOfflineTrip(trip: OfflineTrip, kind: OfflineTripKind): void 
         "Offline details may be stale; verify live transport and venue information when connected.",
         "Keep your government photo ID and booking references accessible while travelling.",
       ],
+      commitments,
     },
   };
   try {
