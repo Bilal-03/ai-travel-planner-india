@@ -10,23 +10,16 @@ import {
 } from "@/lib/api";
 
 interface QuickPlannerProps {
+  prompt: string;
   onGenerate: (request: NonNullable<PlannerClarificationResponse["trip_request"]>) => void;
   isLoading: boolean;
 }
-
-const EXAMPLE_PROMPTS = [
-  "Plan five days from Delhi to Manali for two people under ₹30,000.",
-  "Create a relaxed Goa trip for a couple in November with a ₹40,000 budget.",
-  "Plan a three-day heritage trip from Mumbai to Jaipur for four members.",
-  "Suggest a weekend road trip from Bengaluru to Coorg for three people.",
-];
 
 function dateLabel(value: string | null): string {
   return value ? new Date(`${value}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Not set";
 }
 
-export default function QuickPlanner({ onGenerate, isLoading }: QuickPlannerProps) {
-  const [prompt, setPrompt] = useState("");
+export default function QuickPlanner({ prompt, onGenerate, isLoading }: QuickPlannerProps) {
   const [answers, setAnswers] = useState<PlannerAnswer[]>([]);
   const [response, setResponse] = useState<PlannerClarificationResponse | null>(null);
   const [customAnswer, setCustomAnswer] = useState("");
@@ -34,14 +27,14 @@ export default function QuickPlanner({ onGenerate, isLoading }: QuickPlannerProp
   const [customEnd, setCustomEnd] = useState("");
   const [isAsking, setIsAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [started, setStarted] = useState(false);
 
   const activeQuestion = useMemo(() => {
     if (!response) return null;
     return response.questions.find((question) => !answers.some((answer) => answer.question_id === question.id)) || null;
   }, [answers, response]);
 
-  const askPlanner = async (nextAnswers: PlannerAnswer[], event?: FormEvent) => {
-    event?.preventDefault();
+  const askPlanner = async (nextAnswers: PlannerAnswer[]) => {
     if (prompt.trim().length < 3 || isAsking) return;
     setIsAsking(true);
     setError(null);
@@ -60,11 +53,11 @@ export default function QuickPlanner({ onGenerate, isLoading }: QuickPlannerProp
     }
   };
 
-  const submitPrompt = (event: FormEvent) => {
-    setAnswers([]);
-    setResponse(null);
-    void askPlanner([], event);
-  };
+  // Auto-start the clarification flow on mount
+  if (!started && prompt.trim().length >= 3) {
+    setStarted(true);
+    void askPlanner([]);
+  }
 
   const submitAnswer = (question: ClarificationQuestion, answer: string, optionId?: string) => {
     if (!answer.trim()) return;
@@ -87,111 +80,139 @@ export default function QuickPlanner({ onGenerate, isLoading }: QuickPlannerProp
   const brief = response?.brief;
   const preferences = brief?.preferences || { experiences: [], pace: null };
 
-  return (
-    <section className="mx-auto mb-8 max-w-[1180px] rounded-[10px] border border-marigold/30 bg-[linear-gradient(120deg,rgba(196,82,43,0.18),rgba(28,128,121,0.12))] p-5 shadow-[0_24px_60px_-36px_rgba(242,169,59,0.55)] sm:p-7" aria-labelledby="quick-plan-heading">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.72fr)] lg:items-start">
-        <div>
-          <div className="flex items-center gap-2 font-[family-name:var(--font-space-mono)] text-[11px] uppercase tracking-[0.16em] text-marigold">
-            <span className="h-2 w-2 rounded-full bg-marigold" aria-hidden="true" /> Quick planning
-          </div>
-          <h2 id="quick-plan-heading" className="mt-2 font-[family-name:var(--font-teko)] text-[clamp(2rem,4vw,3rem)] font-semibold uppercase leading-none text-foreground">
-            Tell us once. We&apos;ll ask what&apos;s missing.
-          </h2>
-          <p className="mt-2 max-w-[58ch] text-sm font-medium text-foreground-secondary">
-            Describe the trip naturally. Gemini turns it into a plan request and asks only the few details needed before generating your itinerary.
-          </p>
-          <form onSubmit={submitPrompt} className="mt-5 flex flex-col gap-2 sm:flex-row">
-            <label htmlFor="quick-plan-prompt" className="sr-only">Describe your trip</label>
-            <input
-              id="quick-plan-prompt"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="e.g. Plan five days from Delhi to Goa under ₹30,000"
-              className="min-w-0 flex-1 rounded-[3px] border border-glass-border bg-black/25 px-4 py-3 text-sm font-medium text-foreground outline-none transition-colors placeholder:text-foreground-muted focus:border-marigold focus:ring-1 focus:ring-marigold/40"
-              maxLength={2000}
-            />
-            <button type="submit" disabled={prompt.trim().length < 3 || isAsking || isLoading} className="rounded-[3px] bg-marigold px-5 py-3 font-[family-name:var(--font-space-mono)] text-xs font-bold uppercase tracking-wide text-[#24160a] transition hover:shadow-[0_6px_24px_rgba(242,169,59,0.3)] disabled:cursor-not-allowed disabled:opacity-50">
-              {isAsking ? "Thinking…" : "Plan this trip"}
-            </button>
-          </form>
-          <div className="mt-3 flex flex-wrap gap-2" aria-label="Suggested prompts">
-            {EXAMPLE_PROMPTS.map((example) => (
-              <button key={example} type="button" onClick={() => setPrompt(example)} className="rounded-full border border-glass-border bg-black/10 px-3 py-1.5 text-left text-[11px] text-foreground-secondary transition hover:border-marigold hover:text-foreground">
-                {example}
-              </button>
-            ))}
-          </div>
-          {error && <p className="mt-4 rounded border border-error/30 bg-error/10 p-3 text-xs text-error" role="alert">{error}</p>}
-        </div>
+  if (!response && !isAsking && !error) {
+    return (
+      <div className="clarification-section" style={{ textAlign: "center" }}>
+        <div style={{ fontSize: "1.5rem", marginBottom: "0.75rem" }}>✍️</div>
+        <p style={{ fontWeight: 600, color: "var(--foreground)" }}>Understanding your trip…</p>
+        <p style={{ fontSize: "0.85rem", color: "var(--foreground-muted)", marginTop: "0.25rem" }}>Gemini is parsing your request</p>
+      </div>
+    );
+  }
 
-        <div className="min-h-[210px] rounded-[6px] border border-glass-border bg-background/45 p-4" aria-live="polite">
-          {!response && (
-            <div className="flex h-full flex-col justify-center">
-              <span className="text-2xl" aria-hidden="true">✍️</span>
-              <p className="mt-2 text-sm font-semibold text-foreground">Your trip conversation will appear here.</p>
-              <p className="mt-1 text-xs text-foreground-muted">The planner will turn your sentence into an itinerary.</p>
+  return (
+    <div className="clarification-section" aria-live="polite">
+      {error && <p style={{ color: "var(--error)", fontSize: "0.85rem", marginBottom: "1rem", padding: "0.75rem", background: "rgba(239,68,68,0.06)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.15)" }} role="alert">{error}</p>}
+
+      {response && brief && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "1rem" }}>
+            <span style={{ fontSize: "0.72rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--foreground-muted)" }}>Trip brief</span>
+            <span style={{
+              borderRadius: 20,
+              padding: "0.25rem 0.6rem",
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              background: response.status === "ready" ? "rgba(34,197,94,0.1)" : "rgba(232,144,31,0.1)",
+              color: response.status === "ready" ? "var(--success)" : "var(--marigold)",
+            }}>
+              {response.status === "ready" ? "Generating" : "One more step"}
+            </span>
+          </div>
+
+          <dl style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem 1.5rem", fontSize: "0.85rem" }}>
+            <div><dt style={{ color: "var(--foreground-muted)", fontSize: "0.78rem" }}>Route</dt><dd style={{ fontWeight: 600, color: "var(--foreground)", marginTop: "0.15rem" }}>{brief.origin || "Not set"} → {brief.destination || "Not set"}</dd></div>
+            <div><dt style={{ color: "var(--foreground-muted)", fontSize: "0.78rem" }}>Dates</dt><dd style={{ fontWeight: 600, color: "var(--foreground)", marginTop: "0.15rem" }}>{dateLabel(brief.start_date)} – {dateLabel(brief.end_date)}</dd></div>
+            <div><dt style={{ color: "var(--foreground-muted)", fontSize: "0.78rem" }}>Members</dt><dd style={{ fontWeight: 600, color: "var(--foreground)", marginTop: "0.15rem" }}>{brief.members || "Not set"}</dd></div>
+            <div><dt style={{ color: "var(--foreground-muted)", fontSize: "0.78rem" }}>Budget</dt><dd style={{ fontWeight: 600, color: "var(--foreground)", marginTop: "0.15rem" }}>{brief.budget ? `₹${brief.budget.toLocaleString("en-IN")}` : "Not set"}</dd></div>
+          </dl>
+
+          {(preferences.experiences.length > 0 || preferences.pace) && (
+            <div style={{ marginTop: "1rem", display: "flex", flexWrap: "wrap", gap: "0.4rem" }} aria-label="Trip preferences">
+              {preferences.experiences.map((exp) => <span key={exp} style={{ padding: "0.2rem 0.5rem", borderRadius: 16, background: "rgba(28,128,121,0.08)", color: "var(--teal-india)", fontSize: "0.72rem", fontWeight: 600 }}>{exp}</span>)}
+              {preferences.pace && <span style={{ padding: "0.2rem 0.5rem", borderRadius: 16, background: "rgba(232,144,31,0.08)", color: "var(--marigold)", fontSize: "0.72rem", fontWeight: 600, textTransform: "capitalize" }}>{preferences.pace} pace</span>}
             </div>
           )}
-          {response && brief && (
-            <>
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-[family-name:var(--font-space-mono)] text-[10px] uppercase tracking-[0.14em] text-foreground-muted">Trip brief</span>
-                <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${response.status === "ready" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
-                  {response.status === "ready" ? "Generating" : "One more step"}
-                </span>
-              </div>
-              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
-                <div><dt className="text-foreground-muted">Route</dt><dd className="mt-0.5 font-semibold text-foreground">{brief.origin || "Not set"} → {brief.destination || "Not set"}</dd></div>
-                <div><dt className="text-foreground-muted">Dates</dt><dd className="mt-0.5 font-semibold text-foreground">{dateLabel(brief.start_date)} – {dateLabel(brief.end_date)}</dd></div>
-                <div><dt className="text-foreground-muted">Members</dt><dd className="mt-0.5 font-semibold text-foreground">{brief.members || "Not set"}</dd></div>
-                <div><dt className="text-foreground-muted">Budget</dt><dd className="mt-0.5 font-semibold text-foreground">{brief.budget ? `₹${brief.budget.toLocaleString("en-IN")}` : "Not set"}</dd></div>
-              </dl>
-              {(preferences.experiences.length > 0 || preferences.pace) && (
-                <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Trip preferences">
-                  {preferences.experiences.map((experience) => <span key={experience} className="rounded-full bg-teal-india/15 px-2 py-1 text-[10px] font-semibold text-teal-india">{experience}</span>)}
-                  {preferences.pace && <span className="rounded-full bg-marigold/15 px-2 py-1 text-[10px] font-semibold capitalize text-marigold">{preferences.pace} pace</span>}
-                </div>
-              )}
-              {activeQuestion && (
-                <div className="mt-5 border-t border-glass-border pt-4">
-                  <p className="text-sm font-semibold text-foreground">{activeQuestion.prompt}</p>
-                  {activeQuestion.input_type === "choice" && (
-                    <>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        {activeQuestion.options.map((option, index) => (
-                          <button key={option.id} type="button" disabled={isAsking} onClick={() => submitAnswer(activeQuestion, option.label, option.id)} className="rounded border border-glass-border bg-black/10 px-3 py-2 text-left text-xs text-foreground-secondary transition hover:border-marigold hover:text-foreground disabled:opacity-50">
-                            <span className="mr-2 text-marigold">{index + 1}.</span>{option.label}
-                          </button>
-                        ))}
-                      </div>
-                      {activeQuestion.allow_custom && (
-                        <form onSubmit={submitCustomAnswer} className="mt-3 flex gap-2">
-                          <input required value={customAnswer} onChange={(event) => setCustomAnswer(event.target.value)} placeholder="Type something else…" className="min-w-0 flex-1 rounded border border-glass-border bg-black/20 px-3 py-2 text-xs text-foreground" />
-                          <button type="submit" disabled={isAsking} className="rounded border border-marigold/60 px-3 py-2 text-xs font-bold text-marigold disabled:opacity-50">Use</button>
-                        </form>
-                      )}
-                    </>
-                  )}
-                  {activeQuestion.input_type !== "choice" && (
-                    <form onSubmit={submitCustomAnswer} className="mt-3 space-y-2">
-                      {activeQuestion.input_type === "date_range" ? (
-                        <div className="grid grid-cols-2 gap-2">
-                          <input required type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} className="rounded border border-glass-border bg-black/20 px-2 py-2 text-xs text-foreground" />
-                          <input required type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} className="rounded border border-glass-border bg-black/20 px-2 py-2 text-xs text-foreground" />
-                        </div>
-                      ) : (
-                        <input required type={activeQuestion.input_type === "number" ? "number" : "text"} value={customAnswer} onChange={(event) => setCustomAnswer(event.target.value)} className="w-full rounded border border-glass-border bg-black/20 px-3 py-2 text-xs text-foreground" />
-                      )}
-                      <button type="submit" disabled={isAsking} className="rounded bg-marigold px-3 py-2 text-xs font-bold text-[#24160a] disabled:opacity-50">Continue</button>
+
+          {activeQuestion && (
+            <div style={{ marginTop: "1.5rem", paddingTop: "1.25rem", borderTop: "1px solid var(--glass-border)" }}>
+              <p style={{ fontWeight: 600, fontSize: "0.95rem", color: "var(--foreground)" }}>{activeQuestion.prompt}</p>
+
+              {activeQuestion.input_type === "choice" && (
+                <>
+                  <div style={{ display: "grid", gap: "0.5rem", gridTemplateColumns: "1fr 1fr", marginTop: "0.75rem" }}>
+                    {activeQuestion.options.map((option, index) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        disabled={isAsking}
+                        onClick={() => submitAnswer(activeQuestion, option.label, option.id)}
+                        style={{
+                          padding: "0.65rem 0.75rem",
+                          borderRadius: 8,
+                          border: "1px solid var(--glass-border)",
+                          background: "var(--background)",
+                          textAlign: "left",
+                          fontSize: "0.82rem",
+                          color: "var(--foreground-secondary)",
+                          cursor: "pointer",
+                          transition: "border-color 0.18s, color 0.18s",
+                        }}
+                      >
+                        <span style={{ color: "var(--marigold)", marginRight: "0.4rem" }}>{index + 1}.</span>
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  {activeQuestion.allow_custom && (
+                    <form onSubmit={submitCustomAnswer} style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem" }}>
+                      <input
+                        required
+                        value={customAnswer}
+                        onChange={(e) => setCustomAnswer(e.target.value)}
+                        placeholder="Type something else…"
+                        style={{ flex: 1, padding: "0.55rem 0.75rem", borderRadius: 8, border: "1px solid var(--glass-border)", background: "var(--background)", fontSize: "0.82rem", color: "var(--foreground)", outline: "none" }}
+                      />
+                      <button
+                        type="submit"
+                        disabled={isAsking}
+                        style={{ padding: "0.55rem 0.75rem", borderRadius: 8, border: "1px solid rgba(232,144,31,0.4)", background: "transparent", color: "var(--marigold)", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
+                      >
+                        Use
+                      </button>
                     </form>
                   )}
-                </div>
+                </>
               )}
-              {!activeQuestion && response.status === "questions" && <p className="mt-4 text-xs text-warning">I need one more detail. Try answering the question again or add it to your prompt.</p>}
-            </>
+
+              {activeQuestion.input_type !== "choice" && (
+                <form onSubmit={submitCustomAnswer} style={{ marginTop: "0.75rem" }}>
+                  {activeQuestion.input_type === "date_range" ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                      <input required type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} style={{ padding: "0.55rem", borderRadius: 8, border: "1px solid var(--glass-border)", background: "var(--background)", fontSize: "0.82rem", color: "var(--foreground)" }} />
+                      <input required type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} style={{ padding: "0.55rem", borderRadius: 8, border: "1px solid var(--glass-border)", background: "var(--background)", fontSize: "0.82rem", color: "var(--foreground)" }} />
+                    </div>
+                  ) : (
+                    <input
+                      required
+                      type={activeQuestion.input_type === "number" ? "number" : "text"}
+                      value={customAnswer}
+                      onChange={(e) => setCustomAnswer(e.target.value)}
+                      style={{ width: "100%", padding: "0.55rem 0.75rem", borderRadius: 8, border: "1px solid var(--glass-border)", background: "var(--background)", fontSize: "0.82rem", color: "var(--foreground)", outline: "none" }}
+                    />
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isAsking}
+                    className="hero-search-button"
+                    style={{ marginTop: "0.75rem", padding: "0.6rem 1.2rem", fontSize: "0.85rem" }}
+                  >
+                    Continue
+                  </button>
+                </form>
+              )}
+            </div>
           )}
-        </div>
-      </div>
-    </section>
+
+          {!activeQuestion && response.status === "questions" && (
+            <p style={{ marginTop: "1rem", fontSize: "0.82rem", color: "var(--warning)" }}>
+              I need one more detail. Try answering the question again or restart with a more detailed prompt.
+            </p>
+          )}
+        </>
+      )}
+    </div>
   );
 }

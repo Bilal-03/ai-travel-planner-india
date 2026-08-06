@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Manrope, Outfit, Teko, Space_Mono } from "next/font/google";
+import { Manrope, Outfit, Playfair_Display } from "next/font/google";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import "./globals.css";
 
@@ -15,22 +15,10 @@ const outfit = Outfit({
   display: "swap",
 });
 
-// Used by the homepage: condensed display face for the hero + departure
-// board (Teko is designed by an Indian type foundry — ties the headline
-// treatment back to railway signage rather than a generic SaaS look).
-const teko = Teko({
-  variable: "--font-teko",
+const playfair = Playfair_Display({
+  variable: "--font-playfair",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  display: "swap",
-});
-
-// Used for ticket/board data — fares, codes, labels — anywhere the copy
-// wants to read like a boarding pass rather than body prose.
-const spaceMono = Space_Mono({
-  variable: "--font-space-mono",
-  subsets: ["latin"],
-  weight: ["400", "700"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -62,26 +50,15 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${manrope.variable} ${outfit.variable} ${teko.variable} ${spaceMono.variable}`}
+      className={`${manrope.variable} ${outfit.variable} ${playfair.variable}`}
     >
       <head>
-        <meta name="color-scheme" content="dark" />
+        <meta name="color-scheme" content="light" />
         <link
           rel="stylesheet"
           href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
           crossOrigin=""
-        />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `{
-              const theme = localStorage.getItem("theme");
-              if (theme === "light") {
-                document.documentElement.setAttribute("data-theme", "light");
-                document.querySelector('meta[name="color-scheme"]').content = "light";
-              }
-            }`,
-          }}
         />
       </head>
       <body className="min-h-screen bg-background text-foreground antialiased">

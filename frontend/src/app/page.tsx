@@ -8,6 +8,9 @@ import Footer from "@/components/Footer";
 import QuickPlanner from "@/components/QuickPlanner";
 import FeaturesRail from "@/components/FeaturesRail";
 import DestinationPostcards from "@/components/DestinationPostcards";
+import SocialProofStrip from "@/components/SocialProofStrip";
+import SampleItineraries from "@/components/SampleItineraries";
+import FinalCTA from "@/components/FinalCTA";
 import LoadingState from "@/components/LoadingState";
 import TripWorkspace from "@/components/TripWorkspace";
 import {
@@ -80,11 +83,13 @@ export default function Home() {
   const [lastRequest, setLastRequest] = useState<TripRequest | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus | null>(null);
   const [researchEvents, setResearchEvents] = useState<ResearchEvent[]>([]);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const stopJobEventsRef = useRef<(() => void) | null>(null);
   const activeJobIdRef = useRef<string | null>(null);
   const resumeStartedRef = useRef(false);
   const generationStartedAtRef = useRef<number | null>(null);
+  const clarificationRef = useRef<HTMLDivElement>(null);
 
   const stopJobEvents = () => {
     stopJobEventsRef.current?.();
@@ -265,6 +270,7 @@ export default function Home() {
       clearPersistedJob();
       setIsGenerating(false);
       setGenerationStatus(null);
+      setPendingPrompt(null);
       setError("Generation cancelled. Your completed form is still available to edit or retry.");
       return;
     }
@@ -275,6 +281,7 @@ export default function Home() {
       activeJobIdRef.current = null;
       clearPersistedJob();
       setIsGenerating(false);
+      setPendingPrompt(null);
       setError("Generation cancelled. Your completed form is still available to edit or retry.");
     }).catch((err) => {
       if (activeJobIdRef.current === jobId) {
@@ -299,6 +306,7 @@ export default function Home() {
     setItinerary(null);
     setResearchEvents([]);
     setError(null);
+    setPendingPrompt(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -308,42 +316,91 @@ export default function Home() {
       setItinerary(await api.selectTransport(itinerary.id, option));
       track("transport_selected", { tripId: itinerary.id, kind: "single", metadata: { provider: option.provider } });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn’t update transport. Please try again.");
+      setError(err instanceof ApiError ? err.message : "Couldn't update transport. Please try again.");
     }
+  };
+
+  // When user submits from hero search bar, show the clarification flow
+  const handleHeroSearch = (prompt: string) => {
+    setPendingPrompt(prompt);
+    // Scroll to clarification section
+    setTimeout(() => {
+      clarificationRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
   };
 
   return (
     <main className="min-h-screen">
-      {!itinerary && <Header onLogoClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />}
+      {!itinerary && <Header onLogoClick={() => { handleNewTrip(); }} />}
 
-      {/* ── Home: hero, ticket form, features, destinations ─────────── */}
+      {/* ── Home: hero, clarification, features, destinations ─────── */}
       {!itinerary && (
         <>
-          <HomeHero />
+          <HomeHero onSearch={handleHeroSearch} isLoading={isGenerating} />
 
-          <section id="plan" className="px-7 pt-[30px] pb-[90px]">
-            <QuickPlanner onGenerate={handleSubmit} isLoading={isGenerating} />
-            {isGenerating && <LoadingState waitingForBackend={!backendReady} status={generationStatus} researchEvents={researchEvents} onCancel={cancelGeneration} onRetry={retryGeneration} />}
+          <SocialProofStrip />
 
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-6 p-4 glass border-error/30 rounded-xl max-w-md mx-auto text-center"
+          {/* Clarification flow — appears when user submits a prompt */}
+          {pendingPrompt && !isGenerating && (
+            <div ref={clarificationRef} style={{ padding: "1rem 1.75rem" }}>
+              <QuickPlanner
+                prompt={pendingPrompt}
+                onGenerate={handleSubmit}
+                isLoading={isGenerating}
+              />
+            </div>
+          )}
+
+          {/* Loading state */}
+          {isGenerating && (
+            <div style={{ padding: "1rem 1.75rem" }}>
+              <LoadingState
+                waitingForBackend={!backendReady}
+                status={generationStatus}
+                researchEvents={researchEvents}
+                onCancel={cancelGeneration}
+                onRetry={retryGeneration}
+              />
+            </div>
+          )}
+
+          {/* Error state */}
+          {error && !isGenerating && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{
+                maxWidth: 520,
+                margin: "1rem auto",
+                padding: "1.25rem",
+                background: "rgba(239, 68, 68, 0.05)",
+                border: "1px solid rgba(239, 68, 68, 0.15)",
+                borderRadius: "var(--radius-md)",
+                textAlign: "center",
+              }}
+            >
+              <p style={{ color: "var(--error)", fontWeight: 600, fontSize: "0.9rem" }}>⚠️ {error}</p>
+              <button
+                onClick={() => { setError(null); retryGeneration(); }}
+                style={{
+                  marginTop: "0.5rem",
+                  fontSize: "0.82rem",
+                  color: "var(--foreground-muted)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
               >
-                <p className="text-error font-medium">⚠️ {error}</p>
-                <button
-                  onClick={() => { setError(null); retryGeneration(); }}
-                  className="mt-2 text-sm text-foreground-muted hover:text-foreground transition-colors"
-                >
-                  Retry request
-                </button>
-              </motion.div>
-            )}
-          </section>
+                Retry request
+              </button>
+            </motion.div>
+          )}
 
           <FeaturesRail />
           <DestinationPostcards />
+          <SampleItineraries />
+          <FinalCTA onSearch={handleHeroSearch} isLoading={isGenerating} />
         </>
       )}
 
